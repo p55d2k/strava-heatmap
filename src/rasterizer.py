@@ -193,8 +193,13 @@ def compute_normalized_grids(grids: tuple, sigma: float, config) -> dict:
 
     # Count grid
     b_count = gaussian_filter(count_grid, sigma=sigma)
-    count_norm = b_count / b_count.max()
-    count_log_norm = np.log1p(b_count) / np.log1p(b_count.max())
+    max_count = b_count.max()
+    if max_count > 0:
+        count_norm = b_count / max_count
+        count_log_norm = np.log1p(b_count) / np.log1p(max_count)
+    else:
+        count_norm = np.zeros_like(b_count)
+        count_log_norm = np.zeros_like(b_count)
 
     # Speed (average) grid
     b_speed_sum = gaussian_filter(speed_sum, sigma=sigma)
@@ -284,6 +289,8 @@ def compute_normalized_grids(grids: tuple, sigma: float, config) -> dict:
     # Alpha masks
     def presence_alpha(sample_count_grid, blur_sigma, pct=10):
         binary = (sample_count_grid > 0).astype(np.float32)
+        if not np.any(binary):
+            return np.zeros_like(binary)
         blurred = gaussian_filter(binary, sigma=blur_sigma)
         sat = np.percentile(blurred[binary > 0], pct)
         return np.clip(blurred / sat, 0, 1) if sat > 0 else blurred
@@ -297,7 +304,7 @@ def compute_normalized_grids(grids: tuple, sigma: float, config) -> dict:
     alpha_elev = presence_alpha(elev_n, sigma) if n_elev_px else np.zeros_like(elev_norm)
 
     # Save max_passes before cleanup
-    max_passes = int(b_count.max())
+    max_passes = int(max_count)
 
     # Clean up intermediate arrays
     del count_grid, speed_sum, speed_n, hr_sum, hr_n, grad_sum, grad_n, elev_sum, elev_n

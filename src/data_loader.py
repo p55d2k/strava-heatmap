@@ -106,7 +106,6 @@ def load_tracks(config, runs: pd.DataFrame) -> list[tuple[str, list]]:
     config.track_cache.write_text(json.dumps(track_cache))
 
     if not tracks:
-        log.error("No valid tracks loaded. Check your configuration and date ranges.")
-        sys.exit(1)
+        log.warning("No valid tracks loaded. Check your configuration and date ranges.")
 
     return tracks

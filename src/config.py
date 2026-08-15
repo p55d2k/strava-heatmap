@@ -40,8 +40,10 @@ class Config:
         self.auto_range_pct = cfg["AUTO_RANGE_PCT"]
 
         # Configurable paths with sensible defaults
-        self.cache_dir = Path(cfg.get("CACHE_DIR", "cache"))
-        self.output_dir = Path(cfg.get("OUTPUT_DIR", "outputs"))
+        cache_dir = cfg.get("CACHE_DIR", "cache")
+        output_dir = cfg.get("OUTPUT_DIR", "outputs")
+        self.cache_dir = (self.activities_dir / cache_dir).resolve()
+        self.output_dir = (self.activities_dir / output_dir).resolve()
         self.cache_dir.mkdir(exist_ok=True)
         self.output_dir.mkdir(exist_ok=True)
 
