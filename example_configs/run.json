@@ -1,0 +1,20 @@
+{
+  "ACTIVITIES_DIR": "strava_export",
+  "ACTIVITY_TYPES": ["Run"],
+  "DATE_FROM": null,
+  "DATE_TO": null,
+  "HOME_LAT": null,
+  "HOME_LON": null,
+  "RADIUS_KM": 20.0,
+  "GPS_SPREAD_MIN_M": 200,
+  "METERS_PER_PIXEL": 3,
+  "PADDING_M": 500,
+  "TRACK_CLIP_RADIUS_KM": 50.0,
+  "BLUR_SIGMA_PX": 2,
+  "MAP_OPACITY": 0.85,
+  "SPEED_MIN_MS": null,
+  "SPEED_MAX_MS": null,
+  "HR_MIN_BPM": null,
+  "HR_MAX_BPM": null,
+  "AUTO_RANGE_PCT": 5
+}
