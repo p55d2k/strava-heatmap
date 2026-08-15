@@ -27,7 +27,7 @@ def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     return R * 2.0 * math.asin(math.sqrt(a))
 
 
-def _parse_fit_file(filepath: Path) -> list:
+def parse_fit_file(filepath: Path) -> list:
     """
     Parse .fit.gz file once and return full track points.
     Returns list of [lat, lon, speed, hr, alt] or empty list on failure.
@@ -66,7 +66,7 @@ def get_gps_start(filepath: Path) -> tuple:
     Get (start_lat, start_lon, spread_m) from a .fit.gz file.
     Parses the full track once and derives start/spread from it.
     """
-    pts = _parse_fit_file(filepath)
+    pts = parse_fit_file(filepath)
     if not pts:
         log.debug(f"No GPS records in {filepath.name}")
         return None, None, None
@@ -106,4 +106,4 @@ def detect_home(df_gps: pd.DataFrame) -> tuple:
 
 def load_fit_track_full(filepath: Path) -> list:
     """Parse .fit.gz and extract array of [lat, lon, speed, hr, alt]."""
-    return _parse_fit_file(filepath)
+    return parse_fit_file(filepath)

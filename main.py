@@ -24,7 +24,7 @@ from PIL import Image
 from pyproj import Transformer
 from scipy.ndimage import gaussian_filter
 
-from src.helpers import haversine_km, get_gps_start, detect_home, load_fit_track_full, _parse_fit_file
+from src.helpers import haversine_km, get_gps_start, detect_home, load_fit_track_full, parse_fit_file
 
 # Configure logging
 logging.basicConfig(
