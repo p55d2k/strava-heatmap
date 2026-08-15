@@ -1,67 +1,87 @@
-# Running Heatmap
+# Strava Activity Heatmap
 
-Code from [this video](https://youtu.be/PA8d4u5T4BM?si=83GTMI449kCsgb4B) — shared by request.
+A custom fork of the original Strava Activity Heatmap project by [Sam Wilson](https://github.com/moresamwilson/running-heatmap).
 
 Turns a Strava data export into an interactive heatmap. No API needed - just the zip file Strava lets you download.
 
 The output is a single HTML file with six layers you can switch between:
 
-| Layer | Colour | Shows |
-|---|---|---|
-| Frequency (linear) | Orange | How often you've run each path |
-| Frequency (log) | Orange | Same, log scale - better when a few paths dominate |
-| Pace (average) | Blue | Average pace - brighter = faster |
-| Heart rate (average) | Red | Average HR - brighter = higher |
-| Gradient (absolute) | White | Steepness - brighter = steeper |
-| Gradient (change) | Green / purple | Direction - green = descending, purple = ascending |
+| Layer                | Colour         | Shows                                              |
+| -------------------- | -------------- | -------------------------------------------------- |
+| Frequency (linear)   | Orange         | How often you've run each path                     |
+| Frequency (log)      | Orange         | Same, log scale - better when a few paths dominate |
+| Pace (average)       | Blue           | Average pace - brighter = faster                   |
+| Heart rate (average) | Red            | Average HR - brighter = higher                     |
+| Gradient (absolute)  | White          | Steepness - brighter = steeper                     |
+| Gradient (change)    | Green / purple | Direction - green = descending, purple = ascending |
 
 ## Setup
 
-```
+```bash
 pip install -r requirements.txt
 ```
 
 ## Usage
 
 1. Request your data from Strava: **Settings → My Account → Download or Delete Your Account → Download Request**
-2. Unzip the export and place the folder next to `heatmap.ipynb`
-3. Update the config cell:
+2. Unzip the export and place the folder next to `config.json` (default folder name: `strava_export`)
+3. Create a `config.json` (or copy from `example_configs/`):
 
-```python
-ACTIVITIES_DIR = "your_export_folder"   # name of the unzipped folder
-ACTIVITY_TYPES = ["Run"]                # Run, Ride, Hike, Walk, ...
-DATE_FROM      = "2024-01-01"           # or None for no lower limit
-DATE_TO        = "2024-12-31"           # or None for today
+```json
+{
+  "ACTIVITIES_DIR": "strava_export",
+  "ACTIVITY_TYPES": ["Run"],
+  "DATE_FROM": null,
+  "DATE_TO": null,
+  "HOME_LAT": null,
+  "HOME_LON": null,
+  "RADIUS_KM": 20.0,
+  "GPS_SPREAD_MIN_M": 200,
+  "METERS_PER_PIXEL": 10,
+  "PADDING_M": 500,
+  "TRACK_CLIP_RADIUS_KM": 50.0,
+  "BLUR_SIGMA_PX": 2,
+  "MAP_OPACITY": 0.85,
+  "SPEED_MIN_MS": null,
+  "SPEED_MAX_MS": null,
+  "HR_MIN_BPM": null,
+  "HR_MAX_BPM": null,
+  "AUTO_RANGE_PCT": 5
+}
 ```
 
-4. Run all cells. Map is saved to `outputs/heatmap.html`.
+Key settings:
+- `ACTIVITY_TYPES`: `["Run"]`, `["Ride"]`, `["Run", "Ride"]`, etc.
+- `DATE_FROM` / `DATE_TO`: ISO dates or `null` for no limit
+- `HOME_LAT` / `HOME_LON`: Override auto-detected home location
+- `METERS_PER_PIXEL`: Resolution (lower = more detail). Use ~3 for runs, ~10 for rides.
+- `RADIUS_KM` / `TRACK_CLIP_RADIUS_KM`: Filter radius around home
+
+4. Run:
+```bash
+python main.py
+```
+Map is saved to `outputs/heatmap.html`.
 
 ### Home detection
-
-Home is auto-detected from the most common activity start point in the date range, then only activities within `RADIUS_KM` of that point are included. It's a heuristic — if you started more runs from somewhere else (work, a club) than home in that period, that location wins. Override it with `HOME_LAT` / `HOME_LON` if needed.
+Home is auto-detected from the most common activity start point. Override with `HOME_LAT` / `HOME_LON` if needed.
 
 ### Caching
-
-Parsing `.fit.gz` files is slow so GPS data is cached after the first run. Changing the date range or config won't re-parse files you've already loaded.
+Parsing `.fit.gz` is slow; GPS data is cached after first run. Cache files are stored in `cache/`.
 
 ---
 
 ## Notes
 
-### The frequency map measures time on path, not number of passes
+- **Frequency** measures time on path (GPS samples/pixel), not distinct passes. Log scale helps when a few routes dominate.
+- **Pace & HR** are all-time averages per pixel. Narrow the date range for a specific period.
+- **Gradient** layers are only as good as GPS altitude (±10–20 m vertical noise). Reliable on hills, noisy on flats.
+- **Two projections**: Web Mercator (EPSG:3857) for tile alignment; UTM for true ground-metre calculations (clip radius, gradient).
 
-GPS records at ~1 Hz, so the frequency layers count GPS samples per pixel rather than distinct activities. A slower run deposits more points on the same path than a faster one. In practice this means the map shows something closer to time spent on each road than how many times you've run it - which is arguably more useful, but worth knowing.
+---
 
-The log scale version exists because a few favourite routes tend to dominate completely on a linear scale, washing out everything else.
+## Contributing & License
 
-### Pace and HR are all-time averages
+Contributions welcome! Open an issue or PR.
 
-Each pixel is the mean across every activity that ever crossed it. A route you used to run slowly but now run fast will show somewhere in the middle. Narrow the date range if you want a specific period.
-
-### The gradient layers are only as good as GPS altitude
-
-GPS altitude is much noisier than horizontal position - typically ±10–20 m vertically versus ±3–5 m horizontally. The gradient layers are reliable on hilly terrain but can look noisy on flat routes where the signal-to-noise is poor.
-
-### Why the code uses two different projections
-
-The raster grid is built in Web Mercator (EPSG:3857) so it aligns directly to the map tile basemap without any reprojection. But Web Mercator distorts distances at higher latitudes, so anything involving real-world metres - the clip radius around home, and the rise/run calculation for gradient - uses a local UTM projection instead. The visual output is unaffected, it just means the underlying measurements are accurate.
+Licensed under the MIT License — see [LICENSE](LICENSE) for details.
