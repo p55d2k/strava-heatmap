@@ -86,28 +86,39 @@ def create_grids(x_min_wm: float, x_max_wm: float, y_min_wm: float, y_max_wm: fl
 
 
 def paint_segment(x1, y1, x2, y2, speed_val, hr_val, grad_val, elev_val, grids):
-    """Paint a line segment onto the grids."""
+    """Paint a line segment onto the grids using vectorized NumPy operations."""
     dx, dy = x2 - x1, y2 - y1
     n_steps = max(int(max(abs(dx), abs(dy))) + 1, 1)
     h, w = grids[2].shape  # speed_sum shape
-    for i in range(n_steps + 1):
-        t = i / n_steps
-        xi = int(round(x1 + t * dx))
-        yi = int(round(y1 + t * dy))
-        if not (0 <= xi < w and 0 <= yi < h):
-            continue
-        if speed_val is not None:
-            grids[3][yi, xi] += speed_val  # speed_sum
-            grids[4][yi, xi] += 1          # speed_n
-        if hr_val is not None:
-            grids[5][yi, xi] += hr_val     # hr_sum
-            grids[6][yi, xi] += 1          # hr_n
-        if grad_val is not None:
-            grids[7][yi, xi] += grad_val   # grad_sum
-            grids[8][yi, xi] += 1          # grad_n
-        if elev_val is not None:
-            grids[9][yi, xi] += elev_val   # elev_sum
-            grids[10][yi, xi] += 1         # elev_n
+    
+    # Generate all t values at once
+    t = np.linspace(0, 1, n_steps + 1)
+    
+    # Calculate all coordinates at once
+    xi = np.round(x1 + t * dx).astype(int)
+    yi = np.round(y1 + t * dy).astype(int)
+    
+    # Filter valid coordinates (within bounds)
+    valid_mask = (xi >= 0) & (xi < w) & (yi >= 0) & (yi < h)
+    xi_valid = xi[valid_mask]
+    yi_valid = yi[valid_mask]
+    
+    if len(xi_valid) == 0:
+        return
+    
+    # Use advanced indexing to update grids in bulk
+    if speed_val is not None:
+        np.add.at(grids[3], (yi_valid, xi_valid), speed_val)  # speed_sum
+        np.add.at(grids[4], (yi_valid, xi_valid), 1)          # speed_n
+    if hr_val is not None:
+        np.add.at(grids[5], (yi_valid, xi_valid), hr_val)     # hr_sum
+        np.add.at(grids[6], (yi_valid, xi_valid), 1)          # hr_n
+    if grad_val is not None:
+        np.add.at(grids[7], (yi_valid, xi_valid), grad_val)   # grad_sum
+        np.add.at(grids[8], (yi_valid, xi_valid), 1)          # grad_n
+    if elev_val is not None:
+        np.add.at(grids[9], (yi_valid, xi_valid), elev_val)   # elev_sum
+        np.add.at(grids[10], (yi_valid, xi_valid), 1)         # elev_n
 
 
 def rasterize_tracks(

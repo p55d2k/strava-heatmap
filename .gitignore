@@ -222,5 +222,8 @@ __marimo__/
 cache/
 outputs/
 strava_export/
+strava_export_2/
 
 config.json
+
+.DS_Store
