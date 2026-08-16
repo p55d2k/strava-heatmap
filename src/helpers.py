@@ -8,6 +8,7 @@ import gzip
 from pathlib import Path
 
 import fitparse
+from fitparse.utils import FitParseError
 import pandas as pd
 
 log = logging.getLogger(__name__)
@@ -31,6 +32,8 @@ def parse_fit_file(filepath: Path) -> list:
     """
     Parse .fit.gz file once and return full track points.
     Returns list of [lat, lon, speed, hr, alt] or empty list on failure.
+    Some Strava FIT files have corrupted records at the end (truncated/incomplete).
+    We catch the parse error and return whatever valid points we extracted before the corruption.
     """
     points = []
     try:
@@ -56,7 +59,17 @@ def parse_fit_file(filepath: Path) -> list:
                 )
 
                 points.append([lat_deg, lon_deg, speed, hr, alt])
+    except FitParseError as e:
+        if points:
+            # Partial success - log at debug level since we got useful data
+            log.debug(
+                f"Partial parse of {filepath.name}: got {len(points)} points before corruption: {e}"
+            )
+        else:
+            # Complete failure - no valid points extracted
+            log.warning(f"Failed to parse {filepath.name}: {e}")
     except Exception as e:
+        # Other unexpected errors
         log.warning(f"Failed to parse {filepath.name}: {e}")
     return points
 
