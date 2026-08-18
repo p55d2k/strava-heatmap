@@ -7,6 +7,8 @@ import os
 from pathlib import Path
 
 import folium
+from folium import MacroElement
+from jinja2 import Template
 
 LAYER_CONTROL_CSS = """
 <style>
@@ -40,51 +42,90 @@ LAYER_CONTROL_CSS = """
 </style>
 """
 
-EXCLUSIVE_JS = """
-<script>
-(function() {
-    var exclusiveNames = [
-        "Frequency (linear)", "Frequency (log)",
-        "Pace (average)", "Heart rate (average)",
-        "Gradient (absolute)", "Gradient (change)"
-    ];
-    var legendIds = {
-        "Frequency (linear)":   "legend-frequency",
-        "Frequency (log)":      "legend-frequency-log",
-        "Pace (average)":       "legend-pace-avg",
-        "Heart rate (average)": "legend-heart-rate-avg",
-        "Gradient (absolute)":  "legend-gradient",
-        "Gradient (change)":    "legend-elev-change"
-    };
-    function showLegend(activeName) {
-        Object.keys(legendIds).forEach(function(name) {
-            var el = document.getElementById(legendIds[name]);
-            if (el) el.style.display = (name === activeName) ? "block" : "none";
-        });
-    }
-    function setup() {
-        var mapObj = null, overlays = null;
-        for (var k in window) {
-            try {
-                if (!mapObj   && window[k] instanceof L.Map) mapObj = window[k];
-                if (!overlays && window[k] && window[k].overlays && window[k].base_layers)
-                    overlays = window[k].overlays;
-            } catch(e) {}
-        }
-        if (!mapObj || !overlays) { setTimeout(setup, 100); return; }
-        mapObj.on('overlayadd', function(e) {
-            if (!exclusiveNames.includes(e.name)) return;
-            exclusiveNames.forEach(function(name) {
-                if (name !== e.name && overlays[name] && mapObj.hasLayer(overlays[name]))
-                    mapObj.removeLayer(overlays[name]);
+# Folium MacroElement that injects JS for exclusive layer handling and legend switching.
+# This replaces fragile window-scanning with direct access to the map and layer control.
+class ExclusiveLayerControl(MacroElement):
+    """Injects JavaScript to make overlay layers mutually exclusive and switch legends."""
+    _template = Template("""
+    {% macro script(this, kwargs) %}
+    (function() {
+        var exclusiveNames = [
+            "Frequency (linear)", "Frequency (log)",
+            "Pace (average)", "Heart rate (average)",
+            "Gradient (absolute)", "Gradient (change)"
+        ];
+        var legendIds = {
+            "Frequency (linear)":   "legend-frequency",
+            "Frequency (log)":      "legend-frequency-log",
+            "Pace (average)":       "legend-pace-avg",
+            "Heart rate (average)": "legend-heart-rate-avg",
+            "Gradient (absolute)":  "legend-gradient",
+            "Gradient (change)":    "legend-elev-change"
+        };
+        function showLegend(activeName) {
+            Object.keys(legendIds).forEach(function(name) {
+                var el = document.getElementById(legendIds[name]);
+                if (el) el.style.display = (name === activeName) ? "block" : "none";
             });
-            showLegend(e.name);
-        });
-    }
-    document.addEventListener('DOMContentLoaded', setup);
-})();
-</script>
-"""
+        }
+        // Directly access the map created by Folium.
+        var map = {{this._parent.get_name()}};
+        // The LayerControl (L.Control.Layers) is added to the map.
+        // We can access its internal _layers object which maps layer names to {layer: ..., name: ..., overlay: ...}
+        // Wait for the LayerControl to be added, then set up exclusive behavior.
+        function setupExclusiveLayers() {
+            // Find the LayerControl in map's controls
+            var layerControl = null;
+            // Controls are stored in map._controlsById (Leaflet 1.x) or map._controlContainer
+            // Iterate all controls to find L.Control.Layers
+            for (var key in map._controlsById) {
+                var ctrl = map._controlsById[key];
+                if (ctrl instanceof L.Control.Layers) {
+                    layerControl = ctrl;
+                    break;
+                }
+            }
+            if (!layerControl) {
+                // Retry shortly if not ready
+                setTimeout(setupExclusiveLayers, 50);
+                return;
+            }
+            // Listen for overlayadd on the map
+            map.on('overlayadd', function(e) {
+                var layerName = e.layer ? (e.layer.options && e.layer.options.name) : e.name;
+                // Fallback: if e.name is not available, try to find from layerControl._layers
+                if (!layerName && layerControl._layers) {
+                    for (var key in layerControl._layers) {
+                        if (layerControl._layers[key].layer === e.layer) {
+                            layerName = layerControl._layers[key].name;
+                            break;
+                        }
+                    }
+                }
+                if (!layerName || !exclusiveNames.includes(layerName)) return;
+                // Remove other exclusive layers using layerControl's _layers
+                exclusiveNames.forEach(function(name) {
+                    if (name !== layerName) {
+                        for (var key in layerControl._layers) {
+                            var entry = layerControl._layers[key];
+                            if (entry.overlay && entry.name === name && map.hasLayer(entry.layer)) {
+                                map.removeLayer(entry.layer);
+                            }
+                        }
+                    }
+                });
+                showLegend(layerName);
+            });
+        }
+        // Run setup after a brief delay to ensure LayerControl is initialized
+        setTimeout(setupExclusiveLayers, 0);
+    })();
+    {% endmacro %}
+    """)
+
+    def __init__(self):
+        super().__init__()
+        self._name = 'ExclusiveLayerControl'
 
 
 def cmap_to_css(cmap, n=14) -> str:
@@ -240,7 +281,7 @@ def build_map(
     folium.LayerControl(collapsed=False).add_to(m)
     m.get_root().html.add_child(folium.Element(LAYER_CONTROL_CSS))
     m.get_root().html.add_child(folium.Element(legend_html))
-    m.get_root().html.add_child(folium.Element(EXCLUSIVE_JS))
+    ExclusiveLayerControl().add_to(m)
 
     m.save(output_path)
     import logging

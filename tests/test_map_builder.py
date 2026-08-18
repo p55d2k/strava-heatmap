@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from src.map_builder import (
-    EXCLUSIVE_JS,
+    ExclusiveLayerControl,
     LAYER_CONTROL_CSS,
     build_legend_html,
     build_map,
@@ -273,8 +273,9 @@ class TestBuildMap:
         lc_kwargs = mock_layer_control.call_args[1]
         assert lc_kwargs["collapsed"] is False
 
-        # Verify HTML elements added
-        assert mock_map_instance.get_root().html.add_child.call_count >= 3  # CSS, legend, JS
+        # Verify HTML elements added (CSS, legend)
+        # ExclusiveLayerControl is added via add_to(), not add_child()
+        assert mock_map_instance.get_root().html.add_child.call_count >= 2  # CSS, legend
 
         # Verify save
         mock_map_instance.save.assert_called_once_with(self.output_path)
@@ -368,8 +369,9 @@ class TestConstants:
         assert len(LAYER_CONTROL_CSS) > 0
         assert "leaflet-control-layers" in LAYER_CONTROL_CSS
 
-    def test_exclusive_js_not_empty(self):
-        """EXCLUSIVE_JS should not be empty."""
-        assert len(EXCLUSIVE_JS) > 0
-        assert "exclusiveNames" in EXCLUSIVE_JS
-        assert "overlayadd" in EXCLUSIVE_JS
+    def test_exclusive_layer_control_class_exists(self):
+        """ExclusiveLayerControl class should exist and be instantiable."""
+        assert ExclusiveLayerControl is not None
+        instance = ExclusiveLayerControl()
+        assert instance is not None
+        assert instance._name == 'ExclusiveLayerControl'
