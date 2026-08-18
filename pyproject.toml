@@ -92,7 +92,7 @@ known-first-party = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-pythonpath = ["src"]
+pythonpath = ["."]
 addopts = "-v --cov=src --cov-report=term-missing"
 filterwarnings = [
     "ignore::UserWarning:folium",
