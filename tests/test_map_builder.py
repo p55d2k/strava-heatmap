@@ -6,8 +6,8 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 from src.map_builder import (
-    ExclusiveLayerControl,
     LAYER_CONTROL_CSS,
+    ExclusiveLayerControl,
     build_legend_html,
     build_map,
     cmap_to_css,
