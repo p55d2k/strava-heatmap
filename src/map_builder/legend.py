@@ -6,8 +6,8 @@ individual legend rows and the complete legend container. Customize the
 ``LegendBuilder`` class to further control legend appearance.
 """
 
-from src.map_builder.constants import LEGEND_IDS, DEFAULT_LEGEND_STYLES
-from src.map_builder.utils import cmap_to_css, build_style_string
+from src.map_builder.constants import DEFAULT_LEGEND_STYLES
+from src.map_builder.utils import build_style_string, cmap_to_css
 
 
 def pace_str(ms: float) -> str:
@@ -114,3 +114,4 @@ class LegendBuilder:
 def build_legend_html(normalized: dict, colormaps: dict, max_passes: int) -> str:
     """Build the complete legend HTML using the default LegendBuilder."""
     return LegendBuilder().build(normalized, colormaps, max_passes)
+

@@ -5,8 +5,6 @@ Contains helper functions like colormap-to-CSS conversion that are shared
 across the legend and control modules.
 """
 
-from src.map_builder.constants import DEFAULT_LEGEND_STYLES
-
 
 def cmap_to_css(cmap, n=14) -> str:
     """Convert colormap to CSS linear-gradient string."""

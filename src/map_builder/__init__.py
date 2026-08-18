@@ -13,27 +13,23 @@ Modules:
 """
 
 from src.map_builder.constants import (
-    LAYER_CONTROL_CSS,
-    EXCLUSIVE_LAYER_NAMES,
-    LEGEND_IDS,
     DEFAULT_LEGEND_STYLES,
+    EXCLUSIVE_LAYER_NAMES,
+    LAYER_CONTROL_CSS,
+    LEGEND_IDS,
 )
-
-from src.map_builder.legend import (
-    pace_str,
-    legend_row,
-    build_legend_html,
-    LegendBuilder,
-)
-
 from src.map_builder.control import (
     ExclusiveLayerControl,
 )
-
+from src.map_builder.legend import (
+    LegendBuilder,
+    build_legend_html,
+    legend_row,
+    pace_str,
+)
 from src.map_builder.map_builder import (
     build_map,
 )
-
 from src.map_builder.utils import (
     cmap_to_css,
 )
