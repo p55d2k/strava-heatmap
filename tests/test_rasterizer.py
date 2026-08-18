@@ -2,20 +2,17 @@
 Unit tests for src/rasterizer.py - grid computation, rasterization, and normalization functions.
 """
 
-import math
-from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import numpy as np
-import pytest
 
 from src.rasterizer import (
-    setup_transformers,
     compute_grid_bounds,
+    compute_normalized_grids,
     create_grids,
     paint_segment,
     rasterize_tracks,
-    compute_normalized_grids,
+    setup_transformers,
 )
 
 
@@ -81,8 +78,13 @@ class TestComputeGridBounds:
         ]
 
         x_min, x_max, y_min, y_max = compute_grid_bounds(
-            tracks, self.to_wm, self.to_utm, self.home_x_utm, self.home_y_utm,
-            clip_m=10000.0, padding_m=self.padding_m
+            tracks,
+            self.to_wm,
+            self.to_utm,
+            self.home_x_utm,
+            self.home_y_utm,
+            clip_m=10000.0,
+            padding_m=self.padding_m,
         )
 
         assert x_min < x_max
@@ -104,8 +106,13 @@ class TestComputeGridBounds:
         ]
 
         x_min, x_max, y_min, y_max = compute_grid_bounds(
-            tracks, self.to_wm, self.to_utm, self.home_x_utm, self.home_y_utm,
-            clip_m=None, padding_m=self.padding_m
+            tracks,
+            self.to_wm,
+            self.to_utm,
+            self.home_x_utm,
+            self.home_y_utm,
+            clip_m=None,
+            padding_m=self.padding_m,
         )
 
         assert x_min < x_max
@@ -127,7 +134,7 @@ class TestCreateGrids:
 
         grid_w, grid_h = result[0], result[1]
         assert grid_w == 101  # (1000-0)/10 + 1
-        assert grid_h == 51   # (500-0)/10 + 1
+        assert grid_h == 51  # (500-0)/10 + 1
 
     def test_returns_all_grid_arrays(self):
         """Should return all 11 grid arrays."""
@@ -161,8 +168,17 @@ class TestPaintSegment:
         self.elev_n = np.zeros((self.grid_h, self.grid_w), dtype=np.float32)
 
         self.grids = (
-            self.grid_w, self.grid_h, self.count_grid, self.speed_sum, self.speed_n,
-            self.hr_sum, self.hr_n, self.grad_sum, self.grad_n, self.elev_sum, self.elev_n
+            self.grid_w,
+            self.grid_h,
+            self.count_grid,
+            self.speed_sum,
+            self.speed_n,
+            self.hr_sum,
+            self.hr_n,
+            self.grad_sum,
+            self.grad_n,
+            self.elev_sum,
+            self.elev_n,
         )
 
     def test_paints_horizontal_line(self):
@@ -232,9 +248,11 @@ class TestRasterizeTracks:
 
         # Create grids
         result = create_grids(
-            self.x_min_wm, self.x_min_wm + 1000,
-            self.y_max_wm - 1000, self.y_max_wm,
-            self.meters_per_pixel
+            self.x_min_wm,
+            self.x_min_wm + 1000,
+            self.y_max_wm - 1000,
+            self.y_max_wm,
+            self.meters_per_pixel,
         )
         self.grids = result
 
@@ -250,16 +268,26 @@ class TestRasterizeTracks:
         )
 
         tracks = [
-            ("track1", [
-                [45.0, -122.0, 5.0, 150, 100.0],
-                [45.001, -122.001, 5.0, 150, 101.0],
-            ]),
+            (
+                "track1",
+                [
+                    [45.0, -122.0, 5.0, 150, 100.0],
+                    [45.001, -122.001, 5.0, 150, 101.0],
+                ],
+            ),
         ]
 
         rasterize_tracks(
-            tracks, self.to_wm, self.to_utm, self.home_x_utm, self.home_y_utm,
-            clip_m=None, x_min_wm=self.x_min_wm, y_max_wm=self.y_max_wm,
-            meters_per_pixel=self.meters_per_pixel, grids=self.grids
+            tracks,
+            self.to_wm,
+            self.to_utm,
+            self.home_x_utm,
+            self.home_y_utm,
+            clip_m=None,
+            x_min_wm=self.x_min_wm,
+            y_max_wm=self.y_max_wm,
+            meters_per_pixel=self.meters_per_pixel,
+            grids=self.grids,
         )
 
         # Count grid should have points
@@ -280,16 +308,26 @@ class TestRasterizeTracks:
         )
 
         tracks = [
-            ("track1", [
-                [45.0, -122.0, 5.0, 150, 100.0],      # Inside clip radius
-                [45.5, -122.5, 5.0, 150, 101.0],      # Outside clip radius
-            ]),
+            (
+                "track1",
+                [
+                    [45.0, -122.0, 5.0, 150, 100.0],  # Inside clip radius
+                    [45.5, -122.5, 5.0, 150, 101.0],  # Outside clip radius
+                ],
+            ),
         ]
 
         rasterize_tracks(
-            tracks, self.to_wm, self.to_utm, self.home_x_utm, self.home_y_utm,
-            clip_m=5000.0, x_min_wm=self.x_min_wm, y_max_wm=self.y_max_wm,
-            meters_per_pixel=self.meters_per_pixel, grids=self.grids
+            tracks,
+            self.to_wm,
+            self.to_utm,
+            self.home_x_utm,
+            self.home_y_utm,
+            clip_m=5000.0,
+            x_min_wm=self.x_min_wm,
+            y_max_wm=self.y_max_wm,
+            meters_per_pixel=self.meters_per_pixel,
+            grids=self.grids,
         )
 
         # Only first point should be rasterized
@@ -325,8 +363,17 @@ class TestComputeNormalizedGrids:
         self.elev_n[50, 50] = 10.0
 
         self.grids = (
-            self.grid_w, self.grid_h, self.count_grid, self.speed_sum, self.speed_n,
-            self.hr_sum, self.hr_n, self.grad_sum, self.grad_n, self.elev_sum, self.elev_n
+            self.grid_w,
+            self.grid_h,
+            self.count_grid,
+            self.speed_sum,
+            self.speed_n,
+            self.hr_sum,
+            self.hr_n,
+            self.grad_sum,
+            self.grad_n,
+            self.elev_sum,
+            self.elev_n,
         )
 
         # Mock config
@@ -342,10 +389,23 @@ class TestComputeNormalizedGrids:
         result = compute_normalized_grids(self.grids, sigma=1.0, config=self.config)
 
         expected_keys = [
-            "count_norm", "count_log_norm", "speed_norm", "hr_norm",
-            "grad_norm", "elev_norm", "alpha_speed", "alpha_hr",
-            "alpha_grad", "alpha_elev", "s_lo", "s_hi", "hr_lo", "hr_hi",
-            "g_lo", "g_hi", "max_passes"
+            "count_norm",
+            "count_log_norm",
+            "speed_norm",
+            "hr_norm",
+            "grad_norm",
+            "elev_norm",
+            "alpha_speed",
+            "alpha_hr",
+            "alpha_grad",
+            "alpha_elev",
+            "s_lo",
+            "s_hi",
+            "hr_lo",
+            "hr_hi",
+            "g_lo",
+            "g_hi",
+            "max_passes",
         ]
 
         for key in expected_keys:
@@ -422,7 +482,8 @@ class TestComputeNormalizedGrids:
         """Should return expected keys when only count data exists."""
         # Grid with only count data; all metric grids are zero
         count_only = (
-            10, 10,
+            10,
+            10,
             np.zeros((10, 10), dtype=np.float32),
             np.zeros((10, 10), dtype=np.float32),
             np.zeros((10, 10), dtype=np.float32),
@@ -439,10 +500,23 @@ class TestComputeNormalizedGrids:
         result = compute_normalized_grids(count_only, sigma=1.0, config=self.config)
 
         expected_keys = [
-            "count_norm", "count_log_norm", "speed_norm", "hr_norm",
-            "grad_norm", "elev_norm", "alpha_speed", "alpha_hr",
-            "alpha_grad", "alpha_elev", "s_lo", "s_hi", "hr_lo", "hr_hi",
-            "g_lo", "g_hi", "max_passes"
+            "count_norm",
+            "count_log_norm",
+            "speed_norm",
+            "hr_norm",
+            "grad_norm",
+            "elev_norm",
+            "alpha_speed",
+            "alpha_hr",
+            "alpha_grad",
+            "alpha_elev",
+            "s_lo",
+            "s_hi",
+            "hr_lo",
+            "hr_hi",
+            "g_lo",
+            "g_hi",
+            "max_passes",
         ]
         for key in expected_keys:
             assert key in result, f"Missing key: {key}"
@@ -450,7 +524,8 @@ class TestComputeNormalizedGrids:
     def test_handles_fully_empty_grids(self):
         """Should not raise on completely empty grids (all zeros)."""
         empty_grids = (
-            10, 10,
+            10,
+            10,
             np.zeros((10, 10), dtype=np.float32),
             np.zeros((10, 10), dtype=np.float32),
             np.zeros((10, 10), dtype=np.float32),

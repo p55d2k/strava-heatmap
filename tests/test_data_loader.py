@@ -2,23 +2,20 @@
 Unit tests for src/data_loader.py - data loading and filtering functions.
 """
 
-import json
 import pickle
 import tempfile
 from pathlib import Path
-from datetime import date
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
-import pytest
 
+from src.config import Config
 from src.data_loader import (
-    load_and_filter_activities,
     determine_home_location,
     filter_by_home_radius,
+    load_and_filter_activities,
     load_tracks,
 )
-from src.config import Config
 
 
 class TestLoadAndFilterActivities:
@@ -55,6 +52,7 @@ class TestLoadAndFilterActivities:
     def teardown_method(self):
         """Clean up temp files."""
         import shutil
+
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     @patch("src.data_loader.get_gps_start")
@@ -75,8 +73,8 @@ class TestLoadAndFilterActivities:
     def test_filters_by_gps_spread(self, mock_get_gps):
         """Should filter out activities with insufficient GPS spread."""
         mock_get_gps.side_effect = [
-            (45.0, -122.0, 500.0),   # Good spread
-            (45.0, -122.0, 50.0),    # Too small spread
+            (45.0, -122.0, 500.0),  # Good spread
+            (45.0, -122.0, 50.0),  # Too small spread
             (45.0, -122.0, 1000.0),  # Good spread
         ]
 
@@ -102,7 +100,7 @@ class TestLoadAndFilterActivities:
 
         mock_get_gps.return_value = (45.0, -122.0, 500.0)
 
-        df = load_and_filter_activities(self.config)
+        load_and_filter_activities(self.config)
 
         # Should only call get_gps_start for uncached files
         assert mock_get_gps.call_count == 1  # Only for 2024-01-03 file
@@ -132,10 +130,12 @@ class TestDetermineHomeLocation:
         config.home_lat = 45.0
         config.home_lon = -122.0
 
-        runs = pd.DataFrame({
-            "start_lat": [45.0, 45.1, 45.2],
-            "start_lon": [-122.0, -122.1, -122.2],
-        })
+        runs = pd.DataFrame(
+            {
+                "start_lat": [45.0, 45.1, 45.2],
+                "start_lon": [-122.0, -122.1, -122.2],
+            }
+        )
 
         home_lat, home_lon = determine_home_location(config, runs)
 
@@ -151,10 +151,12 @@ class TestDetermineHomeLocation:
 
         mock_detect.return_value = (45.5, -122.5, 10)
 
-        runs = pd.DataFrame({
-            "start_lat": [45.0, 45.1, 45.2],
-            "start_lon": [-122.0, -122.1, -122.2],
-        })
+        runs = pd.DataFrame(
+            {
+                "start_lat": [45.0, 45.1, 45.2],
+                "start_lon": [-122.0, -122.1, -122.2],
+            }
+        )
 
         home_lat, home_lon = determine_home_location(config, runs)
 
@@ -168,10 +170,12 @@ class TestFilterByHomeRadius:
 
     def test_filters_by_distance(self):
         """Should filter activities by distance from home."""
-        runs = pd.DataFrame({
-            "start_lat": [45.0, 45.1, 46.0],  # ~0km, ~11km, ~111km
-            "start_lon": [-122.0, -122.0, -122.0],
-        })
+        runs = pd.DataFrame(
+            {
+                "start_lat": [45.0, 45.1, 46.0],  # ~0km, ~11km, ~111km
+                "start_lon": [-122.0, -122.0, -122.0],
+            }
+        )
 
         filtered = filter_by_home_radius(runs, 45.0, -122.0, 20.0)
 
@@ -181,12 +185,14 @@ class TestFilterByHomeRadius:
 
     def test_preserves_other_columns(self):
         """Should preserve all original columns plus add distance."""
-        runs = pd.DataFrame({
-            "Filename": ["a.fit.gz", "b.fit.gz"],
-            "Activity Type": ["Run", "Ride"],
-            "start_lat": [45.0, 45.1],
-            "start_lon": [-122.0, -122.0],
-        })
+        runs = pd.DataFrame(
+            {
+                "Filename": ["a.fit.gz", "b.fit.gz"],
+                "Activity Type": ["Run", "Ride"],
+                "start_lat": [45.0, 45.1],
+                "start_lon": [-122.0, -122.0],
+            }
+        )
 
         filtered = filter_by_home_radius(runs, 45.0, -122.0, 20.0)
 
@@ -213,6 +219,7 @@ class TestLoadTracks:
     def teardown_method(self):
         """Clean up temp files."""
         import shutil
+
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     @patch("src.data_loader.load_fit_track_full")
@@ -223,11 +230,13 @@ class TestLoadTracks:
             [45.001, -122.001, 5.0, 150, 101.0],
         ]
 
-        runs = pd.DataFrame({
-            "Filename": ["2024-01-01-12345.fit.gz"],
-            "Activity Date": [pd.Timestamp("2024-01-01")],
-            "Activity Name": ["Morning Run"],
-        })
+        runs = pd.DataFrame(
+            {
+                "Filename": ["2024-01-01-12345.fit.gz"],
+                "Activity Date": [pd.Timestamp("2024-01-01")],
+                "Activity Name": ["Morning Run"],
+            }
+        )
 
         tracks = load_tracks(self.config, runs)
 
@@ -252,11 +261,13 @@ class TestLoadTracks:
         with open(self.cache_path, "wb") as f:
             pickle.dump(cache_data, f)
 
-        runs = pd.DataFrame({
-            "Filename": ["2024-01-01-12345.fit.gz"],
-            "Activity Date": [pd.Timestamp("2024-01-01")],
-            "Activity Name": ["Morning Run"],
-        })
+        runs = pd.DataFrame(
+            {
+                "Filename": ["2024-01-01-12345.fit.gz"],
+                "Activity Date": [pd.Timestamp("2024-01-01")],
+                "Activity Name": ["Morning Run"],
+            }
+        )
 
         tracks = load_tracks(self.config, runs)
 
@@ -269,11 +280,13 @@ class TestLoadTracks:
         """Should skip tracks with no GPS points."""
         mock_load_fit.return_value = []
 
-        runs = pd.DataFrame({
-            "Filename": ["2024-01-01-12345.fit.gz"],
-            "Activity Date": [pd.Timestamp("2024-01-01")],
-            "Activity Name": ["Morning Run"],
-        })
+        runs = pd.DataFrame(
+            {
+                "Filename": ["2024-01-01-12345.fit.gz"],
+                "Activity Date": [pd.Timestamp("2024-01-01")],
+                "Activity Name": ["Morning Run"],
+            }
+        )
 
         tracks = load_tracks(self.config, runs)
 
@@ -286,11 +299,13 @@ class TestLoadTracks:
             [45.0, -122.0, 5.0, 150, 100.0],
         ]
 
-        runs = pd.DataFrame({
-            "Filename": ["2024-01-01-12345.fit.gz"],
-            "Activity Date": [pd.Timestamp("2024-01-01")],
-            "Activity Name": ["Morning Run"],
-        })
+        runs = pd.DataFrame(
+            {
+                "Filename": ["2024-01-01-12345.fit.gz"],
+                "Activity Date": [pd.Timestamp("2024-01-01")],
+                "Activity Name": ["Morning Run"],
+            }
+        )
 
         load_tracks(self.config, runs)
 
@@ -318,11 +333,13 @@ class TestLoadTracks:
             [45.0, -122.0, 5.0, 150, 100.0],
         ]
 
-        runs = pd.DataFrame({
-            "Filename": ["fresh.fit.gz"],
-            "Activity Date": [pd.Timestamp("2024-01-01")],
-            "Activity Name": ["Morning Run"],
-        })
+        runs = pd.DataFrame(
+            {
+                "Filename": ["fresh.fit.gz"],
+                "Activity Date": [pd.Timestamp("2024-01-01")],
+                "Activity Name": ["Morning Run"],
+            }
+        )
 
         load_tracks(self.config, runs)
 

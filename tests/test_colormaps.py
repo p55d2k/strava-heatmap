@@ -4,19 +4,17 @@ Unit tests for src/colormaps.py - colormap creation and layer URI generation.
 
 import base64
 from io import BytesIO
-from unittest.mock import MagicMock, patch
 
 import numpy as np
-import pytest
 from PIL import Image
 
 from src.colormaps import (
-    build_cmap,
-    create_colormaps,
-    _to_uri,
     _count_uri,
     _rgba_uri,
+    _to_uri,
     _white_uri,
+    build_cmap,
+    create_colormaps,
     generate_layer_uris,
 )
 
@@ -90,7 +88,7 @@ class TestCreateColormaps:
         """All colormaps should be callable."""
         colormaps = create_colormaps()
 
-        for name, cmap in colormaps.items():
+        for _, cmap in colormaps.items():
             assert callable(cmap)
             # Test calling with a value
             r, g, b, a = cmap(0.5)

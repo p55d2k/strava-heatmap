@@ -61,6 +61,7 @@ def sample_config_dict(temp_dir):
 def config_path(temp_dir, sample_config_dict):
     """Create a config.json file and return its path."""
     import json
+
     config_path = temp_dir / "config.json"
     config_path.write_text(json.dumps(sample_config_dict))
     return config_path
@@ -70,36 +71,45 @@ def config_path(temp_dir, sample_config_dict):
 def mock_config(config_path):
     """Create a Config instance for testing."""
     from src.config import Config
+
     return Config(config_path)
 
 
 @pytest.fixture
 def sample_runs_df():
     """Create a sample runs DataFrame."""
-    return pd.DataFrame({
-        "Filename": ["2024-01-01-12345.fit.gz", "2024-01-02-12346.fit.gz"],
-        "Activity Type": ["Run", "Ride"],
-        "Activity Date": pd.to_datetime(["2024-01-01", "2024-01-02"]),
-        "Activity Name": ["Morning Run", "Evening Ride"],
-        "start_lat": [45.0, 45.1],
-        "start_lon": [-122.0, -122.1],
-        "gps_spread_m": [500.0, 1000.0],
-    })
+    return pd.DataFrame(
+        {
+            "Filename": ["2024-01-01-12345.fit.gz", "2024-01-02-12346.fit.gz"],
+            "Activity Type": ["Run", "Ride"],
+            "Activity Date": pd.to_datetime(["2024-01-01", "2024-01-02"]),
+            "Activity Name": ["Morning Run", "Evening Ride"],
+            "start_lat": [45.0, 45.1],
+            "start_lon": [-122.0, -122.1],
+            "gps_spread_m": [500.0, 1000.0],
+        }
+    )
 
 
 @pytest.fixture
 def sample_tracks():
     """Create sample track data."""
     return [
-        ("2024-01-01 Morning Run", [
-            [45.0, -122.0, 5.0, 150, 100.0],
-            [45.001, -122.001, 5.0, 150, 101.0],
-            [45.002, -122.002, 5.0, 150, 102.0],
-        ]),
-        ("2024-01-02 Evening Ride", [
-            [45.1, -122.1, 8.0, 140, 105.0],
-            [45.101, -122.101, 8.0, 140, 106.0],
-        ]),
+        (
+            "2024-01-01 Morning Run",
+            [
+                [45.0, -122.0, 5.0, 150, 100.0],
+                [45.001, -122.001, 5.0, 150, 101.0],
+                [45.002, -122.002, 5.0, 150, 102.0],
+            ],
+        ),
+        (
+            "2024-01-02 Evening Ride",
+            [
+                [45.1, -122.1, 8.0, 140, 105.0],
+                [45.101, -122.101, 8.0, 140, 106.0],
+            ],
+        ),
     ]
 
 
@@ -129,8 +139,17 @@ def sample_grids():
     elev_n[50, 50] = 10.0
 
     return (
-        grid_w, grid_h, count_grid, speed_sum, speed_n,
-        hr_sum, hr_n, grad_sum, grad_n, elev_sum, elev_n
+        grid_w,
+        grid_h,
+        count_grid,
+        speed_sum,
+        speed_n,
+        hr_sum,
+        hr_n,
+        grad_sum,
+        grad_n,
+        elev_sum,
+        elev_n,
     )
 
 
@@ -174,6 +193,7 @@ def normalized_grids():
 def colormaps():
     """Create colormaps for testing."""
     from src.colormaps import create_colormaps
+
     return create_colormaps()
 
 
@@ -183,9 +203,7 @@ def pytest_configure(config):
     config.addinivalue_line(
         "markers", "slow: marks tests as slow (deselect with '-m \"not slow\"')"
     )
-    config.addinivalue_line(
-        "markers", "integration: marks tests as integration tests"
-    )
+    config.addinivalue_line("markers", "integration: marks tests as integration tests")
 
 
 def pytest_collection_modifyitems(config, items):

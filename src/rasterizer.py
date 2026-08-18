@@ -5,7 +5,6 @@ Handles coordinate transforms, grid creation, track rasterization, and normaliza
 
 import gc
 import math
-from pathlib import Path
 
 import numpy as np
 from pyproj import Transformer
@@ -66,7 +65,9 @@ def compute_grid_bounds(
     return x_min_wm, x_max_wm, y_min_wm, y_max_wm
 
 
-def create_grids(x_min_wm: float, x_max_wm: float, y_min_wm: float, y_max_wm: float, meters_per_pixel: float):
+def create_grids(
+    x_min_wm: float, x_max_wm: float, y_min_wm: float, y_max_wm: float, meters_per_pixel: float
+):
     """Create empty grids for rasterization."""
     grid_w = int((x_max_wm - x_min_wm) / meters_per_pixel) + 1
     grid_h = int((y_max_wm - y_min_wm) / meters_per_pixel) + 1
@@ -81,8 +82,19 @@ def create_grids(x_min_wm: float, x_max_wm: float, y_min_wm: float, y_max_wm: fl
     elev_sum = np.zeros((grid_h, grid_w), dtype=np.float32)
     elev_n = np.zeros((grid_h, grid_w), dtype=np.float32)
 
-    return (grid_w, grid_h, count_grid, speed_sum, speed_n, hr_sum, hr_n,
-            grad_sum, grad_n, elev_sum, elev_n)
+    return (
+        grid_w,
+        grid_h,
+        count_grid,
+        speed_sum,
+        speed_n,
+        hr_sum,
+        hr_n,
+        grad_sum,
+        grad_n,
+        elev_sum,
+        elev_n,
+    )
 
 
 def paint_segment(x1, y1, x2, y2, speed_val, hr_val, grad_val, elev_val, grids):
@@ -90,35 +102,35 @@ def paint_segment(x1, y1, x2, y2, speed_val, hr_val, grad_val, elev_val, grids):
     dx, dy = x2 - x1, y2 - y1
     n_steps = max(int(max(abs(dx), abs(dy))) + 1, 1)
     h, w = grids[2].shape  # speed_sum shape
-    
+
     # Generate all t values at once
     t = np.linspace(0, 1, n_steps + 1)
-    
+
     # Calculate all coordinates at once
     xi = np.round(x1 + t * dx).astype(int)
     yi = np.round(y1 + t * dy).astype(int)
-    
+
     # Filter valid coordinates (within bounds)
     valid_mask = (xi >= 0) & (xi < w) & (yi >= 0) & (yi < h)
     xi_valid = xi[valid_mask]
     yi_valid = yi[valid_mask]
-    
+
     if len(xi_valid) == 0:
         return
-    
+
     # Use advanced indexing to update grids in bulk
     if speed_val is not None:
         np.add.at(grids[3], (yi_valid, xi_valid), speed_val)  # speed_sum
-        np.add.at(grids[4], (yi_valid, xi_valid), 1)          # speed_n
+        np.add.at(grids[4], (yi_valid, xi_valid), 1)  # speed_n
     if hr_val is not None:
-        np.add.at(grids[5], (yi_valid, xi_valid), hr_val)     # hr_sum
-        np.add.at(grids[6], (yi_valid, xi_valid), 1)          # hr_n
+        np.add.at(grids[5], (yi_valid, xi_valid), hr_val)  # hr_sum
+        np.add.at(grids[6], (yi_valid, xi_valid), 1)  # hr_n
     if grad_val is not None:
-        np.add.at(grids[7], (yi_valid, xi_valid), grad_val)   # grad_sum
-        np.add.at(grids[8], (yi_valid, xi_valid), 1)          # grad_n
+        np.add.at(grids[7], (yi_valid, xi_valid), grad_val)  # grad_sum
+        np.add.at(grids[8], (yi_valid, xi_valid), 1)  # grad_n
     if elev_val is not None:
-        np.add.at(grids[9], (yi_valid, xi_valid), elev_val)   # elev_sum
-        np.add.at(grids[10], (yi_valid, xi_valid), 1)         # elev_n
+        np.add.at(grids[9], (yi_valid, xi_valid), elev_val)  # elev_sum
+        np.add.at(grids[10], (yi_valid, xi_valid), 1)  # elev_n
 
 
 def rasterize_tracks(
@@ -134,22 +146,31 @@ def rasterize_tracks(
     grids: tuple,
 ) -> None:
     """Rasterize all tracks onto the grids."""
-    (grid_w, grid_h, count_grid, speed_sum, speed_n, hr_sum, hr_n,
-     grad_sum, grad_n, elev_sum, elev_n) = grids
+    (
+        grid_w,
+        grid_h,
+        count_grid,
+        speed_sum,
+        speed_n,
+        hr_sum,
+        hr_n,
+        grad_sum,
+        grad_n,
+        elev_sum,
+        elev_n,
+    ) = grids
 
-    for label, pts in tracks:
-        lats_a = np.array([p[0] for p in pts])
-        lons_a = np.array([p[1] for p in pts])
+    for _, track_pts in tracks:
+        lats_a = np.array([p[0] for p in track_pts])
+        lons_a = np.array([p[1] for p in track_pts])
         xs_utm, ys_utm = to_utm.transform(lons_a, lats_a)
         xs_wm, ys_wm = to_wm.transform(lons_a, lats_a)
 
         if clip_m is not None:
-            _mask = (
-                (xs_utm - home_x_utm) ** 2 + (ys_utm - home_y_utm) ** 2
-            ) <= clip_m**2
+            _mask = ((xs_utm - home_x_utm) ** 2 + (ys_utm - home_y_utm) ** 2) <= clip_m**2
             if not _mask.any():
                 continue
-            pts = [pts[i] for i in range(len(pts)) if _mask[i]]
+            track_pts = [track_pts[i] for i in range(len(track_pts)) if _mask[i]]  # noqa: PLW2901
             xs_utm = xs_utm[_mask]
             ys_utm = ys_utm[_mask]
             xs_wm = xs_wm[_mask]
@@ -158,16 +179,16 @@ def rasterize_tracks(
         px = (xs_wm - x_min_wm) / meters_per_pixel
         py = (y_max_wm - ys_wm) / meters_per_pixel
 
-        for i in range(len(pts)):
+        for i in range(len(track_pts)):
             xi = int(round(px[i]))
             yi = int(round(py[i]))
             if 0 <= xi < grid_w and 0 <= yi < grid_h:
                 count_grid[yi, xi] += 1
 
-        for i in range(len(pts) - 1):
-            s0, s1 = pts[i][2], pts[i + 1][2]
-            h0, h1 = pts[i][3], pts[i + 1][3]
-            a0, a1 = pts[i][4], pts[i + 1][4]
+        for i in range(len(track_pts) - 1):
+            s0, s1 = track_pts[i][2], track_pts[i + 1][2]
+            h0, h1 = track_pts[i][3], track_pts[i + 1][3]
+            a0, a1 = track_pts[i][4], track_pts[i + 1][4]
 
             seg_speed = (
                 (s0 + s1) / 2
@@ -199,8 +220,19 @@ def rasterize_tracks(
 
 def compute_normalized_grids(grids: tuple, sigma: float, config) -> dict:
     """Apply Gaussian blur and compute normalized grids for all metrics."""
-    (grid_w, grid_h, count_grid, speed_sum, speed_n, hr_sum, hr_n,
-     grad_sum, grad_n, elev_sum, elev_n) = grids
+    (
+        grid_w,
+        grid_h,
+        count_grid,
+        speed_sum,
+        speed_n,
+        hr_sum,
+        hr_n,
+        grad_sum,
+        grad_n,
+        elev_sum,
+        elev_n,
+    ) = grids
 
     # Count grid
     b_count = gaussian_filter(count_grid, sigma=sigma)
@@ -215,7 +247,9 @@ def compute_normalized_grids(grids: tuple, sigma: float, config) -> dict:
     # Speed (average) grid
     b_speed_sum = gaussian_filter(speed_sum, sigma=sigma)
     b_speed_n = gaussian_filter(speed_n, sigma=sigma)
-    mean_speed = np.divide(b_speed_sum, b_speed_n, out=np.zeros_like(b_speed_sum), where=b_speed_n > 0)
+    mean_speed = np.divide(
+        b_speed_sum, b_speed_n, out=np.zeros_like(b_speed_sum), where=b_speed_n > 0
+    )
     visited_speeds = mean_speed[b_speed_n > 0.01]
     if len(visited_speeds):
         s_lo = (
@@ -273,7 +307,6 @@ def compute_normalized_grids(grids: tuple, sigma: float, config) -> dict:
         g_hi = np.percentile(visited_grads, 100 - config.auto_range_pct)
         grad_norm = np.clip((mean_grad - g_lo) / (g_hi - g_lo), 0, 1)
         grad_norm = np.where(b_grad_n > 0, grad_norm, 0)
-        observed_grads = visited_grads * 100
     else:
         grad_norm = np.zeros_like(mean_grad)
         g_lo = g_hi = 0.0
@@ -308,9 +341,7 @@ def compute_normalized_grids(grids: tuple, sigma: float, config) -> dict:
 
     alpha_speed = presence_alpha(speed_n, sigma)
     alpha_hr = presence_alpha(hr_n, sigma)
-    _presence_grad = (
-        presence_alpha(grad_n, sigma) if n_grad_px else np.zeros_like(grad_norm)
-    )
+    _presence_grad = presence_alpha(grad_n, sigma) if n_grad_px else np.zeros_like(grad_norm)
     alpha_grad = _presence_grad * (0.15 + 0.85 * grad_norm)
     alpha_elev = presence_alpha(elev_n, sigma) if n_elev_px else np.zeros_like(elev_norm)
 

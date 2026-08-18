@@ -1,0 +1,113 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "strava-heatmap"
+version = "0.1.0"
+description = "Strava Activity Heatmap Generator"
+readme = "README.md"
+license = {file = "LICENSE"}
+authors = [{name = "p55d2k"}]
+requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+keywords = ["strava", "heatmap", "gps", "activities", "visualization"]
+dependencies = [
+    "numpy==2.4.4",
+    "pandas==3.0.2",
+    "fitparse==1.2.0",
+    "folium==0.20.0",
+    "pyproj==3.7.2",
+    "scipy==1.17.1",
+    "Pillow==12.2.0",
+    "matplotlib==3.10.9",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=4.1.0",
+    "ruff>=0.5.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/p55d2k/strava-heatmap"
+Repository = "https://github.com/p55d2k/strava-heatmap"
+Issues = "https://github.com/p55d2k/strava-heatmap/issues"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+target-version = "py310"
+line-length = 100
+indent-width = 4
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "W",   # pycodestyle warnings
+    "F",   # pyflakes
+    "I",   # isort
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "SIM", # flake8-simplify
+    "T20", # flake8-print
+    "PL",  # pylint
+]
+ignore = [
+    "E501",  # line too long (handled by formatter)
+    "B008",  # do not perform function calls in argument defaults (intentional for config)
+    "C901",  # too complex (some algorithms are inherently complex)
+    "T201",  # print found (used for logging in main.py)
+    "PLR0913", # too many arguments (some functions need many params)
+    "PLR0915", # too many statements (some functions are long)
+    "PLR2004", # magic value used in comparison (test files, constants)
+    "PLC0415", # import should be at top-level (used in functions for lazy loading)
+    "B905",    # zip() without explicit strict= (Python 3.10 compat)
+    "PLR0917", # too many positional arguments (some functions need many)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S106", "S311"]  # test files
+"main.py" = ["T201", "E402"]  # main entry point; warning filters set before imports
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+
+[tool.ruff.lint.isort]
+known-first-party = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-v --cov=src --cov-report=term-missing"
+filterwarnings = [
+    "ignore::UserWarning:folium",
+    "ignore::FutureWarning:pandas",
+    "ignore::UserWarning:pyproj",
+]
+
+[tool.coverage.run]
+source = ["src"]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+]

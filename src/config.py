@@ -13,7 +13,7 @@ class Config:
         if not config_path.exists():
             raise FileNotFoundError("config.json file not found.")
 
-        with open(config_path, "r") as f:
+        with open(config_path) as f:
             cfg = json.load(f)
 
         self.activities_dir = Path(cfg["ACTIVITIES_DIR"])
@@ -54,6 +54,7 @@ class Config:
 
     def log_summary(self):
         import logging
+
         log = logging.getLogger(__name__)
         log.info(f"Source:  {self.activities_dir}/")
         log.info(f"Types:   {', '.join(self.activity_types)}")

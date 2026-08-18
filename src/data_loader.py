@@ -3,16 +3,14 @@ Pipeline Stage 1: Data Loading & Filtering
 Loads activities CSV, applies filters, and loads GPS tracks.
 """
 
-import json
 import logging
 import pickle
-import sys
 from datetime import date
 from pathlib import Path
 
 import pandas as pd
 
-from src.helpers import haversine_km, get_gps_start, detect_home, load_fit_track_full
+from src.helpers import detect_home, get_gps_start, haversine_km, load_fit_track_full
 
 log = logging.getLogger(__name__)
 
@@ -90,7 +88,9 @@ def determine_home_location(config, runs: pd.DataFrame) -> tuple[float, float]:
     return home_lat, home_lon
 
 
-def filter_by_home_radius(runs: pd.DataFrame, home_lat: float, home_lon: float, radius_km: float) -> pd.DataFrame:
+def filter_by_home_radius(
+    runs: pd.DataFrame, home_lat: float, home_lon: float, radius_km: float
+) -> pd.DataFrame:
     """Filter activities by distance from home."""
     runs["dist_from_home_km"] = runs.apply(
         lambda r: haversine_km(home_lat, home_lon, r["start_lat"], r["start_lon"]), axis=1

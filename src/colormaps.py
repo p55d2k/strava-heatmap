@@ -111,13 +111,31 @@ def generate_layer_uris(normalized: dict, colormaps: dict) -> list[tuple[str, st
     """Generate data URIs for all map layers."""
     layers = [
         ("Frequency (linear)", _count_uri(normalized["count_norm"], colormaps["cmap_count"]), True),
-        ("Frequency (log)", _count_uri(normalized["count_log_norm"], colormaps["cmap_count"]), False),
-        ("Pace (average)", _rgba_uri(normalized["speed_norm"], normalized["alpha_speed"], colormaps["cmap_speed_rgb"]), False),
-        ("Heart rate (average)", _rgba_uri(normalized["hr_norm"], normalized["alpha_hr"], colormaps["cmap_hr_rgb"]), False),
+        (
+            "Frequency (log)",
+            _count_uri(normalized["count_log_norm"], colormaps["cmap_count"]),
+            False,
+        ),
+        (
+            "Pace (average)",
+            _rgba_uri(
+                normalized["speed_norm"], normalized["alpha_speed"], colormaps["cmap_speed_rgb"]
+            ),
+            False,
+        ),
+        (
+            "Heart rate (average)",
+            _rgba_uri(normalized["hr_norm"], normalized["alpha_hr"], colormaps["cmap_hr_rgb"]),
+            False,
+        ),
         ("Gradient (absolute)", _white_uri(normalized["alpha_grad"]), False),
         (
             "Gradient (change)",
-            _rgba_uri((normalized["elev_norm"] + 1) / 2, normalized["alpha_elev"], colormaps["cmap_elev_rgb"]),
+            _rgba_uri(
+                (normalized["elev_norm"] + 1) / 2,
+                normalized["alpha_elev"],
+                colormaps["cmap_elev_rgb"],
+            ),
             False,
         ),
     ]

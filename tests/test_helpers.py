@@ -2,21 +2,19 @@
 Unit tests for src/helpers.py - math, parsing, and normalization functions.
 """
 
-import math
 import gzip
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
-import numpy as np
 
 from src.helpers import (
-    haversine_km,
-    parse_fit_file,
-    get_gps_start,
     detect_home,
+    get_gps_start,
+    haversine_km,
     load_fit_track_full,
+    parse_fit_file,
 )
 
 
@@ -85,6 +83,7 @@ class TestParseFitFile:
     @patch("src.helpers.fitparse.FitFile")
     def test_parses_record_messages(self, mock_fitfile):
         """Should parse record messages and convert coordinates."""
+
         # Create mock field objects with name and value attributes
         def make_field(name, value):
             field = MagicMock()
@@ -96,13 +95,15 @@ class TestParseFitFile:
         # 1073741824 semicircles = 90 degrees (2^30 / 2^31 * 180)
         # -2147483648 semicircles = -180 degrees (-2^31 / 2^31 * 180)
         mock_msg = MagicMock()
-        mock_msg.__iter__ = lambda self: iter([
-            make_field("position_lat", 1073741824),   # 90 deg in semicircles
-            make_field("position_long", -2147483648), # -180 deg in semicircles
-            make_field("enhanced_speed", 5.0),
-            make_field("heart_rate", 150),
-            make_field("enhanced_altitude", 100.0),
-        ])
+        mock_msg.__iter__ = lambda self: iter(
+            [
+                make_field("position_lat", 1073741824),  # 90 deg in semicircles
+                make_field("position_long", -2147483648),  # -180 deg in semicircles
+                make_field("enhanced_speed", 5.0),
+                make_field("heart_rate", 150),
+                make_field("enhanced_altitude", 100.0),
+            ]
+        )
         mock_fitfile.return_value.get_messages.return_value = [mock_msg]
 
         with tempfile.NamedTemporaryFile(suffix=".fit.gz", delete=False) as f:
@@ -124,6 +125,7 @@ class TestParseFitFile:
     @patch("src.helpers.fitparse.FitFile")
     def test_skips_records_without_gps(self, mock_fitfile):
         """Should skip records without position data."""
+
         def make_field(name, value):
             field = MagicMock()
             field.name = name
@@ -132,19 +134,23 @@ class TestParseFitFile:
 
         # First message: no position_lat
         msg1 = MagicMock()
-        msg1.__iter__ = lambda self: iter([
-            make_field("position_lat", None),
-            make_field("position_long", -2147483648),
-            make_field("enhanced_speed", 5.0),
-        ])
+        msg1.__iter__ = lambda self: iter(
+            [
+                make_field("position_lat", None),
+                make_field("position_long", -2147483648),
+                make_field("enhanced_speed", 5.0),
+            ]
+        )
 
         # Second message: has valid GPS
         msg2 = MagicMock()
-        msg2.__iter__ = lambda self: iter([
-            make_field("position_lat", 1073741824),
-            make_field("position_long", -2147483648),
-            make_field("enhanced_speed", 5.0),
-        ])
+        msg2.__iter__ = lambda self: iter(
+            [
+                make_field("position_lat", 1073741824),
+                make_field("position_long", -2147483648),
+                make_field("enhanced_speed", 5.0),
+            ]
+        )
 
         mock_fitfile.return_value.get_messages.return_value = [msg1, msg2]
 
@@ -161,6 +167,7 @@ class TestParseFitFile:
     @patch("src.helpers.fitparse.FitFile")
     def test_falls_back_to_speed_if_enhanced_missing(self, mock_fitfile):
         """Should use 'speed' field if 'enhanced_speed' is missing."""
+
         def make_field(name, value):
             field = MagicMock()
             field.name = name
@@ -168,15 +175,17 @@ class TestParseFitFile:
             return field
 
         mock_msg = MagicMock()
-        mock_msg.__iter__ = lambda self: iter([
-            make_field("position_lat", 1073741824),
-            make_field("position_long", -2147483648),
-            make_field("enhanced_speed", None),
-            make_field("speed", 4.5),
-            make_field("heart_rate", None),
-            make_field("enhanced_altitude", None),
-            make_field("altitude", 50.0),
-        ])
+        mock_msg.__iter__ = lambda self: iter(
+            [
+                make_field("position_lat", 1073741824),
+                make_field("position_long", -2147483648),
+                make_field("enhanced_speed", None),
+                make_field("speed", 4.5),
+                make_field("heart_rate", None),
+                make_field("enhanced_altitude", None),
+                make_field("altitude", 50.0),
+            ]
+        )
         mock_fitfile.return_value.get_messages.return_value = [mock_msg]
 
         with tempfile.NamedTemporaryFile(suffix=".fit.gz", delete=False) as f:
@@ -228,6 +237,7 @@ class TestDetectHome:
     def test_raises_on_empty_dataframe(self):
         """Should raise ValueError for empty DataFrame."""
         import pandas as pd
+
         df = pd.DataFrame(columns=["start_lat", "start_lon"])
 
         with pytest.raises(ValueError, match="Cannot detect home: no GPS data available"):
@@ -236,6 +246,7 @@ class TestDetectHome:
     def test_detects_most_common_start_cell(self):
         """Should detect home as the cell with most starts."""
         import pandas as pd
+
         # Create data with clear cluster at (45.0, -122.0)
         lats = [45.0] * 10 + [45.5] * 3 + [46.0] * 2
         lons = [-122.0] * 10 + [-122.5] * 3 + [-123.0] * 2
@@ -250,6 +261,7 @@ class TestDetectHome:
     def test_averages_within_best_cell(self):
         """Should average coordinates within the best cell."""
         import pandas as pd
+
         # Points in same ~1km cell (round to 2 decimal places = same cell)
         lats = [45.001, 45.002, 45.003, 45.004]
         lons = [-122.001, -122.002, -122.003, -122.004]

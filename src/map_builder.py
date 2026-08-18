@@ -8,7 +8,6 @@ from pathlib import Path
 
 import folium
 
-
 LAYER_CONTROL_CSS = """
 <style>
   .leaflet-control-layers {
@@ -94,7 +93,7 @@ def cmap_to_css(cmap, n=14) -> str:
     for i in range(n):
         t = i / (n - 1)
         r, g, b, a = cmap(t)
-        stops.append(f"rgba({int(r*255)},{int(g*255)},{int(b*255)},{a:.2f})")
+        stops.append(f"rgba({int(r * 255)},{int(g * 255)},{int(b * 255)},{a:.2f})")
     return f"linear-gradient(to right, {', '.join(stops)})"
 
 
@@ -104,7 +103,9 @@ def pace_str(ms: float) -> str:
     return f"{int(secs // 60)}:{int(secs % 60):02d}/km"
 
 
-def legend_row(row_id: str, title: str, grad_css: str, label_lo: str, label_hi: str, visible: bool = False) -> str:
+def legend_row(
+    row_id: str, title: str, grad_css: str, label_lo: str, label_hi: str, visible: bool = False
+) -> str:
     """Generate HTML for a legend row."""
     display = "block" if visible else "none"
     return f"""
@@ -135,15 +136,61 @@ def build_legend_html(normalized: dict, colormaps: dict, max_passes: int) -> str
         border:1px solid rgba(255,255,255,0.10);
         box-shadow:0 2px 8px rgba(0,0,0,0.6);
     ">
-      {legend_row("legend-frequency",      "Frequency (linear)",   freq_css, "1 pass", f"{max_passes} passes", visible=True)}
-      {legend_row("legend-frequency-log",  "Frequency (log)",      freq_css, "1 pass", f"{max_passes} passes (log scale)")}
-      {legend_row("legend-pace-avg",       "Pace (average)",       pace_css, pace_str(normalized["s_lo"]), pace_str(normalized["s_hi"]))}
-      {legend_row("legend-heart-rate-avg", "Heart rate (average)", hr_css,   f"{normalized['hr_lo']:.0f} bpm", f"{normalized['hr_hi']:.0f} bpm")}
-      {legend_row("legend-gradient",       "Gradient (absolute)",
-          "linear-gradient(to right, rgba(0,0,0,0), rgba(255,255,255,1))",
-          f"{normalized['g_lo']*100:.1f}%", f"{normalized['g_hi']*100:.1f}% grade")}
-      {legend_row("legend-elev-change",    "Gradient (change)",
-          cmap_to_css(colormaps["cmap_elev_rgb"]), "descending", "ascending")}
+      {
+        legend_row(
+            "legend-frequency",
+            "Frequency (linear)",
+            freq_css,
+            "1 pass",
+            f"{max_passes} passes",
+            visible=True,
+        )
+    }
+      {
+        legend_row(
+            "legend-frequency-log",
+            "Frequency (log)",
+            freq_css,
+            "1 pass",
+            f"{max_passes} passes (log scale)",
+        )
+    }
+      {
+        legend_row(
+            "legend-pace-avg",
+            "Pace (average)",
+            pace_css,
+            pace_str(normalized["s_lo"]),
+            pace_str(normalized["s_hi"]),
+        )
+    }
+      {
+        legend_row(
+            "legend-heart-rate-avg",
+            "Heart rate (average)",
+            hr_css,
+            f"{normalized['hr_lo']:.0f} bpm",
+            f"{normalized['hr_hi']:.0f} bpm",
+        )
+    }
+      {
+        legend_row(
+            "legend-gradient",
+            "Gradient (absolute)",
+            "linear-gradient(to right, rgba(0,0,0,0), rgba(255,255,255,1))",
+            f"{normalized['g_lo'] * 100:.1f}%",
+            f"{normalized['g_hi'] * 100:.1f}% grade",
+        )
+    }
+      {
+        legend_row(
+            "legend-elev-change",
+            "Gradient (change)",
+            cmap_to_css(colormaps["cmap_elev_rgb"]),
+            "descending",
+            "ascending",
+        )
+    }
     </div>
     """
     return legend_html
@@ -197,6 +244,7 @@ def build_map(
 
     m.save(output_path)
     import logging
+
     log = logging.getLogger(__name__)
     log.info(f"Saved: {output_path}")
     log.info(f"Open:  file://{os.path.abspath(output_path)}")

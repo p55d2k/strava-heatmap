@@ -5,7 +5,6 @@ Unit tests for src/config.py - configuration management.
 import json
 import tempfile
 from pathlib import Path
-from unittest.mock import patch, MagicMock
 
 import pytest
 
@@ -46,6 +45,7 @@ class TestConfig:
     def teardown_method(self):
         """Clean up temp files."""
         import shutil
+
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_loads_all_config_values(self):

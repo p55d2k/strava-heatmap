@@ -5,17 +5,14 @@ Unit tests for src/map_builder.py - map building and HTML output functions.
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import numpy as np
-import pytest
-
 from src.map_builder import (
-    cmap_to_css,
-    pace_str,
-    legend_row,
+    EXCLUSIVE_JS,
+    LAYER_CONTROL_CSS,
     build_legend_html,
     build_map,
-    LAYER_CONTROL_CSS,
-    EXCLUSIVE_JS,
+    cmap_to_css,
+    legend_row,
+    pace_str,
 )
 
 
@@ -26,7 +23,7 @@ class TestCmapToCss:
         """Should convert colormap to CSS linear-gradient string."""
         # Create a simple mock colormap
         cmap = MagicMock()
-        cmap.side_effect = lambda t: (t, 1-t, 0.5, 1.0)  # Red to blue gradient
+        cmap.side_effect = lambda t: (t, 1 - t, 0.5, 1.0)  # Red to blue gradient
 
         css = cmap_to_css(cmap, n=5)
 
@@ -85,10 +82,12 @@ class TestLegendRow:
     def test_generates_html_with_correct_structure(self):
         """Should generate HTML with correct structure."""
         html = legend_row(
-            "test-id", "Test Title",
+            "test-id",
+            "Test Title",
             "linear-gradient(to right, red, blue)",
-            "Low", "High",
-            visible=True
+            "Low",
+            "High",
+            visible=True,
         )
 
         assert 'id="test-id"' in html
@@ -96,17 +95,17 @@ class TestLegendRow:
         assert "linear-gradient(to right, red, blue)" in html
         assert "Low" in html
         assert "High" in html
-        assert 'display:block' in html
+        assert "display:block" in html
 
     def test_hidden_when_not_visible(self):
         """Should have display:none when not visible."""
         html = legend_row("test-id", "Test", "gradient", "Lo", "Hi", visible=False)
-        assert 'display:none' in html
+        assert "display:none" in html
 
     def test_visible_when_true(self):
         """Should have display:block when visible."""
         html = legend_row("test-id", "Test", "gradient", "Lo", "Hi", visible=True)
-        assert 'display:block' in html
+        assert "display:block" in html
 
 
 class TestBuildLegendHtml:
@@ -131,7 +130,7 @@ class TestBuildLegendHtml:
         }
         # Mock cmap_to_css to return predictable values
         for cmap in self.colormaps.values():
-            cmap.side_effect = lambda t: (t, 1-t, 0.5, 1.0)
+            cmap.side_effect = lambda t: (t, 1 - t, 0.5, 1.0)
 
     def test_generates_complete_legend_html(self):
         """Should generate complete legend HTML with all sections."""
@@ -168,11 +167,11 @@ class TestBuildLegendHtml:
 
         # First row (frequency linear) should be visible
         assert 'id="legend-frequency"' in html
-        assert 'display:block' in html
+        assert "display:block" in html
 
         # Other rows should be hidden
         assert 'id="legend-frequency-log"' in html
-        assert 'display:none' in html
+        assert "display:none" in html
 
 
 class TestBuildMap:
@@ -201,8 +200,13 @@ class TestBuildMap:
     @patch("src.map_builder.folium.raster_layers.ImageOverlay")
     @patch("src.map_builder.folium.LayerControl")
     def test_creates_map_with_correct_structure(
-        self, mock_layer_control, mock_image_overlay, mock_polyline,
-        mock_feature_group, mock_tile_layer, mock_map
+        self,
+        mock_layer_control,
+        mock_image_overlay,
+        mock_polyline,
+        mock_feature_group,
+        mock_tile_layer,
+        mock_map,
     ):
         """Should create map with all expected components."""
         # Set up mocks
@@ -228,8 +232,13 @@ class TestBuildMap:
         mock_layer_control.return_value = mock_layer_control_instance
 
         build_map(
-            self.tracks, self.layers, self.bounds, self.centre,
-            self.legend_html, self.output_path, self.map_opacity
+            self.tracks,
+            self.layers,
+            self.bounds,
+            self.centre,
+            self.legend_html,
+            self.output_path,
+            self.map_opacity,
         )
 
         # Verify map creation
@@ -277,8 +286,13 @@ class TestBuildMap:
     @patch("src.map_builder.folium.raster_layers.ImageOverlay")
     @patch("src.map_builder.folium.LayerControl")
     def test_layer_visibility_matches_input(
-        self, mock_layer_control, mock_image_overlay, mock_polyline,
-        mock_feature_group, mock_tile_layer, mock_map
+        self,
+        mock_layer_control,
+        mock_image_overlay,
+        mock_polyline,
+        mock_feature_group,
+        mock_tile_layer,
+        mock_map,
     ):
         """Layer visibility should match input."""
         mock_map_instance = MagicMock()
@@ -290,8 +304,13 @@ class TestBuildMap:
         mock_layer_control.return_value = MagicMock()
 
         build_map(
-            self.tracks, self.layers, self.bounds, self.centre,
-            self.legend_html, self.output_path, self.map_opacity
+            self.tracks,
+            self.layers,
+            self.bounds,
+            self.centre,
+            self.legend_html,
+            self.output_path,
+            self.map_opacity,
         )
 
         # Check FeatureGroup calls for layers - should have show=visible
@@ -307,8 +326,15 @@ class TestBuildMap:
     @patch("src.map_builder.folium.PolyLine")
     @patch("src.map_builder.folium.raster_layers.ImageOverlay")
     @patch("src.map_builder.folium.LayerControl")
-    def test_image_overlay_opacity(self, mock_layer_control, mock_image_overlay, mock_polyline,
-                                    mock_feature_group, mock_tile_layer, mock_map):
+    def test_image_overlay_opacity(
+        self,
+        mock_layer_control,
+        mock_image_overlay,
+        mock_polyline,
+        mock_feature_group,
+        mock_tile_layer,
+        mock_map,
+    ):
         """ImageOverlay should use provided opacity."""
         mock_map_instance = MagicMock()
         mock_map.return_value = mock_map_instance
@@ -319,8 +345,13 @@ class TestBuildMap:
         mock_layer_control.return_value = MagicMock()
 
         build_map(
-            self.tracks, self.layers, self.bounds, self.centre,
-            self.legend_html, self.output_path, self.map_opacity
+            self.tracks,
+            self.layers,
+            self.bounds,
+            self.centre,
+            self.legend_html,
+            self.output_path,
+            self.map_opacity,
         )
 
         # Check ImageOverlay opacity

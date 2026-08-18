@@ -17,28 +17,28 @@ logging.basicConfig(
 )
 log = logging.getLogger(__name__)
 
-# Suppress non-critical third-party warnings
-warnings.filterwarnings("ignore", category=UserWarning, module="folium")
-warnings.filterwarnings("ignore", category=FutureWarning, module="pandas")
-warnings.filterwarnings("ignore", category=UserWarning, module="pyproj")
+# Suppress specific non-critical third-party warnings (narrow filters)
+warnings.filterwarnings("ignore", message=".*Folium.*", category=UserWarning, module="folium")
+warnings.filterwarnings("ignore", message=".*pandas.*", category=FutureWarning, module="pandas")
+warnings.filterwarnings("ignore", message=".*pyproj.*", category=UserWarning, module="pyproj")
 
 # Import pipeline modules
+from src.colormaps import create_colormaps, generate_layer_uris
 from src.config import Config
 from src.data_loader import (
-    load_and_filter_activities,
     determine_home_location,
     filter_by_home_radius,
+    load_and_filter_activities,
     load_tracks,
 )
+from src.map_builder import build_legend_html, build_map
 from src.rasterizer import (
-    setup_transformers,
     compute_grid_bounds,
+    compute_normalized_grids,
     create_grids,
     rasterize_tracks,
-    compute_normalized_grids,
+    setup_transformers,
 )
-from src.colormaps import create_colormaps, generate_layer_uris
-from src.map_builder import build_legend_html, build_map
 
 
 def main():
@@ -65,8 +65,16 @@ def main():
     grids = create_grids(x_min_wm, x_max_wm, y_min_wm, y_max_wm, config.meters_per_pixel)
 
     rasterize_tracks(
-        tracks, to_wm, to_utm, home_x_utm, home_y_utm, clip_m,
-        x_min_wm, y_max_wm, config.meters_per_pixel, grids
+        tracks,
+        to_wm,
+        to_utm,
+        home_x_utm,
+        home_y_utm,
+        clip_m,
+        x_min_wm,
+        y_max_wm,
+        config.meters_per_pixel,
+        grids,
     )
 
     normalized = compute_normalized_grids(grids, config.blur_sigma_px, config)

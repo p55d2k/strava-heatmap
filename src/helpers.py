@@ -2,14 +2,14 @@
 # HELPER FUNCTIONS
 # ==============================================================================
 
+import gzip
 import logging
 import math
-import gzip
 from pathlib import Path
 
 import fitparse
-from fitparse.utils import FitParseError
 import pandas as pd
+from fitparse.utils import FitParseError
 
 log = logging.getLogger(__name__)
 
@@ -21,9 +21,7 @@ def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
     dlon = math.radians(lon2 - lon1)
     a = (
         math.sin(dlat / 2.0) ** 2
-        + math.cos(math.radians(lat1))
-        * math.cos(math.radians(lat2))
-        * math.sin(dlon / 2.0) ** 2
+        + math.cos(math.radians(lat1)) * math.cos(math.radians(lat2)) * math.sin(dlon / 2.0) ** 2
     )
     return R * 2.0 * math.asin(math.sqrt(a))
 
