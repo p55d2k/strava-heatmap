@@ -44,7 +44,9 @@ LAYER_CONTROL_CSS = """
 
 
 # Folium MacroElement that injects JS for exclusive layer handling and legend switching.
-# This replaces fragile window-scanning with direct access to the map and layer control.
+# This uses Folium's generated global `layer_control_<id>_layers.overlays` map (which
+# Folium always exposes) to look up overlays by name, so it does not depend on any
+# internal/non-existent Leaflet Map property such as `map._controlsById`.
 class ExclusiveLayerControl(MacroElement):
     """Injects JavaScript to make overlay layers mutually exclusive and switch legends."""
 
@@ -70,57 +72,40 @@ class ExclusiveLayerControl(MacroElement):
                 if (el) el.style.display = (name === activeName) ? "block" : "none";
             });
         }
-        // Directly access the map created by Folium.
         var map = {{this._parent.get_name()}};
-        // The LayerControl (L.Control.Layers) is added to the map.
-        // We can access its internal _layers object which maps layer names to {layer: ..., name: ..., overlay: ...}
-        // Wait for the LayerControl to be added, then set up exclusive behavior.
-        function setupExclusiveLayers() {
-            // Find the LayerControl in map's controls
-            var layerControl = null;
-            // Controls are stored in map._controlsById (Leaflet 1.x) or map._controlContainer
-            // Iterate all controls to find L.Control.Layers
-            for (var key in map._controlsById) {
-                var ctrl = map._controlsById[key];
-                if (ctrl instanceof L.Control.Layers) {
-                    layerControl = ctrl;
-                    break;
-                }
+        // Folium exposes the overlay layers it passed to L.control.layers under a
+        // global named `<layer_control_var>_layers`. Walk the global scope to find it.
+        function findOverlays() {
+            var overlays = null;
+            for (var k in window) {
+                try {
+                    var v = window[k];
+                    if (v && v.overlays && v.base_layers && !overlays) overlays = v.overlays;
+                } catch (e) {}
             }
-            if (!layerControl) {
-                // Retry shortly if not ready
-                setTimeout(setupExclusiveLayers, 50);
-                return;
-            }
-            // Listen for overlayadd on the map
+            return overlays;
+        }
+        function setup() {
+            var overlays = findOverlays();
+            if (!map || !overlays) { setTimeout(setup, 100); return; }
             map.on('overlayadd', function(e) {
-                var layerName = e.layer ? (e.layer.options && e.layer.options.name) : e.name;
-                // Fallback: if e.name is not available, try to find from layerControl._layers
-                if (!layerName && layerControl._layers) {
-                    for (var key in layerControl._layers) {
-                        if (layerControl._layers[key].layer === e.layer) {
-                            layerName = layerControl._layers[key].name;
-                            break;
-                        }
-                    }
-                }
+                // For overlay layers the event carries the layer name in e.name.
+                var layerName = e.name || (e.layer && e.layer.options && e.layer.options.name);
                 if (!layerName || !exclusiveNames.includes(layerName)) return;
-                // Remove other exclusive layers using layerControl's _layers
                 exclusiveNames.forEach(function(name) {
-                    if (name !== layerName) {
-                        for (var key in layerControl._layers) {
-                            var entry = layerControl._layers[key];
-                            if (entry.overlay && entry.name === name && map.hasLayer(entry.layer)) {
-                                map.removeLayer(entry.layer);
-                            }
-                        }
+                    if (name !== layerName && overlays[name] && map.hasLayer(overlays[name])) {
+                        map.removeLayer(overlays[name]);
                     }
                 });
                 showLegend(layerName);
             });
         }
-        // Run setup after a brief delay to ensure LayerControl is initialized
-        setTimeout(setupExclusiveLayers, 0);
+        // Run setup after the DOM is ready and Folium has declared its layer globals.
+        if (document.readyState === "loading") {
+            document.addEventListener('DOMContentLoaded', setup);
+        } else {
+            setTimeout(setup, 0);
+        }
     })();
     {% endmacro %}
     """)
