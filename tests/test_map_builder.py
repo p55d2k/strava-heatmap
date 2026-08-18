@@ -374,4 +374,4 @@ class TestConstants:
         assert ExclusiveLayerControl is not None
         instance = ExclusiveLayerControl()
         assert instance is not None
-        assert instance._name == 'ExclusiveLayerControl'
+        assert instance._name == "ExclusiveLayerControl"

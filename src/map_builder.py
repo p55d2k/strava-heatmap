@@ -42,10 +42,12 @@ LAYER_CONTROL_CSS = """
 </style>
 """
 
+
 # Folium MacroElement that injects JS for exclusive layer handling and legend switching.
 # This replaces fragile window-scanning with direct access to the map and layer control.
 class ExclusiveLayerControl(MacroElement):
     """Injects JavaScript to make overlay layers mutually exclusive and switch legends."""
+
     _template = Template("""
     {% macro script(this, kwargs) %}
     (function() {
@@ -125,7 +127,7 @@ class ExclusiveLayerControl(MacroElement):
 
     def __init__(self):
         super().__init__()
-        self._name = 'ExclusiveLayerControl'
+        self._name = "ExclusiveLayerControl"
 
 
 def cmap_to_css(cmap, n=14) -> str:
