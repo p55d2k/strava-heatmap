@@ -193,12 +193,12 @@ class TestBuildMap:
         self.output_path = Path("/tmp/test_map.html")
         self.map_opacity = 0.7
 
-    @patch("src.map_builder.folium.Map")
-    @patch("src.map_builder.folium.TileLayer")
-    @patch("src.map_builder.folium.FeatureGroup")
-    @patch("src.map_builder.folium.PolyLine")
-    @patch("src.map_builder.folium.raster_layers.ImageOverlay")
-    @patch("src.map_builder.folium.LayerControl")
+    @patch("src.map_builder.map_builder.folium.Map")
+    @patch("src.map_builder.map_builder.folium.TileLayer")
+    @patch("src.map_builder.map_builder.folium.FeatureGroup")
+    @patch("src.map_builder.map_builder.folium.PolyLine")
+    @patch("src.map_builder.map_builder.folium.raster_layers.ImageOverlay")
+    @patch("src.map_builder.map_builder.folium.LayerControl")
     def test_creates_map_with_correct_structure(
         self,
         mock_layer_control,
@@ -280,12 +280,12 @@ class TestBuildMap:
         # Verify save
         mock_map_instance.save.assert_called_once_with(self.output_path)
 
-    @patch("src.map_builder.folium.Map")
-    @patch("src.map_builder.folium.TileLayer")
-    @patch("src.map_builder.folium.FeatureGroup")
-    @patch("src.map_builder.folium.PolyLine")
-    @patch("src.map_builder.folium.raster_layers.ImageOverlay")
-    @patch("src.map_builder.folium.LayerControl")
+    @patch("src.map_builder.map_builder.folium.Map")
+    @patch("src.map_builder.map_builder.folium.TileLayer")
+    @patch("src.map_builder.map_builder.folium.FeatureGroup")
+    @patch("src.map_builder.map_builder.folium.PolyLine")
+    @patch("src.map_builder.map_builder.folium.raster_layers.ImageOverlay")
+    @patch("src.map_builder.map_builder.folium.LayerControl")
     def test_layer_visibility_matches_input(
         self,
         mock_layer_control,
@@ -321,12 +321,12 @@ class TestBuildMap:
             expected_visible = self.layers[i][2]
             assert call[1]["show"] == expected_visible
 
-    @patch("src.map_builder.folium.Map")
-    @patch("src.map_builder.folium.TileLayer")
-    @patch("src.map_builder.folium.FeatureGroup")
-    @patch("src.map_builder.folium.PolyLine")
-    @patch("src.map_builder.folium.raster_layers.ImageOverlay")
-    @patch("src.map_builder.folium.LayerControl")
+    @patch("src.map_builder.map_builder.folium.Map")
+    @patch("src.map_builder.map_builder.folium.TileLayer")
+    @patch("src.map_builder.map_builder.folium.FeatureGroup")
+    @patch("src.map_builder.map_builder.folium.PolyLine")
+    @patch("src.map_builder.map_builder.folium.raster_layers.ImageOverlay")
+    @patch("src.map_builder.map_builder.folium.LayerControl")
     def test_image_overlay_opacity(
         self,
         mock_layer_control,
