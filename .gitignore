@@ -223,6 +223,7 @@ cache/
 outputs/
 strava_export/
 strava_export_2/
+strava_export_3/
 
 config.json
 

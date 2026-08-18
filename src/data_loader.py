@@ -5,6 +5,7 @@ Loads activities CSV, applies filters, and loads GPS tracks.
 
 import json
 import logging
+import pickle
 import sys
 from datetime import date
 from pathlib import Path
@@ -14,6 +15,26 @@ import pandas as pd
 from src.helpers import haversine_km, get_gps_start, detect_home, load_fit_track_full
 
 log = logging.getLogger(__name__)
+
+
+def _load_cache(config) -> dict:
+    """Load unified cache (gps + tracks) from pickle file."""
+    if config.cache_file.exists():
+        try:
+            with open(config.cache_file, "rb") as f:
+                return pickle.load(f)
+        except Exception as e:
+            log.warning(f"Failed to load cache: {e}")
+    return {"gps": {}, "tracks": {}}
+
+
+def _save_cache(config, cache: dict) -> None:
+    """Save unified cache to pickle file."""
+    try:
+        with open(config.cache_file, "wb") as f:
+            pickle.dump(cache, f)
+    except Exception as e:
+        log.warning(f"Failed to save cache: {e}")
 
 
 def load_and_filter_activities(config) -> pd.DataFrame:
@@ -28,9 +49,9 @@ def load_and_filter_activities(config) -> pd.DataFrame:
     runs = runs[runs["Activity Date"].between(date_from, date_to)].copy()
     log.info(f"After date filter ({date_from.date()} – {date_to.date()}): {len(runs)}")
 
-    # Parse GPS start points (cached per export)
-    gps_cache_path = Path(config.activities_dir) / "_gps_cache.json"
-    gps_cache = json.loads(gps_cache_path.read_text()) if gps_cache_path.exists() else {}
+    # Load unified cache
+    cache = _load_cache(config)
+    gps_cache = cache.get("gps", {})
 
     rows = []
     for _, row in runs.iterrows():
@@ -42,7 +63,9 @@ def load_and_filter_activities(config) -> pd.DataFrame:
             gps_cache[fn] = [lat, lon, spread]  # cache even if no GPS (None values)
         rows.append({**row, "start_lat": lat, "start_lon": lon, "gps_spread_m": spread})
 
-    gps_cache_path.write_text(json.dumps(gps_cache))
+    # Save updated GPS cache
+    cache["gps"] = gps_cache
+    _save_cache(config, cache)
 
     runs = pd.DataFrame(rows)
     runs = runs[
@@ -79,7 +102,8 @@ def filter_by_home_radius(runs: pd.DataFrame, home_lat: float, home_lon: float, 
 
 def load_tracks(config, runs: pd.DataFrame) -> list[tuple[str, list]]:
     """Load full GPS tracks from .fit.gz files with caching."""
-    track_cache = json.loads(config.track_cache.read_text()) if config.track_cache.exists() else {}
+    cache = _load_cache(config)
+    track_cache = cache.get("tracks", {})
 
     # Purge cache missing altitude schema
     stale = [k for k, v in track_cache.items() if v and len(v[0]) < 5]
@@ -103,7 +127,9 @@ def load_tracks(config, runs: pd.DataFrame) -> list[tuple[str, list]]:
         if pts:
             tracks.append((lbl, pts))
 
-    config.track_cache.write_text(json.dumps(track_cache))
+    # Save updated track cache
+    cache["tracks"] = track_cache
+    _save_cache(config, cache)
 
     if not tracks:
         log.warning("No valid tracks loaded. Check your configuration and date ranges.")

@@ -108,23 +108,23 @@ class TestConfig:
 
         assert config.activities_csv == Path(self.temp_dir) / "my_activities.csv"
 
-    def test_sets_default_track_cache(self):
-        """Should set default track cache path."""
+    def test_sets_default_cache_file(self):
+        """Should set default cache file path."""
         config = Config(self.config_path)
 
-        expected = (Path(self.temp_dir) / "cache" / "track_cache.json").resolve()
-        assert config.track_cache == expected
+        expected = (Path(self.temp_dir) / "cache" / "cache.pkl").resolve()
+        assert config.cache_file == expected
 
-    def test_uses_custom_track_cache(self):
-        """Should use custom track cache when specified."""
+    def test_uses_custom_cache_file(self):
+        """Should use custom cache file when specified."""
         custom_config = self.valid_config.copy()
-        custom_config["TRACK_CACHE"] = "my_track_cache.json"
+        custom_config["CACHE_FILE"] = "my_cache.pkl"
         self.config_path.write_text(json.dumps(custom_config))
 
         config = Config(self.config_path)
 
-        expected = (Path(self.temp_dir) / "cache" / "my_track_cache.json").resolve()
-        assert config.track_cache == expected
+        expected = (Path(self.temp_dir) / "cache" / "my_cache.pkl").resolve()
+        assert config.cache_file == expected
 
     def test_sets_default_output_html(self):
         """Should set default output HTML path."""

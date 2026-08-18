@@ -3,6 +3,7 @@ Unit tests for src/data_loader.py - data loading and filtering functions.
 """
 
 import json
+import pickle
 import tempfile
 from pathlib import Path
 from datetime import date
@@ -28,7 +29,9 @@ class TestLoadAndFilterActivities:
         self.temp_dir = tempfile.mkdtemp()
         self.activities_dir = Path(self.temp_dir)
         self.activities_csv = self.activities_dir / "activities.csv"
-        self.gps_cache_path = self.activities_dir / "_gps_cache.json"
+        self.cache_dir = Path(self.temp_dir) / "cache"
+        self.cache_dir.mkdir(exist_ok=True)
+        self.cache_path = self.cache_dir / "cache.pkl"
 
         # Create sample activities CSV
         self.sample_csv = """Filename,Activity Type,Activity Date,Activity Name
@@ -47,6 +50,7 @@ class TestLoadAndFilterActivities:
         self.config.date_to = "2024-01-03"
         self.config.gps_spread_min_m = 100
         self.config.activities_csv = self.activities_csv
+        self.config.cache_file = self.cache_path
 
     def teardown_method(self):
         """Clean up temp files."""
@@ -87,10 +91,14 @@ class TestLoadAndFilterActivities:
         """Should use cached GPS data when available."""
         # Pre-populate cache
         cache_data = {
-            "2024-01-01-12345.fit.gz": [45.0, -122.0, 500.0],
-            "2024-01-02-12346.fit.gz": [45.0, -122.0, 500.0],
+            "gps": {
+                "2024-01-01-12345.fit.gz": [45.0, -122.0, 500.0],
+                "2024-01-02-12346.fit.gz": [45.0, -122.0, 500.0],
+            },
+            "tracks": {},
         }
-        self.gps_cache_path.write_text(json.dumps(cache_data))
+        with open(self.cache_path, "wb") as f:
+            pickle.dump(cache_data, f)
 
         mock_get_gps.return_value = (45.0, -122.0, 500.0)
 
@@ -107,11 +115,12 @@ class TestLoadAndFilterActivities:
         load_and_filter_activities(self.config)
 
         # Cache should be updated
-        assert self.gps_cache_path.exists()
-        cache = json.loads(self.gps_cache_path.read_text())
-        assert "2024-01-01-12345.fit.gz" in cache
-        assert "2024-01-02-12346.fit.gz" in cache
-        assert "2024-01-03-12347.fit.gz" in cache
+        assert self.cache_path.exists()
+        with open(self.cache_path, "rb") as f:
+            cache = pickle.load(f)
+        assert "2024-01-01-12345.fit.gz" in cache["gps"]
+        assert "2024-01-02-12346.fit.gz" in cache["gps"]
+        assert "2024-01-03-12347.fit.gz" in cache["gps"]
 
 
 class TestDetermineHomeLocation:
@@ -193,11 +202,13 @@ class TestLoadTracks:
         """Set up test fixtures."""
         self.temp_dir = tempfile.mkdtemp()
         self.activities_dir = Path(self.temp_dir)
-        self.track_cache_path = self.activities_dir / "track_cache.json"
+        self.cache_dir = Path(self.temp_dir) / "cache"
+        self.cache_dir.mkdir(exist_ok=True)
+        self.cache_path = self.cache_dir / "cache.pkl"
 
         self.config = MagicMock()
         self.config.activities_dir = self.activities_dir
-        self.config.track_cache = self.track_cache_path
+        self.config.cache_file = self.cache_path
 
     def teardown_method(self):
         """Clean up temp files."""
@@ -231,11 +242,15 @@ class TestLoadTracks:
         """Should use cached tracks when available."""
         # Pre-populate cache
         cache_data = {
-            "2024-01-01-12345.fit.gz": [
-                [45.0, -122.0, 5.0, 150, 100.0],
-            ],
+            "gps": {},
+            "tracks": {
+                "2024-01-01-12345.fit.gz": [
+                    [45.0, -122.0, 5.0, 150, 100.0],
+                ],
+            },
         }
-        self.track_cache_path.write_text(json.dumps(cache_data))
+        with open(self.cache_path, "wb") as f:
+            pickle.dump(cache_data, f)
 
         runs = pd.DataFrame({
             "Filename": ["2024-01-01-12345.fit.gz"],
@@ -280,19 +295,24 @@ class TestLoadTracks:
         load_tracks(self.config, runs)
 
         # Cache should be updated
-        assert self.track_cache_path.exists()
-        cache = json.loads(self.track_cache_path.read_text())
-        assert "2024-01-01-12345.fit.gz" in cache
+        assert self.cache_path.exists()
+        with open(self.cache_path, "rb") as f:
+            cache = pickle.load(f)
+        assert "2024-01-01-12345.fit.gz" in cache["tracks"]
 
     @patch("src.data_loader.load_fit_track_full")
     def test_clears_stale_cache_entries(self, mock_load_fit):
         """Should clear stale cache entries (missing altitude)."""
         # Cache with stale entry (only 4 values per point, missing altitude)
         cache_data = {
-            "stale.fit.gz": [[45.0, -122.0, 5.0, 150]],  # Only 4 values
-            "fresh.fit.gz": [[45.0, -122.0, 5.0, 150, 100.0]],  # 5 values
+            "gps": {},
+            "tracks": {
+                "stale.fit.gz": [[45.0, -122.0, 5.0, 150]],  # Only 4 values
+                "fresh.fit.gz": [[45.0, -122.0, 5.0, 150, 100.0]],  # 5 values
+            },
         }
-        self.track_cache_path.write_text(json.dumps(cache_data))
+        with open(self.cache_path, "wb") as f:
+            pickle.dump(cache_data, f)
 
         mock_load_fit.return_value = [
             [45.0, -122.0, 5.0, 150, 100.0],
@@ -307,6 +327,7 @@ class TestLoadTracks:
         load_tracks(self.config, runs)
 
         # Stale entry should be removed
-        cache = json.loads(self.track_cache_path.read_text())
-        assert "stale.fit.gz" not in cache
-        assert "fresh.fit.gz" in cache
+        with open(self.cache_path, "rb") as f:
+            cache = pickle.load(f)
+        assert "stale.fit.gz" not in cache["tracks"]
+        assert "fresh.fit.gz" in cache["tracks"]

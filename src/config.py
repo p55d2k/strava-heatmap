@@ -49,7 +49,7 @@ class Config:
         self.output_dir.mkdir(exist_ok=True)
 
         self.activities_csv = self.activities_dir / cfg.get("ACTIVITIES_CSV", "activities.csv")
-        self.track_cache = self.cache_dir / cfg.get("TRACK_CACHE", "track_cache.json")
+        self.cache_file = self.cache_dir / cfg.get("CACHE_FILE", "cache.pkl")
         self.output_html = self.output_dir / cfg.get("OUTPUT_HTML", "heatmap.html")
 
     def log_summary(self):
