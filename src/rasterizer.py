@@ -97,6 +97,31 @@ def create_grids(
     )
 
 
+def _rasterize_track_points(
+    track_pts: list,
+    px: np.ndarray,
+    py: np.ndarray,
+    grid_w: int,
+    grid_h: int,
+    count_grid: np.ndarray,
+    max_consecutive_same_cell: int,
+) -> None:
+    """Rasterize a single track's points onto the count grid with consecutive cell cap."""
+    same_cell_run = 0
+    prev_xi = prev_yi = None
+    for i in range(len(track_pts)):
+        xi = int(round(px[i]))
+        yi = int(round(py[i]))
+        if 0 <= xi < grid_w and 0 <= yi < grid_h:
+            if (xi, yi) == (prev_xi, prev_yi):
+                same_cell_run += 1
+            else:
+                same_cell_run = 1
+                prev_xi, prev_yi = xi, yi
+            if same_cell_run <= max_consecutive_same_cell:
+                count_grid[yi, xi] += 1
+
+
 def paint_segment(x1, y1, x2, y2, speed_val, hr_val, grad_val, elev_val, grids):
     """Paint a line segment onto the grids using vectorized NumPy operations."""
     dx, dy = x2 - x1, y2 - y1
@@ -143,9 +168,19 @@ def rasterize_tracks(
     x_min_wm: float,
     y_max_wm: float,
     meters_per_pixel: float,
+    max_consecutive_same_cell: int,
     grids: tuple,
 ) -> None:
-    """Rasterize all tracks onto the grids."""
+    """Rasterize all tracks onto the grids.
+
+    Points are incrementally binned into the count grid. To avoid a single
+    stationary stretch (e.g. forgetting to stop the watch) from dominating the
+    linear frequency layer, at most `max_consecutive_same_cell` consecutive
+    samples that fall in the *same* grid cell are counted; once the cap is hit,
+    subsequent consecutive samples in that cell are skipped until the track
+    leaves the cell (a later return to the cell resets the counter, so genuine
+    re-visits are still counted).
+    """
     (
         grid_w,
         grid_h,
@@ -179,11 +214,9 @@ def rasterize_tracks(
         px = (xs_wm - x_min_wm) / meters_per_pixel
         py = (y_max_wm - ys_wm) / meters_per_pixel
 
-        for i in range(len(track_pts)):
-            xi = int(round(px[i]))
-            yi = int(round(py[i]))
-            if 0 <= xi < grid_w and 0 <= yi < grid_h:
-                count_grid[yi, xi] += 1
+        _rasterize_track_points(
+            track_pts, px, py, grid_w, grid_h, count_grid, max_consecutive_same_cell
+        )
 
         for i in range(len(track_pts) - 1):
             s0, s1 = track_pts[i][2], track_pts[i + 1][2]

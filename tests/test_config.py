@@ -39,6 +39,7 @@ class TestConfig:
             "HR_MIN_BPM": None,
             "HR_MAX_BPM": None,
             "AUTO_RANGE_PCT": 5,
+            "MAX_CONSECUTIVE_SAME_CELL": 3,
         }
         self.config_path.write_text(json.dumps(self.valid_config))
 
@@ -70,6 +71,7 @@ class TestConfig:
         assert config.hr_min_bpm is None
         assert config.hr_max_bpm is None
         assert config.auto_range_pct == 5
+        assert config.max_consecutive_same_cell == 3
 
     def test_creates_cache_and_output_dirs(self):
         """Should create cache and output directories."""

@@ -38,6 +38,7 @@ class Config:
         self.hr_min_bpm = cfg["HR_MIN_BPM"]
         self.hr_max_bpm = cfg["HR_MAX_BPM"]
         self.auto_range_pct = cfg["AUTO_RANGE_PCT"]
+        self.max_consecutive_same_cell = cfg["MAX_CONSECUTIVE_SAME_CELL"]
 
         # Configurable paths with sensible defaults (relative to project root)
         project_root = config_path.parent

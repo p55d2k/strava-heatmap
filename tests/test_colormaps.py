@@ -239,7 +239,7 @@ class TestGenerateLayerUris:
             assert isinstance(visible, bool)
 
     def test_first_layer_is_visible(self):
-        """First layer (Frequency linear) should be visible by default."""
+        """First layer (Frequency log) should be visible by default."""
         layers = generate_layer_uris(self.normalized, self.colormaps)
 
         assert layers[0][2] is True  # visible
@@ -251,8 +251,8 @@ class TestGenerateLayerUris:
         layers = generate_layer_uris(self.normalized, self.colormaps)
 
         expected_names = [
-            "Frequency (linear)",
             "Frequency (log)",
+            "Frequency (linear)",
             "Pace (average)",
             "Heart rate (average)",
             "Gradient (absolute)",

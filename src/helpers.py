@@ -8,6 +8,7 @@ import math
 from pathlib import Path
 
 import fitparse
+import gpxpy
 import pandas as pd
 from fitparse.utils import FitParseError
 
@@ -72,12 +73,59 @@ def parse_fit_file(filepath: Path) -> list:
     return points
 
 
+def parse_gpx_file(filepath: Path) -> list:
+    """
+    Parse .gpx file and return full track points.
+    Returns list of [lat, lon, speed, hr, alt] or empty list on failure.
+    GPX files from Strava contain track points with lat/lon, elevation, and time.
+    Speed and heart rate may not be available in GPX format.
+    """
+    points = []
+    try:
+        with open(filepath) as f:
+            gpx = gpxpy.parse(f)
+
+        for track in gpx.tracks:
+            for segment in track.segments:
+                for point in segment.points:
+                    lat = point.latitude
+                    lon = point.longitude
+                    if lat is None or lon is None:
+                        continue
+
+                    alt = point.elevation
+                    # GPX from Strava typically doesn't have speed/HR in track points
+                    # They might be in extensions, but we'll leave as None for now
+                    speed = None
+                    hr = None
+
+                    points.append([lat, lon, speed, hr, alt])
+    except Exception as e:
+        log.warning(f"Failed to parse {filepath.name}: {e}")
+    return points
+
+
+def parse_track_file(filepath: Path) -> list:
+    """
+    Parse a track file (.fit.gz or .gpx) and return full track points.
+    Returns list of [lat, lon, speed, hr, alt] or empty list on failure.
+    """
+    suffix = filepath.suffix.lower()
+    if suffix == ".gz" or filepath.name.endswith(".fit.gz"):
+        return parse_fit_file(filepath)
+    elif suffix == ".gpx":
+        return parse_gpx_file(filepath)
+    else:
+        log.warning(f"Unknown track file format: {filepath.name}")
+        return []
+
+
 def get_gps_start(filepath: Path) -> tuple:
     """
-    Get (start_lat, start_lon, spread_m) from a .fit.gz file.
+    Get (start_lat, start_lon, spread_m) from a track file (.fit.gz or .gpx).
     Parses the full track once and derives start/spread from it.
     """
-    pts = parse_fit_file(filepath)
+    pts = parse_track_file(filepath)
     if not pts:
         log.debug(f"No GPS records in {filepath.name}")
         return None, None, None
@@ -113,8 +161,3 @@ def detect_home(df_gps: pd.DataFrame) -> tuple:
     n_starts = len(cell_lats[best_cell])
     log.debug(f"Home detection: best cell has {n_starts} starts")
     return home_lat, home_lon, n_starts
-
-
-def load_fit_track_full(filepath: Path) -> list:
-    """Parse .fit.gz and extract array of [lat, lon, speed, hr, alt]."""
-    return parse_fit_file(filepath)

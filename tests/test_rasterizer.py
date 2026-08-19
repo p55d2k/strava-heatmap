@@ -287,6 +287,7 @@ class TestRasterizeTracks:
             x_min_wm=self.x_min_wm,
             y_max_wm=self.y_max_wm,
             meters_per_pixel=self.meters_per_pixel,
+            max_consecutive_same_cell=3,
             grids=self.grids,
         )
 
@@ -327,12 +328,92 @@ class TestRasterizeTracks:
             x_min_wm=self.x_min_wm,
             y_max_wm=self.y_max_wm,
             meters_per_pixel=self.meters_per_pixel,
+            max_consecutive_same_cell=3,
             grids=self.grids,
         )
 
         # Only first point should be rasterized
         count_grid = self.grids[2]
         assert np.sum(count_grid) > 0
+
+    def test_caps_consecutive_same_cell(self):
+        """Should cap counts for a stationary stretch of same-cell points.
+
+        Simulates forgetting to stop the watch: many consecutive samples land
+        in the same grid cell. Only up to `max_consecutive_same_cell`
+        consecutive samples should be counted.
+        """
+        # All points map to the same pixel (same web-mercator coords)
+        n_points = 38
+        self.to_utm.transform.return_value = (
+            np.full(n_points, 500100.0),
+            np.full(n_points, 5000100.0),
+        )
+        # px = (xm - x_min_wm)/10 = 5 ; py = (y_max_wm - ym)/10 = 5  -> in bounds
+        self.to_wm.transform.return_value = (
+            np.full(n_points, -13499950.0),
+            np.full(n_points, 5699950.0),
+        )
+
+        tracks = [
+            ("stationary", [[45.0, -122.0, None, None, 100.0]] * n_points),
+        ]
+
+        rasterize_tracks(
+            tracks,
+            self.to_wm,
+            self.to_utm,
+            self.home_x_utm,
+            self.home_y_utm,
+            clip_m=None,
+            x_min_wm=self.x_min_wm,
+            y_max_wm=self.y_max_wm,
+            meters_per_pixel=self.meters_per_pixel,
+            max_consecutive_same_cell=3,
+            grids=self.grids,
+        )
+
+        count_grid = self.grids[2]
+        # Exactly 3 counts despite 38 identical points
+        assert np.sum(count_grid) == 3
+
+    def test_resets_counter_on_cell_change(self):
+        """Should reset the consecutive counter when the cell changes.
+
+        A later return to the same cell should be counted again (genuine
+        re-visit), so the cap only limits *consecutive* same-cell samples.
+        """
+        # Coordinates alternate between two pixels
+        # px: (xm - x_min_wm)/10 = 5, 10 ; py: (y_max_wm - ym)/10 = 5, 10
+        xs_wm = np.array([-13499950.0, -13499900.0] * 3)
+        ys_wm = np.array([5699950.0, 5699900.0] * 3)
+        self.to_utm.transform.return_value = (
+            np.array([500100.0, 500000.0] * 3),
+            np.array([5000100.0, 5000000.0] * 3),
+        )
+        self.to_wm.transform.return_value = (xs_wm, ys_wm)
+
+        tracks = [
+            ("back_and_forth", [[45.0, -122.0, None, None, 100.0]] * 6),
+        ]
+
+        rasterize_tracks(
+            tracks,
+            self.to_wm,
+            self.to_utm,
+            self.home_x_utm,
+            self.home_y_utm,
+            clip_m=None,
+            x_min_wm=self.x_min_wm,
+            y_max_wm=self.y_max_wm,
+            meters_per_pixel=self.meters_per_pixel,
+            max_consecutive_same_cell=3,
+            grids=self.grids,
+        )
+
+        count_grid = self.grids[2]
+        # 6 distinct samples, none consecutive in the same cell -> all counted
+        assert np.sum(count_grid) == 6
 
 
 class TestComputeNormalizedGrids:

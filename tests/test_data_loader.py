@@ -222,7 +222,7 @@ class TestLoadTracks:
 
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
-    @patch("src.data_loader.load_fit_track_full")
+    @patch("src.data_loader.parse_track_file")
     def test_loads_tracks_from_fit_files(self, mock_load_fit):
         """Should load tracks from .fit.gz files."""
         mock_load_fit.return_value = [
@@ -246,7 +246,7 @@ class TestLoadTracks:
         assert "Morning Run" in label
         assert len(pts) == 2
 
-    @patch("src.data_loader.load_fit_track_full")
+    @patch("src.data_loader.parse_track_file")
     def test_uses_track_cache(self, mock_load_fit):
         """Should use cached tracks when available."""
         # Pre-populate cache
@@ -271,11 +271,11 @@ class TestLoadTracks:
 
         tracks = load_tracks(self.config, runs)
 
-        # Should not call load_fit_track_full for cached file
+        # Should not call parse_track_file for cached file
         mock_load_fit.assert_not_called()
         assert len(tracks) == 1
 
-    @patch("src.data_loader.load_fit_track_full")
+    @patch("src.data_loader.parse_track_file")
     def test_skips_empty_tracks(self, mock_load_fit):
         """Should skip tracks with no GPS points."""
         mock_load_fit.return_value = []
@@ -292,7 +292,7 @@ class TestLoadTracks:
 
         assert len(tracks) == 0
 
-    @patch("src.data_loader.load_fit_track_full")
+    @patch("src.data_loader.parse_track_file")
     def test_updates_track_cache(self, mock_load_fit):
         """Should update track cache with new tracks."""
         mock_load_fit.return_value = [
@@ -315,7 +315,7 @@ class TestLoadTracks:
             cache = pickle.load(f)
         assert "2024-01-01-12345.fit.gz" in cache["tracks"]
 
-    @patch("src.data_loader.load_fit_track_full")
+    @patch("src.data_loader.parse_track_file")
     def test_clears_stale_cache_entries(self, mock_load_fit):
         """Should clear stale cache entries (missing altitude)."""
         # Cache with stale entry (only 4 values per point, missing altitude)

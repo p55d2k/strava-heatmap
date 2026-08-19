@@ -13,8 +13,9 @@ from src.helpers import (
     detect_home,
     get_gps_start,
     haversine_km,
-    load_fit_track_full,
     parse_fit_file,
+    parse_gpx_file,
+    parse_track_file,
 )
 
 
@@ -274,15 +275,112 @@ class TestDetectHome:
         assert n_starts == 4
 
 
-class TestLoadFitTrackFull:
-    """Tests for load_fit_track_full function."""
+class TestParseGpxFile:
+    """Tests for parse_gpx_file function."""
 
-    @patch("src.helpers.parse_fit_file")
-    def test_delegates_to_parse_fit_file(self, mock_parse):
-        """Should delegate to parse_fit_file."""
-        mock_parse.return_value = [[45.0, -122.0, 5.0, 150, 100.0]]
+    def test_empty_file_returns_empty_list(self):
+        """Empty .gpx file should return empty list (invalid XML)."""
+        import tempfile
 
-        result = load_fit_track_full(Path("dummy.fit.gz"))
+        with tempfile.NamedTemporaryFile(suffix=".gpx", delete=False) as f:
+            f.write(b"")
+            temp_path = Path(f.name)
 
-        assert result == [[45.0, -122.0, 5.0, 150, 100.0]]
-        mock_parse.assert_called_once_with(Path("dummy.fit.gz"))
+        try:
+            result = parse_gpx_file(temp_path)
+            assert result == []
+        finally:
+            temp_path.unlink()
+
+    def test_invalid_file_returns_empty_list(self):
+        """Invalid .gpx file should return empty list (not raise)."""
+        import tempfile
+
+        with tempfile.NamedTemporaryFile(suffix=".gpx", delete=False) as f:
+            f.write(b"not a gpx file")
+            temp_path = Path(f.name)
+
+        try:
+            result = parse_gpx_file(temp_path)
+            assert result == []
+        finally:
+            temp_path.unlink()
+
+    def test_parses_track_points(self):
+        """Should parse track points with lat/lon/elevation."""
+        import tempfile
+
+        gpx_content = """<?xml version="1.0" encoding="UTF-8"?>
+<gpx creator="StravaGPX" version="1.1" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <name>test run</name>
+    <type>running</type>
+    <trkseg>
+      <trkpt lat="1.4006150" lon="103.8064370">
+        <ele>31.4</ele>
+        <time>2025-03-31T02:46:39Z</time>
+      </trkpt>
+      <trkpt lat="1.4005970" lon="103.8064220">
+        <ele>31.4</ele>
+        <time>2025-03-31T02:46:40Z</time>
+      </trkpt>
+    </trkseg>
+  </trk>
+</gpx>
+"""
+        with tempfile.NamedTemporaryFile(suffix=".gpx", delete=False) as f:
+            f.write(gpx_content.encode())
+            temp_path = Path(f.name)
+
+        try:
+            result = parse_gpx_file(temp_path)
+            assert len(result) == 2
+            assert result[0][0] == 1.4006150
+            assert result[0][1] == 103.8064370
+            assert result[0][4] == 31.4
+            assert result[0][2] is None  # speed
+            assert result[0][3] is None  # hr
+        finally:
+            temp_path.unlink()
+
+
+class TestParseTrackFile:
+    """Tests for parse_track_file dispatcher."""
+
+    def test_routes_gpx_to_gpx_parser(self):
+        """Should route .gpx files to parse_gpx_file."""
+        import tempfile
+
+        gpx_content = """<?xml version="1.0" encoding="UTF-8"?>
+<gpx creator="StravaGPX" version="1.1" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk><trkseg>
+    <trkpt lat="1.0" lon="2.0"><ele>10.0</ele></trkpt>
+  </trkseg></trk>
+</gpx>
+"""
+        with tempfile.NamedTemporaryFile(suffix=".gpx", delete=False) as f:
+            f.write(gpx_content.encode())
+            temp_path = Path(f.name)
+
+        try:
+            result = parse_track_file(temp_path)
+            assert len(result) == 1
+            assert result[0][0] == 1.0
+            assert result[0][1] == 2.0
+        finally:
+            temp_path.unlink()
+
+    def test_routes_fit_to_fit_parser(self):
+        """Should route .fit.gz files to parse_fit_file."""
+        with patch("src.helpers.parse_fit_file") as mock_parse:
+            mock_parse.return_value = [[45.0, -122.0, 5.0, 150, 100.0]]
+            result = parse_track_file(Path("dummy.fit.gz"))
+            assert result == [[45.0, -122.0, 5.0, 150, 100.0]]
+            mock_parse.assert_called_once_with(Path("dummy.fit.gz"))
+
+    def test_unknown_format_returns_empty(self):
+        """Should return empty list and warn for unknown formats."""
+        with patch("src.helpers.log") as mock_log:
+            result = parse_track_file(Path("weird.xyz"))
+            assert result == []
+            mock_log.warning.assert_called_once()

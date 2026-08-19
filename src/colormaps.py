@@ -110,10 +110,14 @@ def _white_uri(alpha_norm: np.ndarray) -> str:
 def generate_layer_uris(normalized: dict, colormaps: dict) -> list[tuple[str, str, bool]]:
     """Generate data URIs for all map layers."""
     layers = [
-        ("Frequency (linear)", _count_uri(normalized["count_norm"], colormaps["cmap_count"]), True),
         (
             "Frequency (log)",
             _count_uri(normalized["count_log_norm"], colormaps["cmap_count"]),
+            True,
+        ),
+        (
+            "Frequency (linear)",
+            _count_uri(normalized["count_norm"], colormaps["cmap_count"]),
             False,
         ),
         (

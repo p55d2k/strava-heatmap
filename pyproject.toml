@@ -30,6 +30,7 @@ dependencies = [
     "scipy==1.17.1",
     "Pillow==12.2.0",
     "matplotlib==3.10.9",
+    "gpxpy==1.6.2",
 ]
 
 [project.optional-dependencies]

@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from src.helpers import detect_home, get_gps_start, haversine_km, load_fit_track_full
+from src.helpers import detect_home, get_gps_start, haversine_km, parse_track_file
 
 log = logging.getLogger(__name__)
 
@@ -101,7 +101,7 @@ def filter_by_home_radius(
 
 
 def load_tracks(config, runs: pd.DataFrame) -> list[tuple[str, list]]:
-    """Load full GPS tracks from .fit.gz files with caching."""
+    """Load full GPS tracks from .fit.gz / .gpx files with caching."""
     cache = _load_cache(config)
     track_cache = cache.get("tracks", {})
 
@@ -121,7 +121,7 @@ def load_tracks(config, runs: pd.DataFrame) -> list[tuple[str, list]]:
         pts = track_cache.get(fn)
         if pts is None:
             log.info(f"Parsing {fn}...")
-            pts = load_fit_track_full(fp)
+            pts = parse_track_file(fp)
             track_cache[fn] = pts
 
         if pts:
