@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pandas as pd
 
+from src.config import normalize_activity_type
 from src.helpers import detect_home, get_gps_start, haversine_km, parse_track_file
 
 log = logging.getLogger(__name__)
@@ -39,6 +40,11 @@ def load_and_filter_activities(config) -> pd.DataFrame:
     """Load activities CSV, apply date/type filters, and parse GPS start points."""
     df = pd.read_csv(config.activities_csv)
     df["Activity Date"] = pd.to_datetime(df["Activity Date"], format="mixed", dayfirst=True)
+
+    # Normalize Activity Type column so verbose CSV labels (e.g. "Running", "Cycling")
+    # match the canonical types in config.activity_types
+    df["Activity Type"] = df["Activity Type"].apply(normalize_activity_type)
+
     runs = df[df["Activity Type"].isin(config.activity_types)].copy()
     log.info(f"Total matching activities in export: {len(runs)}")
 

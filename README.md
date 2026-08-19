@@ -51,7 +51,7 @@ pip install -r requirements.txt
 ```
 
 Key settings:
-- `ACTIVITY_TYPES`: `["Run"]`, `["Ride"]`, `["Run", "Ride"]`, etc.
+- `ACTIVITY_TYPES`: `["Run"]`, `["Ride"]`, `["Run", "Ride"]`, etc. Verbose aliases are also accepted, e.g. `"Running"`, `"Cycling"`, `"Bike"`, `"Swimming"`, `"Walking"`, `"Hiking"`, `"Ski"`, `"Snowboarding"`, `"Kayaking"`, `"Stand Up Paddling"` — see `src/config.py` `ACTIVITY_TYPE_ALIASES` for the full list.
 - `DATE_FROM` / `DATE_TO`: ISO dates or `null` for no limit
 - `HOME_LAT` / `HOME_LON`: Override auto-detected home location
 - `METERS_PER_PIXEL`: Resolution (lower = more detail). Use ~3 for runs, ~10 for rides.

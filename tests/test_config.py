@@ -182,6 +182,17 @@ class TestConfig:
         assert isinstance(config.activity_types, set)
         assert config.activity_types == {"Run", "Ride"}
 
+    def test_activity_types_normalized_from_aliases(self):
+        """ACTIVITY_TYPES should be normalized from verbose aliases."""
+        alias_config = self.valid_config.copy()
+        alias_config["ACTIVITY_TYPES"] = ["Running", "Cycling", "Bike"]
+        self.config_path.write_text(json.dumps(alias_config))
+
+        config = Config(self.config_path)
+
+        # All aliases normalize to canonical Ride/Run
+        assert config.activity_types == {"Run", "Ride"}
+
     def test_handles_none_values_for_optional_ranges(self):
         """Should handle None values for optional min/max ranges."""
         config = Config(self.config_path)

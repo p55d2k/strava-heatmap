@@ -70,6 +70,42 @@ class TestLoadAndFilterActivities:
         assert all(df["Activity Date"] <= pd.Timestamp("2024-01-03"))
 
     @patch("src.data_loader.get_gps_start")
+    def test_normalizes_verbose_csv_activity_types(self, mock_get_gps):
+        """Should normalize verbose CSV activity types (Running, Cycling, etc.)."""
+        # CSV uses verbose labels; config uses canonical types
+        verbose_csv = """Filename,Activity Type,Activity Date,Activity Name
+2024-01-01-12345.fit.gz,Running,01/01/2024,Morning Run
+2024-01-02-12346.fit.gz,Cycling,02/01/2024,Evening Ride
+2024-01-03-12347.fit.gz,Bike,03/01/2024,Commute
+2024-01-04-12348.fit.gz,Swimming,04/01/2024,Pool Swim
+"""
+        self.activities_csv.write_text(verbose_csv)
+        self.config.activity_types = {"Run", "Ride"}
+        mock_get_gps.return_value = (45.0, -122.0, 500.0)
+
+        df = load_and_filter_activities(self.config)
+
+        # Running->Run, Cycling->Ride, Bike->Ride match; Swimming filtered out
+        assert len(df) == 3
+        assert all(df["Activity Type"].isin(["Run", "Ride"]))
+        assert "Run" in df["Activity Type"].values
+        assert "Ride" in df["Activity Type"].values
+        assert "Swim" not in df["Activity Type"].values
+
+    @patch("src.data_loader.get_gps_start")
+    def test_config_accepts_alias_activity_types(self, mock_get_gps):
+        """Config ACTIVITY_TYPES can use aliases (e.g. Running, Cycling)."""
+        # Config uses normalized canonical types (as Config.__init__ would normalize them)
+        self.config.activity_types = {"Run", "Ride"}  # normalized from "Running", "Cycling"
+        mock_get_gps.return_value = (45.0, -122.0, 500.0)
+
+        df = load_and_filter_activities(self.config)
+
+        # All three (Run, Ride, Run) should match the canonical types
+        assert len(df) == 3
+        assert all(df["Activity Type"].isin(["Run", "Ride"]))
+
+    @patch("src.data_loader.get_gps_start")
     def test_filters_by_gps_spread(self, mock_get_gps):
         """Should filter out activities with insufficient GPS spread."""
         mock_get_gps.side_effect = [

@@ -5,6 +5,166 @@ Configuration management for Strava Heatmap Generator.
 import json
 from pathlib import Path
 
+# ==============================================================================
+# ACTIVITY TYPE ALIASES
+# ==============================================================================
+# Maps a normalized (lowercase, stripped) activity string to its canonical
+# Strava activity type. This lets users write verbose / common names such as
+# "Running", "Cycling" or "Bike" in ACTIVITY_TYPES, and also ingest CSV exports
+# that use verbose labels (e.g. "Alpine Ski", "Stand Up Paddling") while still
+# matching the canonical Strava type used for filtering.
+#
+# Covers the Strava activity types that carry GPS / location data.
+ACTIVITY_TYPE_ALIASES = {
+    # --- Running ---
+    "run": "Run",
+    "running": "Run",
+    "jog": "Run",
+    "jogging": "Run",
+    "trail run": "Run",
+    "virtual run": "VirtualRun",
+    "virtualrun": "VirtualRun",
+    "indoor run": "VirtualRun",
+    "treadmill": "VirtualRun",
+    # --- Cycling / Riding ---
+    "ride": "Ride",
+    "cycling": "Ride",
+    "bike": "Ride",
+    "biking": "Ride",
+    "bicycle": "Ride",
+    "bicycling": "Ride",
+    "cycle": "Ride",
+    "commute": "Ride",
+    "mtb": "Ride",
+    "mountain bike": "Ride",
+    "mountain biking": "Ride",
+    "road bike": "Ride",
+    "road biking": "Ride",
+    "gravel ride": "Ride",
+    "gravel biking": "Ride",
+    "virtual ride": "VirtualRide",
+    "virtualride": "VirtualRide",
+    "indoor cycle": "VirtualRide",
+    "indoor cycling": "VirtualRide",
+    "trainer": "VirtualRide",
+    "e-bike": "EBikeRide",
+    "e-bike ride": "EBikeRide",
+    "e bike": "EBikeRide",
+    "ebike": "EBikeRide",
+    "ebikeride": "EBikeRide",
+    "electric bike": "EBikeRide",
+    "electric bicycle": "EBikeRide",
+    # --- Swimming ---
+    "swim": "Swim",
+    "swimming": "Swim",
+    "pool swim": "Swim",
+    "open water swim": "Swim",
+    "open water swimming": "Swim",
+    "virtual swim": "Swim",
+    # --- Walking / Hiking ---
+    "walk": "Walk",
+    "walking": "Walk",
+    "walks": "Walk",
+    "stroll": "Walk",
+    "hike": "Hike",
+    "hiking": "Hike",
+    "trek": "Hike",
+    "trekking": "Hike",
+    "backpacking": "Hike",
+    "trail hike": "Hike",
+    # --- Skiing / Snowboarding ---
+    "ski": "AlpineSki",
+    "skiing": "AlpineSki",
+    "alpine ski": "AlpineSki",
+    "alpineski": "AlpineSki",
+    "downhill ski": "AlpineSki",
+    "downhill skiing": "AlpineSki",
+    "backcountry ski": "BackcountrySki",
+    "backcountryski": "BackcountrySki",
+    "backcountry skiing": "BackcountrySki",
+    "ski touring": "BackcountrySki",
+    "ski mountaineering": "BackcountrySki",
+    "randonee": "BackcountrySki",
+    "nordic ski": "NordicSki",
+    "nordicski": "NordicSki",
+    "nordic skiing": "NordicSki",
+    "cross country ski": "NordicSki",
+    "cross country skiing": "NordicSki",
+    "xc ski": "NordicSki",
+    "xc skiing": "NordicSki",
+    "classic ski": "NordicSki",
+    "skate ski": "NordicSki",
+    "roller ski": "RollerSki",
+    "rollerski": "RollerSki",
+    "roller skiing": "RollerSki",
+    "snowboard": "Snowboard",
+    "snowboarding": "Snowboard",
+    "snow board": "Snowboard",
+    "splitboard": "Snowboard",
+    # --- Skating ---
+    "ice skate": "IceSkate",
+    "iceskate": "IceSkate",
+    "ice skating": "IceSkate",
+    "figure skating": "IceSkate",
+    "inline skate": "InlineSkate",
+    "inlineskate": "InlineSkate",
+    "inline skating": "InlineSkate",
+    "roller skate": "InlineSkate",
+    "roller skating": "InlineSkate",
+    "rollerblade": "InlineSkate",
+    "rollerblading": "InlineSkate",
+    "skateboard": "Skateboard",
+    "skateboarding": "Skateboard",
+    # --- Paddling / Water ---
+    "canoe": "Canoe",
+    "canoeing": "Canoe",
+    "kayak": "Kayak",
+    "kayaking": "Kayak",
+    "kayak trip": "Kayak",
+    "row": "Row",
+    "rowing": "Row",
+    "stand up paddling": "StandUpPaddling",
+    "standuppaddling": "StandUpPaddling",
+    "stand up paddle": "StandUpPaddling",
+    "stand up paddleboard": "StandUpPaddling",
+    "paddleboard": "StandUpPaddling",
+    "paddleboarding": "StandUpPaddling",
+    "sup": "StandUpPaddling",
+    "surf": "Surf",
+    "surfing": "Surf",
+    "windsurf": "Windsurf",
+    "windsurfing": "Windsurf",
+    "kitesurf": "Kitesurf",
+    "kitesurfing": "Kitesurf",
+    "sail": "Sail",
+    "sailing": "Sail",
+    # --- Other location-based activities ---
+    "wheelchair": "Wheelchair",
+    "handcycle": "Handcycle",
+    "handcycling": "Handcycle",
+    "velomobile": "Velomobile",
+    "golf": "Golf",
+    "skijor": "Skijor",
+    "skijoring": "Skijor",
+}
+
+
+def normalize_activity_type(raw) -> str:
+    """Normalize an activity type string to its canonical Strava form.
+
+    Accepts raw labels from config ACTIVITY_TYPES or CSV exports (which may use
+    verbose names like "Running", "Alpine Ski" or "Cycling"). Unknown labels are
+    returned stripped (case preserved) so explicitly-configured types still
+    match exactly.
+    """
+    if raw is None:
+        return ""
+    key = str(raw).strip().lower()
+    if key in ACTIVITY_TYPE_ALIASES:
+        return ACTIVITY_TYPE_ALIASES[key]
+    # Preserve unknown types so user-configured values still match exactly.
+    return str(raw).strip()
+
 
 class Config:
     """Configuration container loaded from config.json."""
@@ -17,7 +177,9 @@ class Config:
             cfg = json.load(f)
 
         self.activities_dir = Path(cfg["ACTIVITIES_DIR"])
-        self.activity_types = set(cfg["ACTIVITY_TYPES"])
+        # Normalize user-configured activity types so they match CSV values
+        raw_types = cfg["ACTIVITY_TYPES"]
+        self.activity_types = {normalize_activity_type(t) for t in raw_types}
         self.date_from = cfg["DATE_FROM"]
         self.date_to = cfg["DATE_TO"]
 
