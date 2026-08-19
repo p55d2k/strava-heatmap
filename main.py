@@ -3,6 +3,7 @@ Strava Activity Heatmap Generator
 Main entry point that orchestrates the pipeline.
 """
 
+import argparse
 import logging
 import sys
 import warnings
@@ -41,16 +42,43 @@ from src.rasterizer import (
 )
 
 
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(description="Strava Activity Heatmap Generator")
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Validate config, show activity count, and exit without generating map",
+    )
+    parser.add_argument(
+        "--config",
+        type=Path,
+        default=Path("config.json"),
+        help="Path to config.json file (default: config.json)",
+    )
+    return parser.parse_args()
+
+
 def main():
     """Main pipeline function."""
+    args = parse_args()
+
     # Load configuration
-    config = Config(Path("config.json"))
+    config = Config(args.config)
     config.log_summary()
 
     # Stage 1: Data loading & filtering
     runs = load_and_filter_activities(config)
     home_lat, home_lon = determine_home_location(config, runs)
     runs = filter_by_home_radius(runs, home_lat, home_lon, config.radius_km)
+
+    # Log final activity count for dry-run
+    log.info(f"Final activity count (after all filters): {len(runs)}")
+
+    if args.dry_run:
+        log.info("Dry run complete. Exiting without generating map.")
+        return
+
     tracks = load_tracks(config, runs)
 
     # Stage 2: Rasterization & grid computation
