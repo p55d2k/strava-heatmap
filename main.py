@@ -75,8 +75,8 @@ def main():
         y_max_wm,
         config.meters_per_pixel,
         config.max_consecutive_same_cell,
-        config.decay_factor,
         grids,
+        config.decay_factor,
     )
 
     normalized = compute_normalized_grids(grids, config.blur_sigma_px, config)

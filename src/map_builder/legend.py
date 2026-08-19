@@ -55,7 +55,7 @@ class LegendBuilder:
         rows = [
             legend_row(
                 "legend-frequency",
-                "Frequency (linear)",
+                "GPS Density (linear)",
                 freq_css,
                 "1 pass",
                 f"{max_passes} passes",
@@ -63,7 +63,7 @@ class LegendBuilder:
             ),
             legend_row(
                 "legend-frequency-log",
-                "Frequency (log)",
+                "GPS Density (log)",
                 freq_css,
                 "1 pass",
                 f"{max_passes} passes (log scale)",

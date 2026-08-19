@@ -251,8 +251,8 @@ class TestGenerateLayerUris:
         layers = generate_layer_uris(self.normalized, self.colormaps)
 
         expected_names = [
-            "Frequency (log)",
-            "Frequency (linear)",
+            "GPS Density (log)",
+            "GPS Density (linear)",
             "Pace (average)",
             "Heart rate (average)",
             "Gradient (absolute)",

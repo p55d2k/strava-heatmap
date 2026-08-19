@@ -111,12 +111,12 @@ def generate_layer_uris(normalized: dict, colormaps: dict) -> list[tuple[str, st
     """Generate data URIs for all map layers."""
     layers = [
         (
-            "Frequency (log)",
+            "GPS Density (log)",
             _count_uri(normalized["count_log_norm"], colormaps["cmap_count"]),
             True,
         ),
         (
-            "Frequency (linear)",
+            "GPS Density (linear)",
             _count_uri(normalized["count_norm"], colormaps["cmap_count"]),
             False,
         ),

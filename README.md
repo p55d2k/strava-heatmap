@@ -8,8 +8,8 @@ The output is a single HTML file with six layers you can switch between:
 
 | Layer                | Colour         | Shows                                              |
 | -------------------- | -------------- | -------------------------------------------------- |
-| Frequency (linear)   | Orange         | How often you've run each path                     |
-| Frequency (log)      | Orange         | Same, log scale - better when a few paths dominate |
+| GPS Density (linear)   | Orange         | How often you've run each path                     |
+| GPS Density (log)      | Orange         | Same, log scale - better when a few paths dominate |
 | Pace (average)       | Blue           | Average pace - brighter = faster                   |
 | Heart rate (average) | Red            | Average HR - brighter = higher                     |
 | Gradient (absolute)  | White          | Steepness - brighter = steeper                     |
@@ -73,7 +73,7 @@ Parsing `.fit.gz` is slow; GPS data is cached after first run. Cache files are s
 
 ## Notes
 
-- **Frequency** measures time on path (GPS samples/pixel), not distinct passes. Log scale helps when a few routes dominate.
+- **GPS Density** measures time on path (GPS samples/pixel), not distinct passes. Log scale helps when a few routes dominate.
 - **Pace & HR** are all-time averages per pixel. Narrow the date range for a specific period.
 - **Gradient** layers are only as good as GPS altitude (±10–20 m vertical noise). Reliable on hills, noisy on flats.
 - **Two projections**: Web Mercator (EPSG:3857) for tile alignment; UTM for true ground-metre calculations (clip radius, gradient).

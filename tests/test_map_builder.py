@@ -142,8 +142,8 @@ class TestBuildLegendHtml:
         assert "z-index:9999" in html
 
         # Check all legend rows present
-        assert "Frequency (linear)" in html
-        assert "Frequency (log)" in html
+        assert "GPS Density (linear)" in html
+        assert "GPS Density (log)" in html
         assert "Pace (average)" in html
         assert "Heart rate (average)" in html
         assert "Gradient (absolute)" in html

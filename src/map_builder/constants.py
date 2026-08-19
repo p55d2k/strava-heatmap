@@ -39,8 +39,8 @@ LAYER_CONTROL_CSS = """
 
 # Layer names that are mutually exclusive in the layer control.
 EXCLUSIVE_LAYER_NAMES = [
-    "Frequency (linear)",
-    "Frequency (log)",
+    "GPS Density (linear)",
+    "GPS Density (log)",
     "Pace (average)",
     "Heart rate (average)",
     "Gradient (absolute)",
@@ -49,8 +49,8 @@ EXCLUSIVE_LAYER_NAMES = [
 
 # Maps each exclusive layer name to its corresponding legend DIV id.
 LEGEND_IDS = {
-    "Frequency (linear)": "legend-frequency",
-    "Frequency (log)": "legend-frequency-log",
+    "GPS Density (linear)": "legend-frequency",
+    "GPS Density (log)": "legend-frequency-log",
     "Pace (average)": "legend-pace-avg",
     "Heart rate (average)": "legend-heart-rate-avg",
     "Gradient (absolute)": "legend-gradient",
