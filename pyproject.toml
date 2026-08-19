@@ -31,6 +31,7 @@ dependencies = [
     "Pillow==12.2.0",
     "matplotlib==3.10.9",
     "gpxpy==1.6.2",
+    "tqdm==4.67.1",
 ]
 
 [project.optional-dependencies]
@@ -71,6 +72,7 @@ ignore = [
     "B008",  # do not perform function calls in argument defaults (intentional for config)
     "C901",  # too complex (some algorithms are inherently complex)
     "T201",  # print found (used for logging in main.py)
+    "PLR0912", # too many branches (refactored to helper functions)
     "PLR0913", # too many arguments (some functions need many params)
     "PLR0915", # too many statements (some functions are long)
     "PLR2004", # magic value used in comparison (test files, constants)

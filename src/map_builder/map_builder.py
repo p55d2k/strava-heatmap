@@ -22,6 +22,7 @@ def build_map(
     legend_html: str,
     output_path: Path,
     map_opacity: float,
+    progress_callback=None,
 ) -> None:
     """Build and save the Folium map.
 
@@ -53,6 +54,9 @@ def build_map(
         ).add_to(track_group)
     track_group.add_to(m)
 
+    if progress_callback:
+        progress_callback(1)  # Tracks added
+
     for name, uri, visible in layers:
         fg = folium.FeatureGroup(name=name, show=visible)
         folium.raster_layers.ImageOverlay(
@@ -65,10 +69,16 @@ def build_map(
         ).add_to(fg)
         fg.add_to(m)
 
+    if progress_callback:
+        progress_callback(1)  # All layers added
+
     folium.LayerControl(collapsed=False).add_to(m)
     m.get_root().html.add_child(folium.Element(LAYER_CONTROL_CSS))
     m.get_root().html.add_child(folium.Element(legend_html))
     ExclusiveLayerControl().add_to(m)
+
+    if progress_callback:
+        progress_callback(1)  # Controls and legend added
 
     m.save(output_path)
     import logging

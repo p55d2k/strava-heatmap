@@ -9,6 +9,7 @@ import math
 import numpy as np
 from pyproj import Transformer
 from scipy.ndimage import gaussian_filter
+from tqdm import tqdm
 
 
 def setup_transformers(home_lat: float, home_lon: float, track_clip_radius_km: float | None):
@@ -221,7 +222,7 @@ def rasterize_tracks(
         elev_n,
     ) = grids
 
-    for _, track_pts in tracks:
+    for _, track_pts in tqdm(tracks, desc="Rasterizing tracks", unit="track"):
         lats_a = np.array([p[0] for p in track_pts])
         lons_a = np.array([p[1] for p in track_pts])
         xs_utm, ys_utm = to_utm.transform(lons_a, lats_a)
@@ -284,23 +285,8 @@ def rasterize_tracks(
             )
 
 
-def compute_normalized_grids(grids: tuple, sigma: float, config) -> dict:
-    """Apply Gaussian blur and compute normalized grids for all metrics."""
-    (
-        grid_w,
-        grid_h,
-        count_grid,
-        speed_sum,
-        speed_n,
-        hr_sum,
-        hr_n,
-        grad_sum,
-        grad_n,
-        elev_sum,
-        elev_n,
-    ) = grids
-
-    # Count grid
+def _compute_count_grid(count_grid: np.ndarray, sigma: float) -> tuple:
+    """Compute normalized count grids."""
     b_count = gaussian_filter(count_grid, sigma=sigma)
     max_count = b_count.max()
     if max_count > 0:
@@ -309,8 +295,11 @@ def compute_normalized_grids(grids: tuple, sigma: float, config) -> dict:
     else:
         count_norm = np.zeros_like(b_count)
         count_log_norm = np.zeros_like(b_count)
+    return count_norm, count_log_norm, b_count, max_count
 
-    # Speed (average) grid
+
+def _compute_speed_grid(speed_sum: np.ndarray, speed_n: np.ndarray, sigma: float, config) -> tuple:
+    """Compute normalized speed grid."""
     b_speed_sum = gaussian_filter(speed_sum, sigma=sigma)
     b_speed_n = gaussian_filter(speed_n, sigma=sigma)
     mean_speed = np.divide(
@@ -336,8 +325,11 @@ def compute_normalized_grids(grids: tuple, sigma: float, config) -> dict:
     else:
         s_lo, s_hi = 1.0, 5.0
         speed_norm = np.zeros_like(mean_speed)
+    return speed_norm, s_lo, s_hi
 
-    # HR (average) grid
+
+def _compute_hr_grid(hr_sum: np.ndarray, hr_n: np.ndarray, sigma: float, config) -> tuple:
+    """Compute normalized HR grid."""
     b_hr_sum = gaussian_filter(hr_sum, sigma=sigma)
     b_hr_n = gaussian_filter(hr_n, sigma=sigma)
     mean_hr = np.divide(b_hr_sum, b_hr_n, out=np.zeros_like(b_hr_sum), where=b_hr_n > 0)
@@ -361,8 +353,11 @@ def compute_normalized_grids(grids: tuple, sigma: float, config) -> dict:
     else:
         hr_lo, hr_hi = 100, 180
         hr_norm = np.zeros_like(mean_hr)
+    return hr_norm, hr_lo, hr_hi
 
-    # Gradient grid
+
+def _compute_grad_grid(grad_sum: np.ndarray, grad_n: np.ndarray, sigma: float, config) -> tuple:
+    """Compute normalized gradient grid."""
     b_grad_sum = gaussian_filter(grad_sum, sigma=sigma)
     b_grad_n = gaussian_filter(grad_n, sigma=sigma)
     mean_grad = np.divide(b_grad_sum, b_grad_n, out=np.zeros_like(b_grad_sum), where=b_grad_n > 0)
@@ -376,8 +371,11 @@ def compute_normalized_grids(grids: tuple, sigma: float, config) -> dict:
     else:
         grad_norm = np.zeros_like(mean_grad)
         g_lo = g_hi = 0.0
+    return grad_norm, g_lo, g_hi, n_grad_px
 
-    # Elevation change grid (signed)
+
+def _compute_elev_grid(elev_sum: np.ndarray, elev_n: np.ndarray, sigma: float, config) -> tuple:
+    """Compute normalized elevation grid."""
     b_elev_sum = gaussian_filter(elev_sum, sigma=sigma)
     b_elev_n = gaussian_filter(elev_n, sigma=sigma)
     mean_elev = np.divide(b_elev_sum, b_elev_n, out=np.zeros_like(b_elev_sum), where=b_elev_n > 0)
@@ -395,9 +393,24 @@ def compute_normalized_grids(grids: tuple, sigma: float, config) -> dict:
         elev_norm = np.divide(_ew, _en, out=np.zeros_like(_ew), where=_en > 0)
     else:
         elev_norm = np.zeros_like(mean_elev)
+    return elev_norm, n_elev_px
 
-    # Alpha masks
-    def presence_alpha(sample_count_grid, blur_sigma, pct=10):
+
+def _compute_alpha_masks(
+    speed_n: np.ndarray,
+    hr_n: np.ndarray,
+    grad_n: np.ndarray,
+    elev_n: np.ndarray,
+    grad_norm: np.ndarray,
+    n_grad_px: int,
+    n_elev_px: int,
+    sigma: float,
+) -> tuple:
+    """Compute alpha masks for all grids."""
+
+    def presence_alpha(
+        sample_count_grid: np.ndarray, blur_sigma: float, pct: int = 10
+    ) -> np.ndarray:
         binary = (sample_count_grid > 0).astype(np.float32)
         if not np.any(binary):
             return np.zeros_like(binary)
@@ -409,24 +422,64 @@ def compute_normalized_grids(grids: tuple, sigma: float, config) -> dict:
     alpha_hr = presence_alpha(hr_n, sigma)
     _presence_grad = presence_alpha(grad_n, sigma) if n_grad_px else np.zeros_like(grad_norm)
     alpha_grad = _presence_grad * (0.15 + 0.85 * grad_norm)
-    alpha_elev = presence_alpha(elev_n, sigma) if n_elev_px else np.zeros_like(elev_norm)
+    alpha_elev = presence_alpha(elev_n, sigma) if n_elev_px else np.zeros_like(elev_n)
+    return alpha_speed, alpha_hr, alpha_grad, alpha_elev
+
+
+def compute_normalized_grids(grids: tuple, sigma: float, config, progress_callback=None) -> dict:
+    """Apply Gaussian blur and compute normalized grids for all metrics."""
+    (
+        grid_w,
+        grid_h,
+        count_grid,
+        speed_sum,
+        speed_n,
+        hr_sum,
+        hr_n,
+        grad_sum,
+        grad_n,
+        elev_sum,
+        elev_n,
+    ) = grids
+
+    if progress_callback:
+        progress_callback(1)  # Count grid done
+
+    count_norm, count_log_norm, b_count, max_count = _compute_count_grid(count_grid, sigma)
+
+    if progress_callback:
+        progress_callback(1)  # Speed grid done
+
+    speed_norm, s_lo, s_hi = _compute_speed_grid(speed_sum, speed_n, sigma, config)
+
+    if progress_callback:
+        progress_callback(1)  # HR grid done
+
+    hr_norm, hr_lo, hr_hi = _compute_hr_grid(hr_sum, hr_n, sigma, config)
+
+    if progress_callback:
+        progress_callback(1)  # Gradient grid done
+
+    grad_norm, g_lo, g_hi, n_grad_px = _compute_grad_grid(grad_sum, grad_n, sigma, config)
+
+    if progress_callback:
+        progress_callback(1)  # Elevation grid done
+
+    elev_norm, n_elev_px = _compute_elev_grid(elev_sum, elev_n, sigma, config)
+
+    if progress_callback:
+        progress_callback(1)  # Alpha masks done
+
+    alpha_speed, alpha_hr, alpha_grad, alpha_elev = _compute_alpha_masks(
+        speed_n, hr_n, grad_n, elev_n, grad_norm, n_grad_px, n_elev_px, sigma
+    )
 
     # Save max_passes before cleanup
     max_passes = int(max_count)
 
     # Clean up intermediate arrays
     del count_grid, speed_sum, speed_n, hr_sum, hr_n, grad_sum, grad_n, elev_sum, elev_n
-    del (
-        b_count,
-        b_speed_sum,
-        b_speed_n,
-        b_hr_sum,
-        b_hr_n,
-        b_grad_sum,
-        b_grad_n,
-        b_elev_sum,
-        b_elev_n,
-    )
+    del b_count
     gc.collect()
 
     return {

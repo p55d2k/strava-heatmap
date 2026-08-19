@@ -107,19 +107,33 @@ def _white_uri(alpha_norm: np.ndarray) -> str:
     return _to_uri(arr)
 
 
-def generate_layer_uris(normalized: dict, colormaps: dict) -> list[tuple[str, str, bool]]:
+def generate_layer_uris(
+    normalized: dict, colormaps: dict, progress_callback=None
+) -> list[tuple[str, str, bool]]:
     """Generate data URIs for all map layers."""
+    if progress_callback:
+        progress_callback(1)  # Colormaps created
     layers = [
         (
             "GPS Density (log)",
             _count_uri(normalized["count_log_norm"], colormaps["cmap_count"]),
             True,
         ),
+    ]
+    if progress_callback:
+        progress_callback(1)  # Layer 1/6: GPS Density (log)
+
+    layers.append(
         (
             "GPS Density (linear)",
             _count_uri(normalized["count_norm"], colormaps["cmap_count"]),
             False,
         ),
+    )
+    if progress_callback:
+        progress_callback(1)  # Layer 2/6: GPS Density (linear)
+
+    layers.append(
         (
             "Pace (average)",
             _rgba_uri(
@@ -127,12 +141,25 @@ def generate_layer_uris(normalized: dict, colormaps: dict) -> list[tuple[str, st
             ),
             False,
         ),
+    )
+    if progress_callback:
+        progress_callback(1)  # Layer 3/6: Pace (average)
+
+    layers.append(
         (
             "Heart rate (average)",
             _rgba_uri(normalized["hr_norm"], normalized["alpha_hr"], colormaps["cmap_hr_rgb"]),
             False,
         ),
-        ("Gradient (absolute)", _white_uri(normalized["alpha_grad"]), False),
+    )
+    if progress_callback:
+        progress_callback(1)  # Layer 4/6: Heart rate (average)
+
+    layers.append(("Gradient (absolute)", _white_uri(normalized["alpha_grad"]), False))
+    if progress_callback:
+        progress_callback(1)  # Layer 5/6: Gradient (absolute)
+
+    layers.append(
         (
             "Gradient (change)",
             _rgba_uri(
@@ -142,5 +169,7 @@ def generate_layer_uris(normalized: dict, colormaps: dict) -> list[tuple[str, st
             ),
             False,
         ),
-    ]
+    )
+    if progress_callback:
+        progress_callback(1)  # Layer 6/6: Gradient (change)
     return layers

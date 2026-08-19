@@ -9,6 +9,7 @@ from datetime import date
 from pathlib import Path
 
 import pandas as pd
+from tqdm import tqdm
 
 from src.config import normalize_activity_type
 from src.helpers import detect_home, get_gps_start, haversine_km, parse_track_file
@@ -119,14 +120,13 @@ def load_tracks(config, runs: pd.DataFrame) -> list[tuple[str, list]]:
             del track_cache[k]
 
     tracks = []
-    for _, row in runs.iterrows():
+    for _, row in tqdm(runs.iterrows(), total=len(runs), desc="Loading tracks", unit="activity"):
         fn = str(row["Filename"])
         fp = config.activities_dir / fn
         lbl = f"{row['Activity Date'].date()} {row['Activity Name']}"
 
         pts = track_cache.get(fn)
         if pts is None:
-            log.info(f"Parsing {fn}...")
             pts = parse_track_file(fp)
             track_cache[fn] = pts
 
