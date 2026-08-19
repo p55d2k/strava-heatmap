@@ -5,6 +5,7 @@ Unit tests for src/rasterizer.py - grid computation, rasterization, and normaliz
 from unittest.mock import MagicMock
 
 import numpy as np
+import pytest
 
 from src.rasterizer import (
     compute_grid_bounds,
@@ -288,6 +289,7 @@ class TestRasterizeTracks:
             y_max_wm=self.y_max_wm,
             meters_per_pixel=self.meters_per_pixel,
             max_consecutive_same_cell=3,
+            decay_factor=0.5,
             grids=self.grids,
         )
 
@@ -329,6 +331,7 @@ class TestRasterizeTracks:
             y_max_wm=self.y_max_wm,
             meters_per_pixel=self.meters_per_pixel,
             max_consecutive_same_cell=3,
+            decay_factor=0.5,
             grids=self.grids,
         )
 
@@ -341,7 +344,7 @@ class TestRasterizeTracks:
 
         Simulates forgetting to stop the watch: many consecutive samples land
         in the same grid cell. Only up to `max_consecutive_same_cell`
-        consecutive samples should be counted.
+        consecutive samples should be counted (with decay applied).
         """
         # All points map to the same pixel (same web-mercator coords)
         n_points = 38
@@ -370,18 +373,20 @@ class TestRasterizeTracks:
             y_max_wm=self.y_max_wm,
             meters_per_pixel=self.meters_per_pixel,
             max_consecutive_same_cell=3,
+            decay_factor=0.5,
             grids=self.grids,
         )
 
         count_grid = self.grids[2]
-        # Exactly 3 counts despite 38 identical points
-        assert np.sum(count_grid) == 3
+        # With decay: 1.0 + 0.5 + 0.25 = 1.75 (not 3 as before)
+        assert np.sum(count_grid) == pytest.approx(1.75)
 
     def test_resets_counter_on_cell_change(self):
         """Should reset the consecutive counter when the cell changes.
 
         A later return to the same cell should be counted again (genuine
         re-visit), so the cap only limits *consecutive* same-cell samples.
+        With per-activity decay, the second visit to a cell is weighted less.
         """
         # Coordinates alternate between two pixels
         # px: (xm - x_min_wm)/10 = 5, 10 ; py: (y_max_wm - ym)/10 = 5, 10
@@ -408,12 +413,97 @@ class TestRasterizeTracks:
             y_max_wm=self.y_max_wm,
             meters_per_pixel=self.meters_per_pixel,
             max_consecutive_same_cell=3,
+            decay_factor=0.5,
             grids=self.grids,
         )
 
         count_grid = self.grids[2]
-        # 6 distinct samples, none consecutive in the same cell -> all counted
-        assert np.sum(count_grid) == 6
+        # Sequence of cells: A B A B A B. Each cell is visited 3x within the
+        # activity but never consecutively; with per-activity decay the repeats
+        # are weighted 1 + 0.5 + 0.25 = 1.75 per cell -> 2 * 1.75 = 3.5.
+        assert np.sum(count_grid) == pytest.approx(3.5)
+
+    def test_decay_laps_in_single_activity(self):
+        """Repeated same-cell visits within ONE activity should decay.
+
+        Simulates a running-track session: the athlete passes the same pixel
+        multiple times. Each additional pass within the activity contributes
+        less (1, d, d^2, ...) so a 10-lap session is not 10x a 1-lap session.
+        """
+        # 6 consecutive points all in the SAME pixel (same cell, different times)
+        n_points = 6
+        self.to_utm.transform.return_value = (
+            np.full(n_points, 500100.0),
+            np.full(n_points, 5000100.0),
+        )
+        self.to_wm.transform.return_value = (
+            np.full(n_points, -13499950.0),
+            np.full(n_points, 5699950.0),
+        )
+
+        tracks = [
+            ("track_laps", [[45.0, -122.0, None, None, 100.0]] * n_points),
+        ]
+
+        rasterize_tracks(
+            tracks,
+            self.to_wm,
+            self.to_utm,
+            self.home_x_utm,
+            self.home_y_utm,
+            clip_m=None,
+            x_min_wm=self.x_min_wm,
+            y_max_wm=self.y_max_wm,
+            meters_per_pixel=self.meters_per_pixel,
+            max_consecutive_same_cell=100,  # disable consecutive cap to isolate decay
+            decay_factor=0.5,
+            grids=self.grids,
+        )
+
+        count_grid = self.grids[2]
+        # 1 + 0.5 + 0.25 + 0.125 + 0.0625 + 0.03125 = 1.96875
+        assert np.sum(count_grid) == pytest.approx(1.96875)
+
+    def test_decay_resets_across_activities(self):
+        """Decay should reset for each new activity (different days = fresh 1.0).
+
+        The same cell visited once per activity across 3 activities should sum to 3.0,
+        not decay as if it were a single activity.
+        """
+        # Single point per activity, all in the SAME pixel
+        self.to_utm.transform.return_value = (
+            np.array([500100.0, 500100.0, 500100.0]),
+            np.array([5000100.0, 5000100.0, 5000100.0]),
+        )
+        self.to_wm.transform.return_value = (
+            np.array([-13499950.0, -13499950.0, -13499950.0]),
+            np.array([5699950.0, 5699950.0, 5699950.0]),
+        )
+
+        tracks = [
+            ("run_1", [[45.0, -122.0, None, None, 100.0]]),
+            ("run_2", [[45.0, -122.0, None, None, 100.0]]),
+            ("run_3", [[45.0, -122.0, None, None, 100.0]]),
+        ]
+
+        rasterize_tracks(
+            tracks,
+            self.to_wm,
+            self.to_utm,
+            self.home_x_utm,
+            self.home_y_utm,
+            clip_m=None,
+            x_min_wm=self.x_min_wm,
+            y_max_wm=self.y_max_wm,
+            meters_per_pixel=self.meters_per_pixel,
+            max_consecutive_same_cell=100,
+            decay_factor=0.5,
+            grids=self.grids,
+        )
+
+        count_grid = self.grids[2]
+        # 3 separate activities, each first visit -> 1 + 1 + 1 = 3.0
+        assert np.sum(count_grid) == pytest.approx(3.0)
 
 
 class TestComputeNormalizedGrids:

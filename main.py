@@ -75,6 +75,7 @@ def main():
         y_max_wm,
         config.meters_per_pixel,
         config.max_consecutive_same_cell,
+        config.decay_factor,
         grids,
     )
 

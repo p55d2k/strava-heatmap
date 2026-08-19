@@ -105,10 +105,27 @@ def _rasterize_track_points(
     grid_h: int,
     count_grid: np.ndarray,
     max_consecutive_same_cell: int,
+    decay_factor: float = 0.5,
 ) -> None:
-    """Rasterize a single track's points onto the count grid with consecutive cell cap."""
+    """Rasterize a single track's points onto the count grid with consecutive cell cap.
+
+    Each grid cell visited within the *same activity* is counted with a
+    geometrically decaying weight: the first visit to a cell contributes 1.0,
+    the second `decay_factor`, the third `decay_factor**2`, and so on. This
+    prevents a single activity that repeatedly passes the same location (e.g.
+    laps on a running track, or an out-and-back route) from inflating the pass
+    count, while still rewarding genuinely higher training volume with a
+    diminishing signal.
+
+    Note: counts are decayed *per-activity*. The same cell visited across
+    different activities each starts fresh at 1.0, so multi-day route coverage
+    is unaffected.
+    """
     same_cell_run = 0
     prev_xi = prev_yi = None
+    # Track visits per cell within this activity for decay
+    cell_visits: dict[tuple[int, int], int] = {}
+
     for i in range(len(track_pts)):
         xi = int(round(px[i]))
         yi = int(round(py[i]))
@@ -119,7 +136,10 @@ def _rasterize_track_points(
                 same_cell_run = 1
                 prev_xi, prev_yi = xi, yi
             if same_cell_run <= max_consecutive_same_cell:
-                count_grid[yi, xi] += 1
+                visits = cell_visits.get((xi, yi), 0)
+                weight = decay_factor**visits  # 1, d, d^2, d^3...
+                count_grid[yi, xi] += weight
+                cell_visits[(xi, yi)] = visits + 1
 
 
 def paint_segment(x1, y1, x2, y2, speed_val, hr_val, grad_val, elev_val, grids):
@@ -170,6 +190,7 @@ def rasterize_tracks(
     meters_per_pixel: float,
     max_consecutive_same_cell: int,
     grids: tuple,
+    decay_factor: float = 0.5,
 ) -> None:
     """Rasterize all tracks onto the grids.
 
@@ -180,6 +201,11 @@ def rasterize_tracks(
     subsequent consecutive samples in that cell are skipped until the track
     leaves the cell (a later return to the cell resets the counter, so genuine
     re-visits are still counted).
+
+    Repeated visits to the same cell *within a single activity* are weighted by
+    a geometric decay (`decay_factor`**n) so that loop/out-and-back routes
+    (e.g. running-track laps) don't inflate the pass count. The decay resets per
+    activity, so genuine coverage across different days is preserved.
     """
     (
         grid_w,
@@ -215,7 +241,14 @@ def rasterize_tracks(
         py = (y_max_wm - ys_wm) / meters_per_pixel
 
         _rasterize_track_points(
-            track_pts, px, py, grid_w, grid_h, count_grid, max_consecutive_same_cell
+            track_pts,
+            px,
+            py,
+            grid_w,
+            grid_h,
+            count_grid,
+            max_consecutive_same_cell,
+            decay_factor,
         )
 
         for i in range(len(track_pts) - 1):
