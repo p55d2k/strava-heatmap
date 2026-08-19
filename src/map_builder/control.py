@@ -87,7 +87,9 @@ class ExclusiveLayerControl(MacroElement):
     """
     )
 
-    def __init__(self, exclusive_names: list[str] | None = None, legend_ids: dict[str, str] | None = None):
+    def __init__(
+        self, exclusive_names: list[str] | None = None, legend_ids: dict[str, str] | None = None
+    ):
         """Initialize the ExclusiveLayerControl.
 
         Args:
@@ -98,5 +100,7 @@ class ExclusiveLayerControl(MacroElement):
         """
         super().__init__()
         self._name = "ExclusiveLayerControl"
-        self.exclusive_names = exclusive_names if exclusive_names is not None else EXCLUSIVE_LAYER_NAMES
+        self.exclusive_names = (
+            exclusive_names if exclusive_names is not None else EXCLUSIVE_LAYER_NAMES
+        )
         self.legend_ids = legend_ids if legend_ids is not None else LEGEND_IDS

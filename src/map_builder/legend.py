@@ -114,4 +114,3 @@ class LegendBuilder:
 def build_legend_html(normalized: dict, colormaps: dict, max_passes: int) -> str:
     """Build the complete legend HTML using the default LegendBuilder."""
     return LegendBuilder().build(normalized, colormaps, max_passes)
-
