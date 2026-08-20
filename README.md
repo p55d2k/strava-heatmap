@@ -63,6 +63,18 @@ python main.py
 ```
 Map is saved to `outputs/heatmap.html`.
 
+### JSON Schema for config.json
+
+A JSON Schema (`config.schema.json`) is auto-generated from the Pydantic model in `src/config_schema.py`. It provides IDE autocompletion and validation for `config.json` and `example_configs/*.json` (configured via `.vscode/settings.json`).
+
+To regenerate the schema after changing `ConfigModel`:
+
+```bash
+python scripts/generate_schema.py
+```
+
+The schema validates required fields (`ACTIVITIES_DIR`, `ACTIVITY_TYPES`), value constraints (e.g. `METERS_PER_PIXEL > 0`, `MAP_OPACITY` between 0 and 1), and types.
+
 ### Home detection
 Home is auto-detected from the most common activity start point. Override with `HOME_LAT` / `HOME_LON` if needed.
 

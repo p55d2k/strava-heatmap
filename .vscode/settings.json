@@ -1,0 +1,8 @@
+{
+  "json.schemas": [
+    {
+      "fileMatch": ["config.json", "example_configs/*.json"],
+      "url": "./config.schema.json"
+    }
+  ]
+}
