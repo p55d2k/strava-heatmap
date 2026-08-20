@@ -9,7 +9,9 @@ import json
 import os
 from pathlib import Path
 
-from src.config_schema import ConfigModel
+from src.config_schema import ConfigModel, normalize_activity_type
+
+__all__ = ["Config", "normalize_activity_type"]
 
 
 class Config:
