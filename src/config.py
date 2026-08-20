@@ -171,12 +171,29 @@ class Config:
 
     def __init__(self, config_path: Path):
         if not config_path.exists():
-            raise FileNotFoundError("config.json file not found.")
+            raise FileNotFoundError(
+                f"Config file not found: {config_path}\n"
+                f"  → Create a config.json file (see example_configs/ for templates)"
+            )
 
         with open(config_path) as f:
             cfg = json.load(f)
 
-        self.activities_dir = Path(cfg["ACTIVITIES_DIR"])
+        # Validate ACTIVITIES_DIR exists
+        activities_dir = Path(cfg["ACTIVITIES_DIR"])
+        if not activities_dir.exists():
+            raise FileNotFoundError(
+                f"Activities directory not found: {activities_dir}\n"
+                f"  → Check ACTIVITIES_DIR in config.json points to your Strava export folder\n"
+                f"  → The folder should contain activities.csv and .fit.gz/.gpx files"
+            )
+        if not activities_dir.is_dir():
+            raise NotADirectoryError(
+                f"ACTIVITIES_DIR is not a directory: {activities_dir}\n"
+                f"  → Please point to a folder containing your Strava export"
+            )
+
+        self.activities_dir = activities_dir
         # Normalize user-configured activity types so they match CSV values
         raw_types = cfg["ACTIVITY_TYPES"]
         self.activity_types = {normalize_activity_type(t) for t in raw_types}

@@ -8,6 +8,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
+import pytest
 
 from src.config import Config
 from src.data_loader import (
@@ -313,7 +314,7 @@ class TestLoadTracks:
 
     @patch("src.data_loader.parse_track_file")
     def test_skips_empty_tracks(self, mock_load_fit):
-        """Should skip tracks with no GPS points."""
+        """Should raise ValueError when tracks have no GPS points."""
         mock_load_fit.return_value = []
 
         runs = pd.DataFrame(
@@ -324,9 +325,8 @@ class TestLoadTracks:
             }
         )
 
-        tracks = load_tracks(self.config, runs)
-
-        assert len(tracks) == 0
+        with pytest.raises(ValueError, match="No valid GPS tracks could be loaded"):
+            load_tracks(self.config, runs)
 
     @patch("src.data_loader.parse_track_file")
     def test_updates_track_cache(self, mock_load_fit):

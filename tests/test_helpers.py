@@ -241,7 +241,9 @@ class TestDetectHome:
 
         df = pd.DataFrame(columns=["start_lat", "start_lon"])
 
-        with pytest.raises(ValueError, match="Cannot detect home: no GPS data available"):
+        with pytest.raises(
+            ValueError, match="Cannot auto-detect home location: no GPS data available"
+        ):
             detect_home(df)
 
     def test_detects_most_common_start_cell(self):

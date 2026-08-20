@@ -39,6 +39,14 @@ def _save_cache(config, cache: dict) -> None:
 
 def load_and_filter_activities(config) -> pd.DataFrame:
     """Load activities CSV, apply date/type filters, and parse GPS start points."""
+    # Check if activities CSV exists
+    if not config.activities_csv.exists():
+        raise FileNotFoundError(
+            f"Activities CSV not found: {config.activities_csv}\n"
+            f"  → Make sure your Strava export folder contains activities.csv\n"
+            f"  → Export from Strava: Settings > My Account > Download or Request Your Data"
+        )
+
     df = pd.read_csv(config.activities_csv)
     df["Activity Date"] = pd.to_datetime(df["Activity Date"], format="mixed", dayfirst=True)
 
@@ -49,10 +57,27 @@ def load_and_filter_activities(config) -> pd.DataFrame:
     runs = df[df["Activity Type"].isin(config.activity_types)].copy()
     log.info(f"Total matching activities in export: {len(runs)}")
 
+    if runs.empty:
+        available_types = sorted(df["Activity Type"].dropna().unique().tolist())
+        raise ValueError(
+            f"No activities found matching configured types: {sorted(config.activity_types)}\n"
+            f"  → Available types in your export: {available_types}\n"
+            f"  → Check ACTIVITY_TYPES in config.json (use names like 'Run', 'Ride', 'Hike', etc.)"
+        )
+
     date_from = pd.Timestamp(config.date_from) if config.date_from else pd.Timestamp.min
     date_to = pd.Timestamp(config.date_to) if config.date_to else pd.Timestamp(date.today())
     runs = runs[runs["Activity Date"].between(date_from, date_to)].copy()
     log.info(f"After date filter ({date_from.date()} – {date_to.date()}): {len(runs)}")
+
+    if runs.empty:
+        min_date = df["Activity Date"].min().date()
+        max_date = df["Activity Date"].max().date()
+        raise ValueError(
+            f"No activities in date range {date_from.date()} – {date_to.date()}\n"
+            f"  → Your export covers: {min_date} to {max_date}\n"
+            f"  → Adjust DATE_FROM / DATE_TO in config.json"
+        )
 
     # Load unified cache
     cache = _load_cache(config)
@@ -78,6 +103,15 @@ def load_and_filter_activities(config) -> pd.DataFrame:
     ].copy()
     log.info(f"After removing no-GPS / indoor: {len(runs)}")
 
+    if runs.empty:
+        total_with_gps = len([r for r in rows if r["start_lat"] is not None])
+        raise ValueError(
+            f"No activities with valid GPS data after filtering\n"
+            f"  → {len(rows)} activities had GPS files, but {len(rows) - total_with_gps} had no GPS data\n"
+            f"  → {total_with_gps - len(runs)} activities had GPS spread < {config.gps_spread_min_m}m (likely indoor)\n"
+            f"  → Try lowering GPS_SPREAD_MIN_M in config.json (current: {config.gps_spread_min_m}m)"
+        )
+
     return runs
 
 
@@ -102,8 +136,19 @@ def filter_by_home_radius(
     runs["dist_from_home_km"] = runs.apply(
         lambda r: haversine_km(home_lat, home_lon, r["start_lat"], r["start_lon"]), axis=1
     )
+    original_count = len(runs)
     runs = runs[runs["dist_from_home_km"] <= radius_km].copy()
     log.info(f"After home-radius filter (≤{radius_km} km): {len(runs)} activities")
+
+    if runs.empty:
+        # Get distances before filtering to provide better info
+        raise ValueError(
+            f"No activities within {radius_km} km of home location ({home_lat:.4f}, {home_lon:.4f})\n"
+            f"  → All {original_count} activities were outside this radius\n"
+            f"  → Try increasing RADIUS_KM in config.json (current: {radius_km} km)\n"
+            f"  → Or check your HOME_LAT/HOME_LON coordinates"
+        )
+
     return runs
 
 
@@ -138,6 +183,11 @@ def load_tracks(config, runs: pd.DataFrame) -> list[tuple[str, list]]:
     _save_cache(config, cache)
 
     if not tracks:
-        log.warning("No valid tracks loaded. Check your configuration and date ranges.")
+        raise ValueError(
+            f"No valid GPS tracks could be loaded from {len(runs)} activities\n"
+            f"  → Check that .fit.gz or .gpx files exist in {config.activities_dir}\n"
+            f"  → Files may be corrupted or in an unsupported format\n"
+            f"  → Try deleting the cache/ folder and re-running"
+        )
 
     return tracks

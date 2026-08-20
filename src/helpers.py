@@ -147,7 +147,11 @@ def get_gps_start(filepath: Path) -> tuple:
 def detect_home(df_gps: pd.DataFrame) -> tuple:
     """Bins starting points to a ~1 km grid to discover home location."""
     if df_gps.empty:
-        raise ValueError("Cannot detect home: no GPS data available")
+        raise ValueError(
+            "Cannot auto-detect home location: no GPS data available\n"
+            "  → Make sure your activities have valid GPS tracks (.fit.gz or .gpx files)\n"
+            "  → Or set HOME_LAT and HOME_LON manually in config.json"
+        )
 
     cell_lats, cell_lons = {}, {}
     for lat, lon in zip(df_gps["start_lat"], df_gps["start_lon"]):

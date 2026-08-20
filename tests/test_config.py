@@ -150,7 +150,7 @@ class TestConfig:
         """Should raise FileNotFoundError for missing config file."""
         missing_path = Path(self.temp_dir) / "missing.json"
 
-        with pytest.raises(FileNotFoundError, match="config.json file not found"):
+        with pytest.raises(FileNotFoundError, match="Config file not found"):
             Config(missing_path)
 
     def test_raises_on_invalid_json(self):
