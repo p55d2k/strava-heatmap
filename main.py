@@ -7,6 +7,7 @@ import argparse
 import logging
 import sys
 import warnings
+import webbrowser
 from pathlib import Path
 
 from tqdm import tqdm
@@ -89,6 +90,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Enable verbose/debug logging for development",
     )
+    parent.add_argument(
+        "--no-open",
+        action="store_true",
+        dest="no_open",
+        help="Do not automatically open the generated heatmap in the browser",
+    )
 
     # Also add them to the main parser for backward compatibility when no subcommand is used
     parser.add_argument(
@@ -107,6 +114,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         dest="dry_run",
         help="Validate config, show activity count, and exit without generating map",
+    )
+    parser.add_argument(
+        "--no-open",
+        action="store_true",
+        dest="no_open",
+        help="Do not automatically open the generated heatmap in the browser",
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
@@ -281,7 +294,13 @@ def run_generate(args: argparse.Namespace) -> None:
             pbar.update(1)
 
         print_success(f"Heatmap saved to: {config.output_html}")
-        print(f"\n  Open in browser: file://{config.output_html.absolute()}\n")
+
+        if not args.no_open:
+            file_url = f"file://{config.output_html.absolute()}"
+            print(f"\n  Opening in browser: {file_url}\n")
+            webbrowser.open(file_url)
+        else:
+            print(f"\n  Open in browser: file://{config.output_html.absolute()}\n")
 
     except (FileNotFoundError, NotADirectoryError, ValueError) as e:
         print_error(str(e))
