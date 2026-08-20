@@ -63,6 +63,28 @@ python main.py
 ```
 Map is saved to `outputs/heatmap.html`.
 
+### CLI Commands
+
+The CLI supports subcommands. If no subcommand is given, it defaults to `generate`.
+
+- `generate` (default) — build the heatmap:
+  ```bash
+  python main.py generate --config config.json --dry-run
+  ```
+  Use `--dry-run` to validate the config and show the activity count without generating the map.
+
+- `validate` — load and validate `config.json`, check that the activities directory and
+  `activities.csv` exist, and print a summary of the resolved settings:
+  ```bash
+  python main.py validate --config config.json
+  ```
+
+Common options (`--config`, `--dev`) can be passed at the top level or on a subcommand:
+```bash
+python main.py --config config.json --dry-run
+python main.py validate --config config.json --dev
+```
+
 ### JSON Schema for config.json
 
 A JSON Schema (`config.schema.json`) is auto-generated from the Pydantic model in `src/config_schema.py`. It provides IDE autocompletion and validation for `config.json` and `example_configs/*.json` (configured via `.vscode/settings.json`).

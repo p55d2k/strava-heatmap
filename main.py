@@ -75,11 +75,22 @@ def print_debug(dev: bool, message: str) -> None:
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="Strava Activity Heatmap Generator")
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Validate config, show activity count, and exit without generating map",
+    # Shared options available at top level for backward compatibility
+    # (e.g. `python main.py --config config.json`) and on each subcommand.
+    parent = argparse.ArgumentParser(add_help=False)
+    parent.add_argument(
+        "--config",
+        type=Path,
+        default=Path("config.json"),
+        help="Path to config.json file (default: config.json)",
     )
+    parent.add_argument(
+        "--dev",
+        action="store_true",
+        help="Enable verbose/debug logging for development",
+    )
+
+    # Also add them to the main parser for backward compatibility when no subcommand is used
     parser.add_argument(
         "--config",
         type=Path,
@@ -91,7 +102,39 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Enable verbose/debug logging for development",
     )
-    return parser.parse_args()
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        dest="dry_run",
+        help="Validate config, show activity count, and exit without generating map",
+    )
+
+    subparsers = parser.add_subparsers(dest="command", help="Available commands")
+
+    # Default command: generate heatmap
+    generate_parser = subparsers.add_parser(
+        "generate",
+        parents=[parent],
+        help="Generate heatmap (default)",
+    )
+    generate_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Validate config, show activity count, and exit without generating map",
+    )
+
+    # Validate command: just validate config
+    subparsers.add_parser(
+        "validate",
+        parents=[parent],
+        help="Validate config.json file",
+    )
+
+    # If no subcommand is provided, default to 'generate'
+    args = parser.parse_args()
+    if args.command is None:
+        args.command = "generate"
+    return args
 
 
 def print_error(message: str) -> None:
@@ -99,10 +142,51 @@ def print_error(message: str) -> None:
     print(f"  ✗ {message}")
 
 
-def main():
-    """Main pipeline function."""
-    args = parse_args()
+def run_validate(args: argparse.Namespace) -> None:
+    """Validate config.json file."""
+    # Setup logging based on dev flag
+    setup_logging(args.dev)
 
+    try:
+        # Load and validate configuration
+        config = Config(args.config)
+        config.log_summary()
+
+        # Also validate that activities.csv exists and can be read
+        if not config.activities_csv.exists():
+            raise FileNotFoundError(
+                f"Activities CSV not found: {config.activities_csv}\n"
+                f"  → Check ACTIVITIES_CSV in config.json matches the file in ACTIVITIES_DIR"
+            )
+
+        print_success("Config validation passed!")
+        print_info("Activities directory", str(config.activities_dir))
+        print_info("Activities CSV", str(config.activities_csv))
+        print_info("Activity types", ", ".join(config.activity_types))
+        print_info("Date range", f"{config.date_from} to {config.date_to}")
+        print_info("Home location", f"{config.home_lat}, {config.home_lon}")
+        print_info("Radius", f"{config.radius_km} km")
+        print_info("Output directory", str(config.output_dir))
+        print_info("Cache directory", str(config.cache_dir))
+
+    except (FileNotFoundError, NotADirectoryError, ValueError) as e:
+        print_error(str(e))
+        if args.dev:
+            import traceback
+
+            traceback.print_exc()
+        sys.exit(1)
+    except Exception as e:
+        print_error(f"Unexpected error: {e}")
+        if args.dev:
+            import traceback
+
+            traceback.print_exc()
+        sys.exit(1)
+
+
+def run_generate(args: argparse.Namespace) -> None:
+    """Run the full heatmap generation pipeline."""
     # Setup logging based on dev flag
     setup_logging(args.dev)
 
@@ -213,6 +297,16 @@ def main():
 
             traceback.print_exc()
         sys.exit(1)
+
+
+def main():
+    """Main entry point that routes to the appropriate subcommand."""
+    args = parse_args()
+
+    if args.command == "validate":
+        run_validate(args)
+    else:
+        run_generate(args)
 
 
 if __name__ == "__main__":
