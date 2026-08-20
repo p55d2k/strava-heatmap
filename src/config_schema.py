@@ -8,7 +8,182 @@ and provides a function to generate the JSON Schema.
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+# ==============================================================================
+# ACTIVITY TYPE ALIASES
+# ==============================================================================
+# Maps a normalized (lowercase, stripped) activity string to its canonical
+# Strava activity type. This lets users write verbose / common names such as
+# "Running", "Cycling" or "Bike" in ACTIVITY_TYPES, and also ingest CSV exports
+# that use verbose labels (e.g. "Alpine Ski", "Stand Up Paddling") while still
+# matching the canonical Strava type used for filtering.
+#
+# Covers the Strava activity types that carry GPS / location data.
+ACTIVITY_TYPE_ALIASES = {
+    # --- Running ---
+    "run": "Run",
+    "running": "Run",
+    "jog": "Run",
+    "jogging": "Run",
+    "trail run": "Run",
+    "virtual run": "VirtualRun",
+    "virtualrun": "VirtualRun",
+    "indoor run": "VirtualRun",
+    "treadmill": "VirtualRun",
+    # --- Cycling / Riding ---
+    "ride": "Ride",
+    "cycling": "Ride",
+    "bike": "Ride",
+    "biking": "Ride",
+    "bicycle": "Ride",
+    "bicycling": "Ride",
+    "cycle": "Ride",
+    "commute": "Ride",
+    "mtb": "Ride",
+    "mountain bike": "Ride",
+    "mountain biking": "Ride",
+    "road bike": "Ride",
+    "road biking": "Ride",
+    "gravel ride": "Ride",
+    "gravel biking": "Ride",
+    "virtual ride": "VirtualRide",
+    "virtualride": "VirtualRide",
+    "indoor cycle": "VirtualRide",
+    "indoor cycling": "VirtualRide",
+    "trainer": "VirtualRide",
+    "e-bike": "EBikeRide",
+    "e-bike ride": "EBikeRide",
+    "e bike": "EBikeRide",
+    "ebike": "EBikeRide",
+    "ebikeride": "EBikeRide",
+    "electric bike": "EBikeRide",
+    "electric bicycle": "EBikeRide",
+    # --- Swimming ---
+    "swim": "Swim",
+    "swimming": "Swim",
+    "pool swim": "Swim",
+    "open water swim": "Swim",
+    "open water swimming": "Swim",
+    "virtual swim": "Swim",
+    # --- Walking / Hiking ---
+    "walk": "Walk",
+    "walking": "Walk",
+    "walks": "Walk",
+    "stroll": "Walk",
+    "hike": "Hike",
+    "hiking": "Hike",
+    "trek": "Hike",
+    "trekking": "Hike",
+    "backpacking": "Hike",
+    "trail hike": "Hike",
+    # --- Skiing / Snowboarding ---
+    "ski": "AlpineSki",
+    "skiing": "AlpineSki",
+    "alpine ski": "AlpineSki",
+    "alpineski": "AlpineSki",
+    "downhill ski": "AlpineSki",
+    "downhill skiing": "AlpineSki",
+    "backcountry ski": "BackcountrySki",
+    "backcountryski": "BackcountrySki",
+    "backcountry skiing": "BackcountrySki",
+    "ski touring": "BackcountrySki",
+    "ski mountaineering": "BackcountrySki",
+    "randonee": "BackcountrySki",
+    "nordic ski": "NordicSki",
+    "nordicski": "NordicSki",
+    "nordic skiing": "NordicSki",
+    "cross country ski": "NordicSki",
+    "cross country skiing": "NordicSki",
+    "xc ski": "NordicSki",
+    "xc skiing": "NordicSki",
+    "classic ski": "NordicSki",
+    "skate ski": "NordicSki",
+    "roller ski": "RollerSki",
+    "rollerski": "RollerSki",
+    "roller skiing": "RollerSki",
+    "snowboard": "Snowboard",
+    "snowboarding": "Snowboard",
+    "snow board": "Snowboard",
+    "splitboard": "Snowboard",
+    # --- Skating ---
+    "ice skate": "IceSkate",
+    "iceskate": "IceSkate",
+    "ice skating": "IceSkate",
+    "figure skating": "IceSkate",
+    "inline skate": "InlineSkate",
+    "inlineskate": "InlineSkate",
+    "inline skating": "InlineSkate",
+    "rollerblade": "InlineSkate",
+    "rollerblading": "InlineSkate",
+    "skate": "InlineSkate",
+    # --- Water Sports ---
+    "kayak": "Kayaking",
+    "kayaking": "Kayaking",
+    "canoe": "Canoeing",
+    "canoeing": "Canoeing",
+    "stand up paddle": "StandUpPaddling",
+    "stand up paddling": "StandUpPaddling",
+    "sup": "StandUpPaddling",
+    "paddle board": "StandUpPaddling",
+    "paddle boarding": "StandUpPaddling",
+    "surf": "Surfing",
+    "surfing": "Surfing",
+    "windsurf": "Windsurf",
+    "windsurfing": "Windsurf",
+    "kitesurf": "Kitesurf",
+    "kitesurfing": "Kitesurf",
+    "kiteboard": "Kitesurf",
+    "kiteboarding": "Kitesurf",
+    "row": "Rowing",
+    "rowing": "Rowing",
+    "sail": "Sailing",
+    "sailing": "Sailing",
+    # --- Other ---
+    "workout": "Workout",
+    "strength training": "Workout",
+    "crossfit": "Workout",
+    "yoga": "Yoga",
+    "pilates": "Workout",
+    "stretch": "Workout",
+    "stretching": "Workout",
+    "core": "Workout",
+    "weight training": "Workout",
+    "weightlifting": "Workout",
+    "hiit": "Workout",
+    "circuit training": "Workout",
+    "elliptical": "Elliptical",
+    "stair stepper": "StairStepper",
+    "stair climbing": "StairStepper",
+    "wheelchair": "Wheelchair",
+    "handcycle": "Handcycle",
+}
+
+
+def normalize_activity_type(raw: str | None) -> str:
+    """
+    Map a raw activity type string to its canonical Strava type.
+
+    Parameters
+    ----------
+    raw
+        User-supplied or CSV value such as "Running", "bike", "Alpine Ski".
+        Case-insensitive; surrounding whitespace is ignored.
+
+    Returns
+    -------
+    str
+        Canonical Strava activity type if the normalized key exists in
+        ACTIVITY_TYPE_ALIASES; otherwise the original string is returned so
+        unknown values still match exactly.
+    """
+    if raw is None:
+        return ""
+    key = str(raw).strip().lower()
+    if key in ACTIVITY_TYPE_ALIASES:
+        return ACTIVITY_TYPE_ALIASES[key]
+    # Preserve unknown types so user-configured values still match exactly.
+    return str(raw).strip()
 
 
 class ConfigModel(BaseModel):
@@ -206,11 +381,49 @@ class ConfigModel(BaseModel):
 
     @field_validator("activity_types", mode="before")
     @classmethod
-    def normalize_activity_types(cls, v: list[str]) -> list[str]:
-        """Normalize activity types using the alias mapping."""
-        # We'll apply the normalization logic from config.py
-        # This is a simplified version - the actual normalization happens at runtime
-        return v
+    def normalize_activity_types_input(cls, v: list[str]) -> list[str]:
+        """Normalize activity types using the alias mapping at input time."""
+        return [normalize_activity_type(t) for t in v]
+
+    @model_validator(mode="after")
+    def validate_paths_and_create_dirs(self) -> "ConfigModel":
+        """Validate paths exist and create cache/output directories."""
+        # Validate ACTIVITIES_DIR exists
+        activities_dir = Path(self.activities_dir)
+        if not activities_dir.exists():
+            raise FileNotFoundError(
+                f"Activities directory not found: {activities_dir}\n"
+                f"  → Check ACTIVITIES_DIR in config.json points to your Strava export folder\n"
+                f"  → The folder should contain activities.csv and .fit.gz/.gpx files"
+            )
+        if not activities_dir.is_dir():
+            raise NotADirectoryError(
+                f"ACTIVITIES_DIR is not a directory: {activities_dir}\n"
+                f"  → Please point to a folder containing your Strava export"
+            )
+
+        # Configurable paths with sensible defaults (relative to project root)
+        # We need to find the project root - use the config file location if available,
+        # otherwise use current working directory
+        project_root = Path.cwd()
+        cache_dir = Path(self.cache_dir)
+        output_dir = Path(self.output_dir)
+
+        # Resolve relative to project root
+        if not cache_dir.is_absolute():
+            cache_dir = (project_root / cache_dir).resolve()
+        if not output_dir.is_absolute():
+            output_dir = (project_root / output_dir).resolve()
+
+        # Store resolved paths as strings (will be converted to Path in Config wrapper)
+        self.cache_dir = str(cache_dir)
+        self.output_dir = str(output_dir)
+
+        # Create directories
+        cache_dir.mkdir(exist_ok=True)
+        output_dir.mkdir(exist_ok=True)
+
+        return self
 
 
 def generate_json_schema(output_path: Path | None = None) -> dict[str, Any]:

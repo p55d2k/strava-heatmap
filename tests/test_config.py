@@ -161,11 +161,13 @@ class TestConfig:
             Config(self.config_path)
 
     def test_raises_on_missing_required_fields(self):
-        """Should raise KeyError for missing required fields."""
+        """Should raise ValidationError for missing required fields."""
+        import pydantic
+
         incomplete_config = {"ACTIVITIES_DIR": self.temp_dir}
         self.config_path.write_text(json.dumps(incomplete_config))
 
-        with pytest.raises(KeyError):
+        with pytest.raises(pydantic.ValidationError):
             Config(self.config_path)
 
     def test_log_summary_runs_without_error(self):
