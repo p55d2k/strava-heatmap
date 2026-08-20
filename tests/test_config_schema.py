@@ -2,6 +2,9 @@
 Unit tests for src/config_schema.py - JSON Schema generation.
 """
 
+import tempfile
+from pathlib import Path
+
 import pytest
 
 from src.config_schema import ConfigModel, generate_json_schema
@@ -57,47 +60,56 @@ class TestConfigSchema:
 
     def test_config_model_validates_example_config(self):
         """Should validate the example config.json files."""
-        # Test the main config
-        config_data = {
-            "ACTIVITIES_DIR": "strava_export",
-            "ACTIVITY_TYPES": ["Run"],
-            "DATE_FROM": None,
-            "DATE_TO": None,
-            "HOME_LAT": None,
-            "HOME_LON": None,
-            "RADIUS_KM": 20.0,
-            "GPS_SPREAD_MIN_M": 200,
-            "METERS_PER_PIXEL": 3,
-            "PADDING_M": 500,
-            "TRACK_CLIP_RADIUS_KM": 50.0,
-            "BLUR_SIGMA_PX": 2,
-            "MAP_OPACITY": 0.85,
-            "SPEED_MIN_MS": None,
-            "SPEED_MAX_MS": None,
-            "HR_MIN_BPM": None,
-            "HR_MAX_BPM": None,
-            "AUTO_RANGE_PCT": 5,
-            "MAX_CONSECUTIVE_SAME_CELL": 3,
-            "DECAY_FACTOR": 0.5,
-        }
+        # Create a temporary directory for the activities directory
+        with tempfile.TemporaryDirectory() as tmpdir:
+            activities_dir = Path(tmpdir) / "strava_export"
+            activities_dir.mkdir()
 
-        # ConfigModel uses aliases to match config.json keys
-        model = ConfigModel(**config_data)
-        assert model.activities_dir == "strava_export"
-        assert model.activity_types == ["Run"]
-        assert model.decay_factor == 0.5
+            # Test the main config
+            config_data = {
+                "ACTIVITIES_DIR": str(activities_dir),
+                "ACTIVITY_TYPES": ["Run"],
+                "DATE_FROM": None,
+                "DATE_TO": None,
+                "HOME_LAT": None,
+                "HOME_LON": None,
+                "RADIUS_KM": 20.0,
+                "GPS_SPREAD_MIN_M": 200,
+                "METERS_PER_PIXEL": 3,
+                "PADDING_M": 500,
+                "TRACK_CLIP_RADIUS_KM": 50.0,
+                "BLUR_SIGMA_PX": 2,
+                "MAP_OPACITY": 0.85,
+                "SPEED_MIN_MS": None,
+                "SPEED_MAX_MS": None,
+                "HR_MIN_BPM": None,
+                "HR_MAX_BPM": None,
+                "AUTO_RANGE_PCT": 5,
+                "MAX_CONSECUTIVE_SAME_CELL": 3,
+                "DECAY_FACTOR": 0.5,
+            }
+
+            # ConfigModel uses aliases to match config.json keys
+            model = ConfigModel(**config_data)
+            assert model.activities_dir == str(activities_dir)
+            assert model.activity_types == ["Run"]
+            assert model.decay_factor == 0.5
 
     def test_schema_validates_valid_config(self):
         """Schema should validate against valid config data using UPPERCASE keys."""
         import jsonschema  # type: ignore
 
-        schema = generate_json_schema()
-        valid_config = {
-            "ACTIVITIES_DIR": "strava_export",
-            "ACTIVITY_TYPES": ["Run"],
-            "RADIUS_KM": 20.0,
-        }
-        jsonschema.validate(valid_config, schema)
+        with tempfile.TemporaryDirectory() as tmpdir:
+            activities_dir = Path(tmpdir) / "strava_export"
+            activities_dir.mkdir()
+
+            schema = generate_json_schema()
+            valid_config = {
+                "ACTIVITIES_DIR": str(activities_dir),
+                "ACTIVITY_TYPES": ["Run"],
+                "RADIUS_KM": 20.0,
+            }
+            jsonschema.validate(valid_config, schema)
 
     def test_schema_rejects_missing_required(self):
         """Schema should reject config missing required fields."""
