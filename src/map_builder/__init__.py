@@ -23,6 +23,8 @@ from src.map_builder.control import (
 )
 from src.map_builder.legend import (
     LegendBuilder,
+    LegendContext,
+    LegendRow,
     build_legend_html,
     legend_row,
     pace_str,
@@ -47,6 +49,8 @@ __all__ = [
     "legend_row",
     "build_legend_html",
     "LegendBuilder",
+    "LegendContext",
+    "LegendRow",
     # Control
     "ExclusiveLayerControl",
     # Map builder

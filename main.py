@@ -26,7 +26,7 @@ from src.data_loader import (
     load_and_filter_activities,
     load_tracks,
 )
-from src.map_builder import build_legend_html, build_map
+from src.map_builder import LegendBuilder, build_map
 from src.rasterizer import (
     compute_grid_bounds,
     compute_normalized_grids,
@@ -276,7 +276,8 @@ def run_generate(args: argparse.Namespace) -> None:
             centre = [(lat_nw + lat_se) / 2, (lon_nw + lon_se) / 2]
             pbar.update(1)
 
-            legend_html = build_legend_html(normalized, colormaps, normalized["max_passes"])
+            legend_builder = LegendBuilder()
+            legend_html = legend_builder.build(normalized, colormaps, normalized["max_passes"])
             pbar.update(1)
 
             build_map(
@@ -288,6 +289,8 @@ def run_generate(args: argparse.Namespace) -> None:
                 config.output_html,
                 config.map_opacity,
                 carto_style=config.carto_style,
+                exclusive_layer_names=legend_builder.exclusive_layer_names,
+                legend_ids=legend_builder.legend_ids,
                 progress_callback=pbar.update,
             )
             pbar.update(1)

@@ -10,6 +10,8 @@ import pytest
 from src.map_builder import (
     LAYER_CONTROL_CSS,
     ExclusiveLayerControl,
+    LegendBuilder,
+    LegendRow,
     build_legend_html,
     build_map,
     build_tile_url,
@@ -176,6 +178,109 @@ class TestBuildLegendHtml:
         # Other rows should be hidden
         assert 'id="legend-frequency-log"' in html
         assert "display:none" in html
+
+
+class TestLegendBuilder:
+    """Tests for configurable legend rows and dynamic visibility wiring."""
+
+    def setup_method(self):
+        """Set up test fixtures."""
+        self.normalized = {
+            "s_lo": 3.0,
+            "s_hi": 6.0,
+            "hr_lo": 120,
+            "hr_hi": 180,
+            "g_lo": 0.02,
+            "g_hi": 0.10,
+            "max_passes": 50,
+        }
+        self.colormaps = {
+            key: MagicMock(side_effect=lambda t: (t, 1 - t, 0.5, 1.0))
+            for key in ["cmap_count", "cmap_speed_rgb", "cmap_hr_rgb", "cmap_elev_rgb"]
+        }
+
+    def test_default_rows_use_legend_ids_and_exclusive_names(self):
+        """Default builder should expose the standard layer->legend id mapping."""
+        builder = LegendBuilder()
+        assert builder.exclusive_layer_names == [
+            "GPS Density (linear)",
+            "GPS Density (log)",
+            "Pace (average)",
+            "Heart rate (average)",
+            "Gradient (absolute)",
+            "Gradient (change)",
+        ]
+        assert builder.legend_ids == {
+            "GPS Density (linear)": "legend-frequency",
+            "GPS Density (log)": "legend-frequency-log",
+            "Pace (average)": "legend-pace-avg",
+            "Heart rate (average)": "legend-heart-rate-avg",
+            "Gradient (absolute)": "legend-gradient",
+            "Gradient (change)": "legend-elev-change",
+        }
+
+    def test_default_rows_renders_same_html(self):
+        """Default-builder output should match the legacy build output."""
+        builder = LegendBuilder()
+        html = builder.build(self.normalized, self.colormaps, self.normalized["max_passes"])
+        assert "GPS Density (linear)" in html
+        assert "Heart rate (average)" in html
+        assert "120 bpm" in html
+        assert "180 bpm" in html
+        assert "2.0%" in html
+        assert "10.0%" in html
+
+    def test_custom_rows_produce_only_configured_rows(self):
+        """Custom rows should render exactly what is configured."""
+        rows = [
+            LegendRow(
+                row_id="custom-a",
+                title="Custom A",
+                gradient="linear-gradient(to right, red, blue)",
+                label_lo=lambda ctx: f"lo-{ctx.max_passes}",
+                label_hi="hi",
+                layer_name="Custom A layer",
+            ),
+            LegendRow(
+                row_id="custom-b",
+                title="Custom B",
+                gradient="linear-gradient(to right, green, yellow)",
+                label_lo="x",
+                label_hi="y",
+                visible=True,
+            ),
+        ]
+        builder = LegendBuilder(rows=rows)
+        html = builder.build(self.normalized, self.colormaps, self.normalized["max_passes"])
+
+        assert "Custom A" in html
+        assert "Custom B" in html
+        assert "lo-50" in html
+        assert "linear-gradient(to right, red, blue)" in html
+        # Only configured rows are included
+        assert "GPS Density" not in html
+        assert "Pace (average)" not in html
+
+        # Dynamic visibility config derives from the configured rows.
+        # custom-b has no layer_name so it is excluded from exclusive behavior.
+        assert builder.exclusive_layer_names == ["Custom A layer"]
+        assert builder.legend_ids == {"Custom A layer": "custom-a"}
+
+    def test_callable_fields_resolved_with_context(self):
+        """Callable gradient/labels should be resolved using the build context."""
+        rows = [
+            LegendRow(
+                row_id="ctx-row",
+                title="Ctx",
+                gradient=lambda ctx: f"grad-{ctx.colormaps['cmap_count'].t}",
+                label_lo=lambda ctx: f"{ctx.normalized['s_lo']:.1f}",
+                label_hi=lambda ctx: f"passes={ctx.max_passes}",
+            )
+        ]
+        html = LegendBuilder(rows=rows).build(self.normalized, self.colormaps, 7)
+        assert "grad-" in html
+        assert "3.0" in html
+        assert "passes=7" in html
 
 
 @pytest.mark.usefixtures("carto_api_key")
@@ -444,6 +549,49 @@ class TestBuildMap:
         url = tile_kwargs["tiles"]
         assert url.startswith("https://basemaps.cartocdn.com/rastertiles/voyager/")
         assert "?key=default_public_testkey" in url
+
+    @patch("src.map_builder.map_builder.folium.Map")
+    @patch("src.map_builder.map_builder.folium.TileLayer")
+    @patch("src.map_builder.map_builder.folium.FeatureGroup")
+    @patch("src.map_builder.map_builder.folium.PolyLine")
+    @patch("src.map_builder.map_builder.folium.raster_layers.ImageOverlay")
+    @patch("src.map_builder.map_builder.folium.LayerControl")
+    @patch("src.map_builder.map_builder.ExclusiveLayerControl")
+    def test_forwards_dynamic_visibility_config(
+        self,
+        mock_exclusive_control,
+        mock_layer_control,
+        mock_image_overlay,
+        mock_polyline,
+        mock_feature_group,
+        mock_tile_layer,
+        mock_map,
+    ):
+        """ExclusiveLayerControl should receive the legend dynamic-visibility config."""
+        mock_map.return_value = MagicMock()
+        mock_tile_layer.return_value = MagicMock()
+        mock_feature_group.return_value = MagicMock()
+        mock_polyline.return_value = MagicMock()
+        mock_image_overlay.return_value = MagicMock()
+        mock_layer_control.return_value = MagicMock()
+        mock_exclusive_control.return_value = MagicMock()
+
+        build_map(
+            self.tracks,
+            self.layers,
+            self.bounds,
+            self.centre,
+            self.legend_html,
+            self.output_path,
+            self.map_opacity,
+            exclusive_layer_names=["Alpha"],
+            legend_ids={"Alpha": "legend-alpha"},
+        )
+
+        mock_exclusive_control.assert_called_once()
+        kwargs = mock_exclusive_control.call_args[1]
+        assert kwargs["exclusive_names"] == ["Alpha"]
+        assert kwargs["legend_ids"] == {"Alpha": "legend-alpha"}
 
 
 class TestCartoApiKey:

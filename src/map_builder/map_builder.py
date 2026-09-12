@@ -68,6 +68,8 @@ def build_map(
     output_path: Path,
     map_opacity: float,
     carto_style: str = DEFAULT_CARTO_STYLE,
+    exclusive_layer_names: list[str] | None = None,
+    legend_ids: dict[str, str] | None = None,
     progress_callback=None,
 ) -> None:
     """Build and save the Folium map.
@@ -81,6 +83,12 @@ def build_map(
         output_path: Path to save the output HTML file.
         map_opacity: Opacity value (0-1) for the heatmap image overlays.
         carto_style: CARTO basemap tile style ("voyager", "light_all", "dark_all").
+        exclusive_layer_names: Overlay layer names that should be mutually
+            exclusive and drive legend visibility. Defaults to the constants in
+            ``EXCLUSIVE_LAYER_NAMES``.
+        legend_ids: Mapping from layer name to legend row DOM id for dynamic
+            legend visibility. Defaults to the constants in ``LEGEND_IDS``.
+        progress_callback: Optional callable invoked with a step count.
     """
     m = folium.Map(location=centre, zoom_start=14, tiles=None, control_scale=True)
     folium.TileLayer(
@@ -124,7 +132,10 @@ def build_map(
     folium.LayerControl(collapsed=False).add_to(m)
     m.get_root().html.add_child(folium.Element(LAYER_CONTROL_CSS))
     m.get_root().html.add_child(folium.Element(legend_html))
-    ExclusiveLayerControl().add_to(m)
+    ExclusiveLayerControl(
+        exclusive_names=exclusive_layer_names,
+        legend_ids=legend_ids,
+    ).add_to(m)
 
     if progress_callback:
         progress_callback(1)  # Controls and legend added
