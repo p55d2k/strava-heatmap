@@ -1,0 +1,235 @@
+/* ================================================================
+   Unified controls stylesheet — heatmap control panel, legend, and
+   Leaflet layer-control overrides. A single set of CSS custom
+   properties keeps every UI surface visually consistent.
+   ================================================================ */
+
+:root {
+  --hcp-bg: rgba(15, 15, 15, 0.92);
+  --hcp-border: rgba(255, 255, 255, 0.12);
+  --hcp-radius: 10px;
+  --hcp-shadow: 0 4px 18px rgba(0, 0, 0, 0.65);
+  --hcp-text: #ddd;
+  --hcp-text-strong: #f1f1f1;
+  --hcp-text-muted: #999;
+  --hcp-accent: #fc4c02;
+  --hcp-control-bg: rgba(255, 255, 255, 0.06);
+  --hcp-control-border: rgba(255, 255, 255, 0.14);
+  --hcp-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial,
+    sans-serif;
+}
+
+/* Hide the stock Leaflet layer control — its capabilities are merged into
+   the custom top-right control panel (it is kept only to populate Folium's
+   overlay registry used by the panel + exclusive-layer behaviour). */
+.leaflet-control-layers {
+  display: none !important;
+}
+
+/* -------------------------------------------------- Heatmap control panel */
+
+.heatmap-control-panel {
+  position: fixed;
+  top: 10px;
+  right: 10px;
+  z-index: 5000;
+  width: 240px;
+  background: var(--hcp-bg);
+  border: 1px solid var(--hcp-border);
+  border-radius: var(--hcp-radius);
+  box-shadow: var(--hcp-shadow);
+  color: var(--hcp-text);
+  font-family: var(--hcp-font);
+  font-size: 12px;
+  line-height: 1.4;
+  user-select: none;
+}
+
+.heatmap-control-panel .hcp-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 9px 12px;
+  font-weight: 600;
+  color: var(--hcp-text-strong);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.heatmap-control-panel .hcp-body {
+  padding: 12px;
+  display: block;
+}
+
+.heatmap-control-panel.hcp-collapsed .hcp-body {
+  display: none;
+}
+
+.heatmap-control-panel .hcp-section {
+  margin-bottom: 12px;
+}
+
+.heatmap-control-panel .hcp-section:last-child {
+  margin-bottom: 0;
+}
+
+.heatmap-control-panel .hcp-label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+  color: var(--hcp-text-muted);
+  font-weight: 600;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+}
+
+/* Basemap style segments */
+.heatmap-control-panel .hcp-segments {
+  display: flex;
+  gap: 4px;
+}
+
+.heatmap-control-panel .hcp-segment {
+  flex: 1;
+  background: var(--hcp-control-bg);
+  color: var(--hcp-text);
+  border: 1px solid var(--hcp-control-border);
+  border-radius: 6px;
+  padding: 5px 4px;
+  font-size: 11px;
+  cursor: pointer;
+  text-align: center;
+}
+
+.heatmap-control-panel .hcp-segment:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.heatmap-control-panel .hcp-segment-active {
+  background: var(--hcp-accent);
+  border-color: var(--hcp-accent);
+  color: #fff;
+}
+
+/* Overlay / layer toggles */
+.heatmap-control-panel .hcp-label.hcp-layer-group-label {
+  margin-top: 10px;
+}
+
+.heatmap-control-panel .hcp-layer-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.heatmap-control-panel .hcp-layer-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 0;
+  color: var(--hcp-text);
+  cursor: pointer;
+  font-size: 11px;
+  line-height: 1.2;
+}
+
+.heatmap-control-panel .hcp-layer-row input[type="checkbox"],
+.heatmap-control-panel .hcp-layer-row input[type="radio"] {
+  accent-color: var(--hcp-accent);
+  flex: none;
+}
+
+/* Opacity slider */
+.heatmap-control-panel input[type="range"] {
+  width: 100%;
+  accent-color: var(--hcp-accent);
+}
+
+/* Fit / reset / legend buttons */
+.heatmap-control-panel .hcp-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.heatmap-control-panel .hcp-actions button {
+  flex: 1;
+  background: var(--hcp-control-bg);
+  color: var(--hcp-text-strong);
+  border: 1px solid var(--hcp-control-border);
+  border-radius: 6px;
+  padding: 6px 4px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.heatmap-control-panel .hcp-actions button:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+/* Collapse / expand toggle button */
+.heatmap-control-panel .hcp-toggle-btn {
+  background: none;
+  border: none;
+  color: var(--hcp-text-strong);
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0 2px;
+}
+
+/* ---------------------------------------------------------- Heatmap legend */
+
+/* Match by id and/or class so the legend can never fall back to an
+   unstyled, full-width block at the top of the page on any code path.
+   It is always a small card pinned to the bottom-right (separate from the
+   top-right control panel). */
+#heatmap-legend,
+.hcp-legend {
+  position: fixed;
+  top: auto;
+  left: auto;
+  bottom: 28px;
+  right: 10px;
+  z-index: 5000;
+  width: auto;
+  max-width: 300px;
+  background: var(--hcp-bg);
+  padding: 13px 16px 14px;
+  border-radius: var(--hcp-radius);
+  border: 1px solid var(--hcp-border);
+  box-shadow: var(--hcp-shadow);
+  color: var(--hcp-text);
+  font-family: var(--hcp-font);
+  font-size: 12px;
+  min-width: 210px;
+  line-height: 1.4;
+}
+
+.hcp-legend-row {
+  margin-bottom: 8px;
+}
+
+.hcp-legend-row:last-child {
+  margin-bottom: 0;
+}
+
+.hcp-legend-title {
+  font-weight: 600;
+  color: var(--hcp-text-strong);
+  margin-bottom: 3px;
+}
+
+.hcp-legend-swatches {
+  height: 10px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.hcp-legend-scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 3px;
+  color: var(--hcp-text-muted);
+  font-size: 11px;
+}

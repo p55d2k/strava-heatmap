@@ -2,11 +2,14 @@
 Legend generation for the heatmap.
 
 This module provides functions and classes to generate the legend HTML,
-including individual legend rows and the complete legend container.
+including individual legend rows and the complete legend container. The markup
+is rendered from the external ``assets/legend_row.html`` and
+``assets/legend_container.html`` templates, and styled by the shared
+``assets/panel.css`` so it stays consistent with the control panel.
 
-Rows are fully configurable: build your own ``LegendRow`` definitions (or
-start from ``LegendBuilder.default_rows``) and pass them to ``LegendBuilder``.
-Each row can be bound to a map overlay layer name; the builder then exposes
+Rows are fully configurable: build your own ``LegendRow`` definitions (or start
+from ``LegendBuilder.default_rows``) and pass them to ``LegendBuilder``. Each
+row can be bound to a map overlay layer name; the builder then exposes
 ``legend_ids`` / ``exclusive_layer_names`` so the dynamic layer control can
 show/hide the correct legend row.
 """
@@ -15,9 +18,14 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from pathlib import Path
+from string import Template
 
-from src.map_builder.constants import DEFAULT_LEGEND_STYLES
 from src.map_builder.utils import build_style_string, cmap_to_css
+
+_ASSETS_DIR = Path(__file__).parent / "assets"
+_ROW_TEMPLATE = Template((_ASSETS_DIR / "legend_row.html").read_text(encoding="utf-8"))
+_CONTAINER_TEMPLATE = Template((_ASSETS_DIR / "legend_container.html").read_text(encoding="utf-8"))
 
 
 def pace_str(ms: float) -> str:
@@ -31,16 +39,14 @@ def legend_row(
 ) -> str:
     """Generate HTML for a legend row."""
     display = "block" if visible else "none"
-    return f"""
-    <div id="{row_id}" style="display:{display}">
-      <div style="font-weight:600;margin-bottom:3px;color:#eee">{title}</div>
-      <div style="height:10px;border-radius:3px;background:{grad_css};
-                  border:1px solid rgba(255,255,255,0.08)"></div>
-      <div style="display:flex;justify-content:space-between;
-                  margin-top:3px;color:#aaa;font-size:11px">
-        <span>{label_lo}</span><span>{label_hi}</span>
-      </div>
-    </div>"""
+    return _ROW_TEMPLATE.substitute(
+        row_id=row_id,
+        display=display,
+        title=title,
+        grad_css=grad_css,
+        label_lo=label_lo,
+        label_hi=label_hi,
+    )
 
 
 @dataclass(frozen=True)
@@ -64,13 +70,13 @@ def _resolve(value, ctx: LegendContext):
 class LegendRow:
     """Configuration for a single legend row.
 
-    Each display field (``gradient``, ``label_lo``, ``label_hi``) may be a
-    plain value or a callable taking a :class:`LegendContext` and returning a
-    string. ``row_id`` must be present in the built HTML so that the dynamic
-    layer control can locate and show/hide the row.
+    Each display field (``gradient``, ``label_lo``, ``label_hi``) may be a plain
+    value or a callable taking a :class:`LegendContext` and returning a string.
+    ``row_id`` must be present in the built HTML so that the dynamic layer
+    control can locate and show/hide the row.
 
-    ``layer_name`` optionally links the row to the map overlay layer that
-    drives its visibility via ``ExclusiveLayerControl``.
+    ``layer_name`` optionally links the row to the map overlay layer that drives
+    its visibility via ``ExclusiveLayerControl``.
     """
 
     row_id: str
@@ -89,6 +95,10 @@ class LegendBuilder:
     from :meth:`default_rows` and extend/filter it, or pass your own rows.
     Dynamically-linked rows expose :attr:`legend_ids` and
     :attr:`exclusive_layer_names` for the layer control.
+
+    By default the container is styled by the shared ``.hcp-legend`` class. Pass
+    ``styles`` to override (e.g. the legacy ``DEFAULT_LEGEND_STYLES`` dict) as a
+    custom inline ``style`` attribute.
     """
 
     def __init__(
@@ -96,7 +106,7 @@ class LegendBuilder:
         styles: dict[str, str] | None = None,
         rows: list[LegendRow] | None = None,
     ):
-        self.styles = styles if styles is not None else dict(DEFAULT_LEGEND_STYLES)
+        self.styles = dict(styles) if styles is not None else {}
         self.rows = list(rows) if rows is not None else self.default_rows()
 
     def default_rows(self) -> list[LegendRow]:
@@ -185,14 +195,9 @@ class LegendBuilder:
 
     def build(self, normalized: dict, colormaps: dict, max_passes: int) -> str:
         """Build the complete legend HTML."""
-        legend_html = f"""
-    <div id="heatmap-legend" style="
-        {self.container_style()}
-    ">
-      {self.build_rows(normalized, colormaps, max_passes)}
-    </div>
-    """
-        return legend_html
+        rows = self.build_rows(normalized, colormaps, max_passes)
+        style_attr = f' style="{self.container_style()}"' if self.styles else ""
+        return _CONTAINER_TEMPLATE.substitute(rows=rows, style_attr=style_attr)
 
 
 def build_legend_html(normalized: dict, colormaps: dict, max_passes: int) -> str:

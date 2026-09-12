@@ -8,14 +8,21 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.map_builder import (
-    LAYER_CONTROL_CSS,
+    CARTO_STYLES,
+    DEFAULT_CARTO_STYLE,
+    ControlPanel,
     ExclusiveLayerControl,
     LegendBuilder,
     LegendRow,
+    build_control_panel_html,
+    build_layer_group_config,
     build_legend_html,
     build_map,
     build_tile_url,
+    carto_basemap_choices,
     cmap_to_css,
+    control_panel_script,
+    controls_css,
     get_carto_api_key,
     legend_row,
     pace_str,
@@ -142,10 +149,9 @@ class TestBuildLegendHtml:
         """Should generate complete legend HTML with all sections."""
         html = build_legend_html(self.normalized, self.colormaps, self.normalized["max_passes"])
 
-        # Check container
+        # Check container uses shared CSS class
         assert 'id="heatmap-legend"' in html
-        assert "position:fixed" in html
-        assert "z-index:9999" in html
+        assert 'class="hcp-legend"' in html
 
         # Check all legend rows present
         assert "GPS Density (linear)" in html
@@ -378,10 +384,11 @@ class TestBuildMap:
         # Verify image overlays for layers
         assert mock_image_overlay.call_count == 2  # Two layers
 
-        # Verify layer control
+        # Verify layer control is hidden (collapsed=True) — kept only for
+        # Folium's overlay registry used by the panel + ExclusiveLayerControl.
         mock_layer_control.assert_called_once()
         lc_kwargs = mock_layer_control.call_args[1]
-        assert lc_kwargs["collapsed"] is False
+        assert lc_kwargs["collapsed"] is True
 
         # Verify HTML elements added (CSS, legend)
         # ExclusiveLayerControl is added via add_to(), not add_child()
@@ -594,7 +601,220 @@ class TestBuildMap:
         assert kwargs["legend_ids"] == {"Alpha": "legend-alpha"}
 
 
-class TestCartoApiKey:
+class TestControlPanel:
+    """Tests for the in-HTML control panel macro."""
+
+    def test_default_instantiates_with_dark_style(self):
+        """ControlPanel should default to dark_all."""
+        panel = ControlPanel()
+        assert panel is not None
+        assert panel._name == "ControlPanel"
+        assert f'"activeBasemap": "{DEFAULT_CARTO_STYLE}"' in panel.config_json
+
+    def test_html_contains_panel_markup(self):
+        """build_control_panel_html should contain the key controls."""
+        html = build_control_panel_html(opacity=0.7)
+        assert "heatmap-control-panel" in html
+        assert "hcp-basemap" in html
+        assert "hcp-opacity" in html
+        assert 'value="70"' in html
+        assert "70%" in html
+        assert "hcp-fit" in html
+        assert "hcp-reset" in html
+        assert "hcp-legend" in html
+        assert "hcp-toggle" in html
+
+    def test_html_respects_opacity(self):
+        """build_control_panel_html should reflect the given opacity percentage."""
+        assert 'value="85"' in build_control_panel_html(opacity=0.85)
+        assert 'value="0"' in build_control_panel_html(opacity=0.0)
+
+    def test_script_contains_init_function(self):
+        """control_panel_script should expose initHeatmapControlPanel."""
+        script = control_panel_script()
+        assert "initHeatmapControlPanel" in script
+        assert "findOverlays" in script
+        assert "basemaps.cartocdn.com" in script
+
+    def test_carto_basemap_choices_default(self):
+        """carto_basemap_choices should return default styles with labels."""
+        choices = carto_basemap_choices()
+        assert [c["key"] for c in choices] == CARTO_STYLES
+        assert all("label" in c for c in choices)
+
+    def test_carto_basemap_choices_custom(self):
+        """carto_basemap_choices should honour an explicit style list."""
+        assert carto_basemap_choices(["voyager"]) == [{"key": "voyager", "label": "Voyager"}]
+
+    def test_macro_template_has_html_and_script(self):
+        """ControlPanel should define both html and script macros for folium."""
+        module = ControlPanel._template.module.__dict__
+        assert module.get("html") is not None
+        assert module.get("script") is not None
+
+
+class TestBuildMapControlPanel:
+    """Tests for the control_panel flag passed to build_map."""
+
+    def setup_method(self):
+        """Set up test fixtures for the control panel build tests."""
+        self.tracks = [
+            ("Track 1", [[45.0, -122.0], [45.001, -122.001]]),
+        ]
+        self.layers = [
+            ("Layer 1", "data:image/png;base64,test1", True),
+        ]
+        self.bounds = [[44.9, -122.1], [45.1, -121.9]]
+        self.centre = [45.0, -122.0]
+        self.legend_html = "<div>Legend</div>"
+        self.output_path = Path("/tmp/test_map_control_panel.html")
+        self.map_opacity = 0.7
+
+    @patch("src.map_builder.map_builder.folium.Map")
+    @patch("src.map_builder.map_builder.folium.TileLayer")
+    @patch("src.map_builder.map_builder.folium.FeatureGroup")
+    @patch("src.map_builder.map_builder.folium.PolyLine")
+    @patch("src.map_builder.map_builder.folium.raster_layers.ImageOverlay")
+    @patch("src.map_builder.map_builder.folium.LayerControl")
+    @patch("src.map_builder.map_builder.ExclusiveLayerControl")
+    @patch("src.map_builder.map_builder.ControlPanel")
+    def test_adds_control_panel_by_default(
+        self,
+        mock_panel,
+        mock_exclusive_control,
+        mock_layer_control,
+        mock_image_overlay,
+        mock_polyline,
+        mock_feature_group,
+        mock_tile_layer,
+        mock_map,
+    ):
+        """build_map should add a ControlPanel by default."""
+        mock_map.return_value = MagicMock()
+        mock_tile_layer.return_value = MagicMock()
+        mock_feature_group.return_value = MagicMock()
+        mock_polyline.return_value = MagicMock()
+        mock_image_overlay.return_value = MagicMock()
+        mock_layer_control.return_value = MagicMock()
+        mock_exclusive_control.return_value = MagicMock()
+        mock_panel.return_value = MagicMock()
+
+        build_map(
+            self.tracks,
+            self.layers,
+            self.bounds,
+            self.centre,
+            self.legend_html,
+            self.output_path,
+            self.map_opacity,
+        )
+
+        mock_panel.assert_called_once()
+        mock_panel.return_value.add_to.assert_called_once()
+
+        # The panel should receive the layer-group config derived from the
+        # supplied overlay layers and tracks.
+        layer_groups = mock_panel.call_args[1]["layer_groups"]
+        assert isinstance(layer_groups, list)
+        assert any(g["label"] == "Raw GPS tracks" for g in layer_groups)
+        # "Layer 1" / "Layer 2" are not in EXCLUSIVE_LAYER_NAMES, so they form a
+        # plain checkbox group rather than the exclusive radio group.
+        assert any(
+            g["mode"] == "check"
+            and any(lay["name"] in ("Layer 1", "Layer 2") for lay in g["layers"])
+            for g in layer_groups
+        )
+
+    @patch("src.map_builder.map_builder.folium.Map")
+    @patch("src.map_builder.map_builder.folium.TileLayer")
+    @patch("src.map_builder.map_builder.folium.FeatureGroup")
+    @patch("src.map_builder.map_builder.folium.PolyLine")
+    @patch("src.map_builder.map_builder.folium.raster_layers.ImageOverlay")
+    @patch("src.map_builder.map_builder.folium.LayerControl")
+    @patch("src.map_builder.map_builder.ExclusiveLayerControl")
+    @patch("src.map_builder.map_builder.ControlPanel")
+    def test_skips_control_panel_when_disabled(
+        self,
+        mock_panel,
+        mock_exclusive_control,
+        mock_layer_control,
+        mock_image_overlay,
+        mock_polyline,
+        mock_feature_group,
+        mock_tile_layer,
+        mock_map,
+    ):
+        """build_map should not add a ControlPanel when control_panel=False."""
+        mock_map.return_value = MagicMock()
+        mock_tile_layer.return_value = MagicMock()
+        mock_feature_group.return_value = MagicMock()
+        mock_polyline.return_value = MagicMock()
+        mock_image_overlay.return_value = MagicMock()
+        mock_layer_control.return_value = MagicMock()
+        mock_exclusive_control.return_value = MagicMock()
+        mock_panel.return_value = MagicMock()
+
+        build_map(
+            self.tracks,
+            self.layers,
+            self.bounds,
+            self.centre,
+            self.legend_html,
+            self.output_path,
+            self.map_opacity,
+            control_panel=False,
+        )
+
+        mock_panel.assert_not_called()
+
+
+class TestLayerGroupConfig:
+    """Tests for build_layer_group_config (the panel layerGroups config)."""
+
+    def setup_method(self):
+        self.layers = [
+            ("GPS Density (linear)", "data:image/png;base64,1", True),
+            ("Pace (average)", "data:image/png;base64,2", False),
+            ("Custom overlay", "data:image/png;base64,3", True),
+        ]
+
+    def test_includes_tracks_group_when_present(self):
+        """Should add a Raw GPS tracks checkbox group when tracks exist."""
+        groups = build_layer_group_config(self.layers, has_tracks=True)
+        labels = [g["label"] for g in groups]
+        assert "Raw GPS tracks" in labels
+        tracks_group = next(g for g in groups if g["label"] == "Raw GPS tracks")
+        assert tracks_group["mode"] == "check"
+        assert tracks_group["layers"][0]["visible"] is False
+
+    def test_exclusive_heatmap_layers_in_radio_group(self):
+        """Exclusive layer names should land in a radio (exclusive) group."""
+        groups = build_layer_group_config(self.layers, has_tracks=False)
+        radio = [g for g in groups if g["mode"] == "radio"]
+        assert radio
+        names = [lay["name"] for lay in radio[0]["layers"]]
+        assert "GPS Density (linear)" in names
+        assert "Pace (average)" in names
+        assert "Custom overlay" not in names  # not in EXCLUSIVE_LAYER_NAMES
+
+    def test_non_exclusive_layers_in_check_group(self):
+        """Non-exclusive layers should be in a checkbox (independent) group."""
+        groups = build_layer_group_config(self.layers, has_tracks=False)
+        checks = [g for g in groups if g["mode"] == "check"]
+        assert checks
+        names = [lay["name"] for g in checks for lay in g["layers"]]
+        assert "Custom overlay" in names
+        assert "GPS Density (linear)" not in names
+
+    def test_no_tracks_group_when_missing(self):
+        """Should omit the tracks group when has_tracks is False."""
+        groups = build_layer_group_config(self.layers, has_tracks=False)
+        assert all(g["label"] != "Raw GPS tracks" for g in groups)
+
+    def test_empty_layers(self):
+        """With no overlay layers and no tracks, groups should be empty."""
+        assert build_layer_group_config([], has_tracks=False) == []
+
     """Tests for CARTO API key loading and tile URL building."""
 
     def test_get_carto_api_key_returns_env_value(self, carto_api_key):
@@ -629,10 +849,12 @@ class TestCartoApiKey:
 class TestConstants:
     """Tests for module constants."""
 
-    def test_layer_control_css_not_empty(self):
-        """LAYER_CONTROL_CSS should not be empty."""
-        assert len(LAYER_CONTROL_CSS) > 0
-        assert "leaflet-control-layers" in LAYER_CONTROL_CSS
+    def test_controls_css_not_empty(self):
+        """controls_css() should return a non-empty <style> block."""
+        css = controls_css()
+        assert len(css) > 0
+        assert "<style>" in css
+        assert "leaflet-control-layers" in css
 
     def test_exclusive_layer_control_class_exists(self):
         """ExclusiveLayerControl class should exist and be instantiable."""

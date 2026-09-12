@@ -11,15 +11,16 @@ from pathlib import Path
 import folium
 from dotenv import load_dotenv
 
-from src.map_builder.constants import LAYER_CONTROL_CSS
-from src.map_builder.control import ExclusiveLayerControl
+from src.map_builder.constants import DEFAULT_CARTO_STYLE
+from src.map_builder.control import (
+    ControlPanel,
+    ExclusiveLayerControl,
+    build_layer_group_config,
+    controls_css,
+)
 
 # Load variables from .env (without overriding already-set environment variables).
 load_dotenv()
-
-# CARTO raster tile style. Options: "voyager", "light_all", "dark_all".
-# Can be overridden per-build via the CARTO_STYLE config option.
-DEFAULT_CARTO_STYLE = "dark_all"
 
 CARTO_ATTRIBUTION = (
     '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> '
@@ -70,6 +71,7 @@ def build_map(
     carto_style: str = DEFAULT_CARTO_STYLE,
     exclusive_layer_names: list[str] | None = None,
     legend_ids: dict[str, str] | None = None,
+    control_panel: bool = True,
     progress_callback=None,
 ) -> None:
     """Build and save the Folium map.
@@ -88,6 +90,8 @@ def build_map(
             ``EXCLUSIVE_LAYER_NAMES``.
         legend_ids: Mapping from layer name to legend row DOM id for dynamic
             legend visibility. Defaults to the constants in ``LEGEND_IDS``.
+        control_panel: When True, embed the in-HTML control panel (basemap
+            style switcher, opacity slider, fit/reset, legend toggle).
         progress_callback: Optional callable invoked with a step count.
     """
     m = folium.Map(location=centre, zoom_start=14, tiles=None, control_scale=True)
@@ -129,13 +133,30 @@ def build_map(
     if progress_callback:
         progress_callback(1)  # All layers added
 
-    folium.LayerControl(collapsed=False).add_to(m)
-    m.get_root().html.add_child(folium.Element(LAYER_CONTROL_CSS))
+    # A (visually hidden) LayerControl is kept purely so Folium emits its
+    # `<layer_control>_layers.overlays` registry, which both the control panel
+    # and ExclusiveLayerControl rely on to locate overlay layers by name.
+    folium.LayerControl(collapsed=True).add_to(m)
+    m.get_root().html.add_child(folium.Element(controls_css()))
     m.get_root().html.add_child(folium.Element(legend_html))
     ExclusiveLayerControl(
         exclusive_names=exclusive_layer_names,
         legend_ids=legend_ids,
     ).add_to(m)
+
+    if control_panel:
+        ControlPanel(
+            map_opacity=map_opacity,
+            carto_style=carto_style,
+            api_key=get_carto_api_key(),
+            bounds=bounds,
+            centre=centre,
+            layer_groups=build_layer_group_config(
+                overlay_layers=layers,
+                has_tracks=bool(tracks),
+                exclusive_layer_names=exclusive_layer_names,
+            ),
+        ).add_to(m)
 
     if progress_callback:
         progress_callback(1)  # Controls and legend added

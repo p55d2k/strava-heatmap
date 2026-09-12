@@ -13,13 +13,21 @@ Modules:
 """
 
 from src.map_builder.constants import (
+    CARTO_STYLE_LABELS,
+    CARTO_STYLES,
+    DEFAULT_CARTO_STYLE,
     DEFAULT_LEGEND_STYLES,
     EXCLUSIVE_LAYER_NAMES,
-    LAYER_CONTROL_CSS,
     LEGEND_IDS,
 )
 from src.map_builder.control import (
+    ControlPanel,
     ExclusiveLayerControl,
+    build_control_panel_html,
+    build_layer_group_config,
+    carto_basemap_choices,
+    control_panel_script,
+    controls_css,
 )
 from src.map_builder.legend import (
     LegendBuilder,
@@ -40,10 +48,12 @@ from src.map_builder.utils import (
 
 __all__ = [
     # Constants
-    "LAYER_CONTROL_CSS",
     "EXCLUSIVE_LAYER_NAMES",
     "LEGEND_IDS",
     "DEFAULT_LEGEND_STYLES",
+    "CARTO_STYLES",
+    "CARTO_STYLE_LABELS",
+    "DEFAULT_CARTO_STYLE",
     # Legend
     "pace_str",
     "legend_row",
@@ -53,6 +63,12 @@ __all__ = [
     "LegendRow",
     # Control
     "ExclusiveLayerControl",
+    "ControlPanel",
+    "controls_css",
+    "build_control_panel_html",
+    "build_layer_group_config",
+    "control_panel_script",
+    "carto_basemap_choices",
     # Map builder
     "build_map",
     "build_tile_url",

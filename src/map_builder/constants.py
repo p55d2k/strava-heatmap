@@ -5,37 +5,16 @@ These constants encapsulate styling and configuration that can be customized
 independently of the map building logic.
 """
 
-LAYER_CONTROL_CSS = """
-<style>
-  .leaflet-control-layers {
-    background: rgba(15,15,15,0.88) !important;
-    border: 1px solid rgba(255,255,255,0.10) !important;
-    border-radius: 9px !important;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.6) !important;
-    color: #ddd !important;
-    font-family: sans-serif !important;
-    font-size: 12px !important;
-  }
-  .leaflet-control-layers-expanded { padding: 11px 14px 13px !important; }
-  .leaflet-control-layers label {
-    color: #eee !important;
-    font-weight: 600 !important;
-    display: flex !important;
-    align-items: center !important;
-    gap: 6px !important;
-    margin: 4px 0 !important;
-  }
-  .leaflet-control-layers-separator {
-    border-color: rgba(255,255,255,0.12) !important;
-    margin: 6px 0 !important;
-  }
-  .leaflet-control-layers-toggle {
-    background-color: rgba(15,15,15,0.88) !important;
-    border-radius: 9px !important;
-    border: 1px solid rgba(255,255,255,0.10) !important;
-  }
-</style>
-"""
+# CARTO raster tile styles available in the in-HTML control panel.
+DEFAULT_CARTO_STYLE = "dark_all"
+CARTO_STYLES = ["voyager", "light_all", "dark_all"]
+
+# Human-friendly labels for the CARTO basemap styles shown in the control panel.
+CARTO_STYLE_LABELS = {
+    "voyager": "Voyager",
+    "light_all": "Light",
+    "dark_all": "Dark",
+}
 
 # Layer names that are mutually exclusive in the layer control.
 EXCLUSIVE_LAYER_NAMES = [
@@ -57,7 +36,10 @@ LEGEND_IDS = {
     "Gradient (change)": "legend-elev-change",
 }
 
-# Default inline styles for the legend container.
+# Optional inline styles for the legend container. The default legend now uses
+# the shared ``.hcp-legend`` class from ``assets/panel.css``; these are only
+# applied when explicitly passed to ``LegendBuilder(styles=...)`` for custom
+# positioning (kept for backward compatibility).
 DEFAULT_LEGEND_STYLES = {
     "position": "fixed",
     "bottom": "28px",

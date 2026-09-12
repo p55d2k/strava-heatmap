@@ -52,6 +52,9 @@ Issues = "https://github.com/p55d2k/strava-heatmap/issues"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"*" = ["*.css", "*.html", "*.js"]
+
 [tool.ruff]
 target-version = "py310"
 line-length = 100
