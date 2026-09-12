@@ -59,6 +59,7 @@ class Config:
 
         self.blur_sigma_px = model.blur_sigma_px
         self.map_opacity = model.map_opacity
+        self.carto_style = model.carto_style
 
         self.speed_min_ms = model.speed_min_ms
         self.speed_max_ms = model.speed_max_ms

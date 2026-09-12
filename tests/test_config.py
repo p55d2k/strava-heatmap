@@ -66,6 +66,7 @@ class TestConfig:
         assert config.track_clip_radius_km == 20.0
         assert config.blur_sigma_px == 2.0
         assert config.map_opacity == 0.7
+        assert config.carto_style == "dark_all"
         assert config.speed_min_ms is None
         assert config.speed_max_ms is None
         assert config.hr_min_bpm is None
@@ -93,6 +94,16 @@ class TestConfig:
 
         assert config.cache_dir.name == "my_cache"
         assert config.output_dir.name == "my_outputs"
+
+    def test_uses_custom_carto_style(self):
+        """Should use the CARTO_STYLE from config when specified."""
+        custom_config = self.valid_config.copy()
+        custom_config["CARTO_STYLE"] = "voyager"
+        self.config_path.write_text(json.dumps(custom_config))
+
+        config = Config(self.config_path)
+
+        assert config.carto_style == "voyager"
 
     def test_sets_default_activities_csv(self):
         """Should set default activities CSV path."""

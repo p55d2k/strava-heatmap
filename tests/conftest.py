@@ -12,6 +12,13 @@ import pytest
 
 
 @pytest.fixture
+def carto_api_key(monkeypatch):
+    """Set a fake CARTO_API_KEY for tests (basemap tile layer requires one)."""
+    monkeypatch.setenv("CARTO_API_KEY", "default_public_testkey")
+    return "default_public_testkey"
+
+
+@pytest.fixture
 def temp_dir():
     """Create a temporary directory for tests."""
     with tempfile.TemporaryDirectory() as tmpdir:

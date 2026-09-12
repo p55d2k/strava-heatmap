@@ -2,7 +2,7 @@
 
 A custom fork of the original Strava Activity Heatmap project by [Sam Wilson](https://github.com/moresamwilson/running-heatmap).
 
-Turns a Strava data export into an interactive heatmap. No API needed - just the zip file Strava lets you download.
+Turns a Strava data export into an interactive heatmap. No API needed just for the data - just the zip file Strava lets you download. (A free CARTO maps key is required for the basemap tiles.)
 
 The output is a single HTML file with six layers you can switch between:
 
@@ -20,6 +20,22 @@ The output is a single HTML file with six layers you can switch between:
 ```bash
 pip install -r requirements.txt
 ```
+
+### Environment: CARTO basemap API key (required)
+
+The basemap tiles are served by [CARTO](https://carto.com/developers/tiles) and require an API key. Set it in a `.env` file (git-ignored):
+
+```bash
+cp .env.example .env
+```
+
+Then edit `.env` and add your key:
+
+```
+CARTO_API_KEY = default_public_xxxxxxxxxxxxxxxxxxxxx
+```
+
+> Get a free key at https://carto.com/developers/tiles and paste it into `CARTO_API_KEY`. If the key is missing or blank, the program will fail with a clear error.
 
 ## Usage
 
@@ -42,6 +58,7 @@ pip install -r requirements.txt
   "TRACK_CLIP_RADIUS_KM": 50.0,
   "BLUR_SIGMA_PX": 2,
   "MAP_OPACITY": 0.85,
+  "CARTO_STYLE": "dark_all",
   "SPEED_MIN_MS": null,
   "SPEED_MAX_MS": null,
   "HR_MIN_BPM": null,
@@ -56,6 +73,7 @@ Key settings:
 - `HOME_LAT` / `HOME_LON`: Override auto-detected home location
 - `METERS_PER_PIXEL`: Resolution (lower = more detail). Use ~3 for runs, ~10 for rides.
 - `RADIUS_KM` / `TRACK_CLIP_RADIUS_KM`: Filter radius around home
+- `CARTO_STYLE`: Basemap style — one of `"dark_all"` (default), `"light_all"`, or `"voyager"`
 
 4. Run:
 ```bash

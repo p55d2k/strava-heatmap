@@ -6,7 +6,7 @@ and provides a function to generate the JSON Schema.
 """
 
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -290,6 +290,12 @@ class ConfigModel(BaseModel):
         le=1,
         description="Opacity of the heatmap overlay (0.0 to 1.0).",
         examples=[0.85, 0.7],
+    )
+    carto_style: Literal["voyager", "light_all", "dark_all"] = Field(
+        default="dark_all",
+        alias="CARTO_STYLE",
+        description="CARTO basemap tile style. One of: 'voyager', 'light_all', 'dark_all'.",
+        examples=["dark_all", "light_all", "voyager"],
     )
 
     # Optional filters

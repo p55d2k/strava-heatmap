@@ -29,6 +29,8 @@ from src.map_builder.legend import (
 )
 from src.map_builder.map_builder import (
     build_map,
+    build_tile_url,
+    get_carto_api_key,
 )
 from src.map_builder.utils import (
     cmap_to_css,
@@ -49,6 +51,8 @@ __all__ = [
     "ExclusiveLayerControl",
     # Map builder
     "build_map",
+    "build_tile_url",
+    "get_carto_api_key",
     # Utils
     "cmap_to_css",
 ]

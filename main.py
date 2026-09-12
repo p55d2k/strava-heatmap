@@ -287,6 +287,7 @@ def run_generate(args: argparse.Namespace) -> None:
                 legend_html,
                 config.output_html,
                 config.map_opacity,
+                carto_style=config.carto_style,
                 progress_callback=pbar.update,
             )
             pbar.update(1)

@@ -9,9 +9,54 @@ import os
 from pathlib import Path
 
 import folium
+from dotenv import load_dotenv
 
 from src.map_builder.constants import LAYER_CONTROL_CSS
 from src.map_builder.control import ExclusiveLayerControl
+
+# Load variables from .env (without overriding already-set environment variables).
+load_dotenv()
+
+# CARTO raster tile style. Options: "voyager", "light_all", "dark_all".
+# Can be overridden per-build via the CARTO_STYLE config option.
+DEFAULT_CARTO_STYLE = "dark_all"
+
+CARTO_ATTRIBUTION = (
+    '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> '
+    'contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
+)
+
+
+def get_carto_api_key() -> str:
+    """Return the CARTO API key from the `CARTO_API_KEY` environment variable.
+
+    The key must be provided via a `.env` file (see ``.env.example``) or the
+    exported `CARTO_API_KEY` environment variable.
+
+    Raises:
+        ValueError: If `CARTO_API_KEY` is missing or blank.
+    """
+    key = os.getenv("CARTO_API_KEY", "").strip()
+    if not key:
+        raise ValueError(
+            "CARTO_API_KEY is not set.\n"
+            "  -> Copy .env.example to .env and add your CARTO_API_KEY.\n"
+            "  -> Get a key at https://carto.com/developers/tiles"
+        )
+    return key
+
+
+def build_tile_url(style: str = DEFAULT_CARTO_STYLE) -> str:
+    """Build the CARTO raster tile URL, including the API key.
+
+    Args:
+        style: CARTO tile style. One of "voyager", "light_all", "dark_all".
+
+    Returns:
+        A tile URL template with {z}/{x}/{y} placeholders and the API key.
+    """
+    key = get_carto_api_key()
+    return f"https://basemaps.cartocdn.com/rastertiles/{style}/{{z}}/{{x}}/{{y}}.png?key={key}"
 
 
 def build_map(
@@ -22,6 +67,7 @@ def build_map(
     legend_html: str,
     output_path: Path,
     map_opacity: float,
+    carto_style: str = DEFAULT_CARTO_STYLE,
     progress_callback=None,
 ) -> None:
     """Build and save the Folium map.
@@ -34,13 +80,16 @@ def build_map(
         legend_html: HTML string for the legend (from LegendBuilder.build()).
         output_path: Path to save the output HTML file.
         map_opacity: Opacity value (0-1) for the heatmap image overlays.
+        carto_style: CARTO basemap tile style ("voyager", "light_all", "dark_all").
     """
     m = folium.Map(location=centre, zoom_start=14, tiles=None, control_scale=True)
     folium.TileLayer(
-        "CartoDB.DarkMatterNoLabels",
+        tiles=build_tile_url(carto_style),
+        attr=CARTO_ATTRIBUTION,
         name="Basemap",
         control=False,
         show=True,
+        max_zoom=20,
     ).add_to(m)
 
     track_group = folium.FeatureGroup(name="Raw GPS tracks", show=False)

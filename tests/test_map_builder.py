@@ -5,12 +5,16 @@ Unit tests for src/map_builder.py - map building and HTML output functions.
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from src.map_builder import (
     LAYER_CONTROL_CSS,
     ExclusiveLayerControl,
     build_legend_html,
     build_map,
+    build_tile_url,
     cmap_to_css,
+    get_carto_api_key,
     legend_row,
     pace_str,
 )
@@ -174,6 +178,7 @@ class TestBuildLegendHtml:
         assert "display:none" in html
 
 
+@pytest.mark.usefixtures("carto_api_key")
 class TestBuildMap:
     """Tests for build_map function."""
 
@@ -359,6 +364,118 @@ class TestBuildMap:
         io_calls = mock_image_overlay.call_args_list
         for call in io_calls:
             assert call[1]["opacity"] == self.map_opacity
+
+    @patch("src.map_builder.map_builder.folium.Map")
+    @patch("src.map_builder.map_builder.folium.TileLayer")
+    @patch("src.map_builder.map_builder.folium.FeatureGroup")
+    @patch("src.map_builder.map_builder.folium.PolyLine")
+    @patch("src.map_builder.map_builder.folium.raster_layers.ImageOverlay")
+    @patch("src.map_builder.map_builder.folium.LayerControl")
+    def test_basemap_uses_carto_api_key_tile_url(
+        self,
+        mock_layer_control,
+        mock_image_overlay,
+        mock_polyline,
+        mock_feature_group,
+        mock_tile_layer,
+        mock_map,
+    ):
+        """Basemap TileLayer should use the API-keyed CARTO tile URL."""
+        mock_map.return_value = MagicMock()
+        mock_tile_layer.return_value = MagicMock()
+        mock_feature_group.return_value = MagicMock()
+        mock_polyline.return_value = MagicMock()
+        mock_image_overlay.return_value = MagicMock()
+        mock_layer_control.return_value = MagicMock()
+
+        build_map(
+            self.tracks,
+            self.layers,
+            self.bounds,
+            self.centre,
+            self.legend_html,
+            self.output_path,
+            self.map_opacity,
+        )
+
+        tile_kwargs = mock_tile_layer.call_args[1]
+        url = tile_kwargs["tiles"]
+        assert url.startswith("https://basemaps.cartocdn.com/rastertiles/dark_all/")
+        assert "?key=default_public_testkey" in url
+        assert "{z}/{x}/{y}" in url
+        assert tile_kwargs["max_zoom"] == 20
+        assert "carto.com/attributions" in tile_kwargs["attr"]
+
+    @patch("src.map_builder.map_builder.folium.Map")
+    @patch("src.map_builder.map_builder.folium.TileLayer")
+    @patch("src.map_builder.map_builder.folium.FeatureGroup")
+    @patch("src.map_builder.map_builder.folium.PolyLine")
+    @patch("src.map_builder.map_builder.folium.raster_layers.ImageOverlay")
+    @patch("src.map_builder.map_builder.folium.LayerControl")
+    def test_basemap_uses_configured_carto_style(
+        self,
+        mock_layer_control,
+        mock_image_overlay,
+        mock_polyline,
+        mock_feature_group,
+        mock_tile_layer,
+        mock_map,
+    ):
+        """Basemap TileLayer should use the carto_style passed to build_map."""
+        mock_map.return_value = MagicMock()
+        mock_tile_layer.return_value = MagicMock()
+        mock_feature_group.return_value = MagicMock()
+        mock_polyline.return_value = MagicMock()
+        mock_image_overlay.return_value = MagicMock()
+        mock_layer_control.return_value = MagicMock()
+
+        build_map(
+            self.tracks,
+            self.layers,
+            self.bounds,
+            self.centre,
+            self.legend_html,
+            self.output_path,
+            self.map_opacity,
+            carto_style="voyager",
+        )
+
+        tile_kwargs = mock_tile_layer.call_args[1]
+        url = tile_kwargs["tiles"]
+        assert url.startswith("https://basemaps.cartocdn.com/rastertiles/voyager/")
+        assert "?key=default_public_testkey" in url
+
+
+class TestCartoApiKey:
+    """Tests for CARTO API key loading and tile URL building."""
+
+    def test_get_carto_api_key_returns_env_value(self, carto_api_key):
+        """Should return the key from the environment."""
+        assert get_carto_api_key() == "default_public_testkey"
+
+    def test_get_carto_api_key_raises_when_missing(self, monkeypatch):
+        """Should raise ValueError when CARTO_API_KEY is not set."""
+        monkeypatch.delenv("CARTO_API_KEY", raising=False)
+        with pytest.raises(ValueError, match="CARTO_API_KEY is not set"):
+            get_carto_api_key()
+
+    def test_get_carto_api_key_ignores_blank(self, monkeypatch):
+        """Should raise when CARTO_API_KEY is blank or whitespace."""
+        monkeypatch.setenv("CARTO_API_KEY", "   ")
+        with pytest.raises(ValueError, match="CARTO_API_KEY is not set"):
+            get_carto_api_key()
+
+    def test_build_tile_url_contains_key(self, carto_api_key):
+        """build_tile_url should embed the API key and default style."""
+        url = build_tile_url()
+        assert url.startswith("https://basemaps.cartocdn.com/rastertiles/dark_all/")
+        assert url.endswith("?key=default_public_testkey")
+
+    def test_build_tile_url_custom_style(self, carto_api_key):
+        """build_tile_url should use the supplied style."""
+        url = build_tile_url("light_all")
+        assert url.startswith("https://basemaps.cartocdn.com/rastertiles/light_all/")
+        assert url.endswith("?key=default_public_testkey")
 
 
 class TestConstants:
