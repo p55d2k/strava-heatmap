@@ -16,15 +16,24 @@ CARTO_STYLE_LABELS = {
     "dark_all": "Dark",
 }
 
-# Layer names that are mutually exclusive in the layer control.
-EXCLUSIVE_LAYER_NAMES = [
+# GPS density variants are alternative renderings of the SAME count data, so
+# they stay mutually exclusive (a radio group) in the layer control.
+DENSITY_LAYER_NAMES = [
     "GPS Density (linear)",
     "GPS Density (log)",
+]
+
+# Distinct analysis metrics that may each be overlaid independently; these are
+# rendered as independent checkboxes in the layer control.
+METRIC_LAYER_NAMES = [
     "Pace (average)",
     "Heart rate (average)",
     "Gradient (absolute)",
     "Gradient (change)",
 ]
+
+# Backwards-compatible alias for the set of mutually exclusive (radio) layers.
+EXCLUSIVE_LAYER_NAMES = DENSITY_LAYER_NAMES
 
 # Maps each exclusive layer name to its corresponding legend DIV id.
 LEGEND_IDS = {

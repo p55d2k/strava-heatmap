@@ -788,14 +788,24 @@ class TestLayerGroupConfig:
         assert tracks_group["layers"][0]["visible"] is False
 
     def test_exclusive_heatmap_layers_in_radio_group(self):
-        """Exclusive layer names should land in a radio (exclusive) group."""
+        """Only the density variants should land in the exclusive radio group."""
         groups = build_layer_group_config(self.layers, has_tracks=False)
         radio = [g for g in groups if g["mode"] == "radio"]
         assert radio
+        labels = [g["label"] for g in radio]
+        assert labels == ["Heatmap"]
         names = [lay["name"] for lay in radio[0]["layers"]]
         assert "GPS Density (linear)" in names
+        assert "Custom overlay" not in names  # not a density layer
+        assert "Pace (average)" not in names  # metric layers are independent now
+
+    def test_metric_layers_in_independent_check_group(self):
+        """Distinct metrics should be independent checkboxes, not exclusive."""
+        groups = build_layer_group_config(self.layers, has_tracks=False)
+        metric_group = next(g for g in groups if g["label"] == "Metrics")
+        assert metric_group["mode"] == "check"
+        names = [lay["name"] for lay in metric_group["layers"]]
         assert "Pace (average)" in names
-        assert "Custom overlay" not in names  # not in EXCLUSIVE_LAYER_NAMES
 
     def test_non_exclusive_layers_in_check_group(self):
         """Non-exclusive layers should be in a checkbox (independent) group."""

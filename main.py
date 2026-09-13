@@ -26,7 +26,12 @@ from src.data_loader import (
     load_and_filter_activities,
     load_tracks,
 )
-from src.map_builder import LegendBuilder, build_map
+from src.map_builder import (
+    DENSITY_LAYER_NAMES,
+    METRIC_LAYER_NAMES,
+    LegendBuilder,
+    build_map,
+)
 from src.rasterizer import (
     compute_grid_bounds,
     compute_normalized_grids,
@@ -289,7 +294,8 @@ def run_generate(args: argparse.Namespace) -> None:
                 config.output_html,
                 config.map_opacity,
                 carto_style=config.carto_style,
-                exclusive_layer_names=legend_builder.exclusive_layer_names,
+                exclusive_layer_names=DENSITY_LAYER_NAMES,
+                metric_layer_names=METRIC_LAYER_NAMES,
                 legend_ids=legend_builder.legend_ids,
                 progress_callback=pbar.update,
             )

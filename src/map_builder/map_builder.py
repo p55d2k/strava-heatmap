@@ -70,6 +70,7 @@ def build_map(
     map_opacity: float,
     carto_style: str = DEFAULT_CARTO_STYLE,
     exclusive_layer_names: list[str] | None = None,
+    metric_layer_names: list[str] | None = None,
     legend_ids: dict[str, str] | None = None,
     control_panel: bool = True,
     progress_callback=None,
@@ -85,9 +86,12 @@ def build_map(
         output_path: Path to save the output HTML file.
         map_opacity: Opacity value (0-1) for the heatmap image overlays.
         carto_style: CARTO basemap tile style ("voyager", "light_all", "dark_all").
-        exclusive_layer_names: Overlay layer names that should be mutually
-            exclusive and drive legend visibility. Defaults to the constants in
-            ``EXCLUSIVE_LAYER_NAMES``.
+        exclusive_layer_names: Density layer names that should be mutually
+            exclusive (radio) and drive density legend visibility. Defaults to
+            ``DENSITY_LAYER_NAMES``.
+        metric_layer_names: Distinct metric layer names shown as independent
+            checkboxes whose legend rows follow their on/off state. Defaults to
+            ``METRIC_LAYER_NAMES``.
         legend_ids: Mapping from layer name to legend row DOM id for dynamic
             legend visibility. Defaults to the constants in ``LEGEND_IDS``.
         control_panel: When True, embed the in-HTML control panel (basemap
@@ -142,6 +146,7 @@ def build_map(
     ExclusiveLayerControl(
         exclusive_names=exclusive_layer_names,
         legend_ids=legend_ids,
+        metric_names=metric_layer_names,
     ).add_to(m)
 
     if control_panel:
@@ -155,6 +160,7 @@ def build_map(
                 overlay_layers=layers,
                 has_tracks=bool(tracks),
                 exclusive_layer_names=exclusive_layer_names,
+                metric_layer_names=metric_layer_names,
             ),
         ).add_to(m)
 

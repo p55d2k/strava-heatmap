@@ -4,7 +4,7 @@ A custom fork of the original Strava Activity Heatmap project by [Sam Wilson](ht
 
 Turns a Strava data export into an interactive heatmap. No API needed just for the data - just the zip file Strava lets you download. (A free CARTO maps key is required for the basemap tiles.)
 
-The output is a single HTML file with six layers you can switch between:
+The output is a single HTML file with six layers:
 
 | Layer                | Colour         | Shows                                              |
 | -------------------- | -------------- | -------------------------------------------------- |
@@ -14,6 +14,13 @@ The output is a single HTML file with six layers you can switch between:
 | Heart rate (average) | Red            | Average HR - brighter = higher                     |
 | Gradient (absolute)  | White          | Steepness - brighter = steeper                     |
 | Gradient (change)    | Green / purple | Direction - green = descending, purple = ascending |
+
+In the on-map control panel, the two **GPS Density** layers are a single radio
+group (they are the same data on different scales, so only one is shown at a
+time). The four metric layers (**Pace**, **Heart rate**, **Gradient absolute**,
+**Gradient change**) are independent checkboxes, so you can turn several on at
+once and overlay them on the density heatmap. Raw GPS tracks are a separate
+checkbox.
 
 ## Setup
 

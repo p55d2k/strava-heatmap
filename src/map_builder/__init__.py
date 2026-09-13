@@ -17,8 +17,10 @@ from src.map_builder.constants import (
     CARTO_STYLES,
     DEFAULT_CARTO_STYLE,
     DEFAULT_LEGEND_STYLES,
+    DENSITY_LAYER_NAMES,
     EXCLUSIVE_LAYER_NAMES,
     LEGEND_IDS,
+    METRIC_LAYER_NAMES,
 )
 from src.map_builder.control import (
     ControlPanel,
@@ -49,6 +51,8 @@ from src.map_builder.utils import (
 __all__ = [
     # Constants
     "EXCLUSIVE_LAYER_NAMES",
+    "DENSITY_LAYER_NAMES",
+    "METRIC_LAYER_NAMES",
     "LEGEND_IDS",
     "DEFAULT_LEGEND_STYLES",
     "CARTO_STYLES",

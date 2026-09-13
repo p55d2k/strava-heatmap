@@ -27,8 +27,9 @@ from src.map_builder.constants import (
     CARTO_STYLE_LABELS,
     CARTO_STYLES,
     DEFAULT_CARTO_STYLE,
-    EXCLUSIVE_LAYER_NAMES,
+    DENSITY_LAYER_NAMES,
     LEGEND_IDS,
+    METRIC_LAYER_NAMES,
 )
 
 # Directory holding the external CSS / HTML / JS assets.
@@ -82,20 +83,30 @@ def build_layer_group_config(
     overlay_layers: list[tuple[str, str, bool]],
     has_tracks: bool = True,
     exclusive_layer_names: list[str] | None = None,
+    metric_layer_names: list[str] | None = None,
 ) -> list[dict]:
     """Build the ``layerGroups`` config consumed by ``assets/panel.js``.
+
+    Layer toggles are split into two groups under Option B:
+    * ``Heatmap`` (radio) — the GPS density variants. They are alternative
+      renderings of the same count data, so only one can be shown at a time.
+    * ``Metrics`` (check) — the distinct analysis metrics (pace, HR, gradients)
+      that may each be toggled independently so several can be overlaid.
 
     Args:
         overlay_layers: The ``(name, image_uri, visible)`` tuples handed to
             ``build_map`` for each heatmap overlay layer.
         has_tracks: Whether raw GPS tracks are present (adds a checkbox group).
-        exclusive_layer_names: Layer names that should be mutually exclusive
-            (radio group). Defaults to ``EXCLUSIVE_LAYER_NAMES``.
+        exclusive_layer_names: Density layer names that are mutually exclusive
+            (radio group). Defaults to ``DENSITY_LAYER_NAMES``.
+        metric_layer_names: Distinct metric layer names shown as independent
+            checkboxes. Defaults to ``METRIC_LAYER_NAMES``.
 
     Returns:
         A list of ``{label, mode, layers}`` groups for the panel's layer list.
     """
-    exclusive = set(exclusive_layer_names or EXCLUSIVE_LAYER_NAMES)
+    exclusive = set(exclusive_layer_names or DENSITY_LAYER_NAMES)
+    metrics = set(metric_layer_names or METRIC_LAYER_NAMES)
     groups: list[dict] = []
 
     if has_tracks:
@@ -107,19 +118,22 @@ def build_layer_group_config(
             }
         )
 
-    heatmap_layers = [
-        {"name": name, "visible": visible}
-        for name, _, visible in overlay_layers
-        if name in exclusive
+    def _item(name: str, visible: bool) -> dict:
+        return {"name": name, "visible": visible}
+
+    density_layers = [
+        _item(name, visible) for name, _, visible in overlay_layers if name in exclusive
     ]
+    metric_layers = [_item(name, visible) for name, _, visible in overlay_layers if name in metrics]
+    known = exclusive | metrics
     other_layers = [
-        {"name": name, "visible": visible}
-        for name, _, visible in overlay_layers
-        if name not in exclusive
+        _item(name, visible) for name, _, visible in overlay_layers if name not in known
     ]
 
-    if heatmap_layers:
-        groups.append({"label": "Heatmap", "mode": "radio", "layers": heatmap_layers})
+    if density_layers:
+        groups.append({"label": "Heatmap", "mode": "radio", "layers": density_layers})
+    if metric_layers:
+        groups.append({"label": "Metrics", "mode": "check", "layers": metric_layers})
     if other_layers:
         groups.append({"label": "Overlays", "mode": "check", "layers": other_layers})
 
@@ -206,7 +220,15 @@ class ControlPanel(MacroElement):
 
 
 class ExclusiveLayerControl(MacroElement):
-    """Injects JavaScript to make overlay layers mutually exclusive and switch legends."""
+    """Injects JavaScript to keep density layers mutually exclusive and to
+    show only the legend rows for the layers currently visible on the map.
+
+    Behaviour under Option B:
+    * Density layers (radio) are mutually exclusive — switching one removes the
+      other and swaps the density legend row.
+    * Metric layers (checkboxes) are independent — adding/removing one shows or
+      hides its own legend row without affecting any other layer's row.
+    """
 
     _template = JinjaTemplate(
         """
@@ -217,15 +239,24 @@ class ExclusiveLayerControl(MacroElement):
             "{{ name }}"{% if not loop.last %},{% endif %}
             {% endfor %}
         ];
+        var metricNames = [
+            {% for name in this.metric_names %}
+            "{{ name }}"{% if not loop.last %},{% endif %}
+            {% endfor %}
+        ];
         var legendIds = {
             {% for key, val in this.legend_ids.items() %}
             "{{ key }}": "{{ val }}"{% if not loop.last %},{% endif %}
             {% endfor %}
         };
-        function showLegend(activeName) {
-            Object.keys(legendIds).forEach(function(name) {
-                var el = document.getElementById(legendIds[name]);
-                if (el) el.style.display = (name === activeName) ? "block" : "none";
+        function setLegend(name, visible) {
+            var el = document.getElementById(legendIds[name]);
+            if (el) el.style.display = visible ? "block" : "none";
+        }
+        // Density variants are mutually exclusive: show only the active row.
+        function showDensityLegend(activeName) {
+            exclusiveNames.forEach(function(name) {
+                setLegend(name, name === activeName);
             });
         }
         var map = {{this._parent.get_name()}};
@@ -248,13 +279,25 @@ class ExclusiveLayerControl(MacroElement):
                 // For overlay layers the event carries the layer name in
                 // e.name. Fall back to e.layer.options.name if needed.
                 var layerName = e.name || (e.layer && e.layer.options && e.layer.options.name);
-                if (!layerName || !exclusiveNames.includes(layerName)) return;
-                exclusiveNames.forEach(function(name) {
-                    if (name !== layerName && overlays[name] && map.hasLayer(overlays[name])) {
-                        map.removeLayer(overlays[name]);
-                    }
-                });
-                showLegend(layerName);
+                if (!layerName) return;
+                if (exclusiveNames.indexOf(layerName) !== -1) {
+                    // Keep density variants mutually exclusive on the map.
+                    exclusiveNames.forEach(function(name) {
+                        if (name !== layerName && overlays[name] && map.hasLayer(overlays[name])) {
+                            map.removeLayer(overlays[name]);
+                        }
+                    });
+                    showDensityLegend(layerName);
+                } else if (metricNames.indexOf(layerName) !== -1) {
+                    setLegend(layerName, true);
+                }
+            });
+            map.on('overlayremove', function(e) {
+                // Hiding a metric checkbox removes its legend row again.
+                var layerName = e.name || (e.layer && e.layer.options && e.layer.options.name);
+                if (layerName && metricNames.indexOf(layerName) !== -1) {
+                    setLegend(layerName, false);
+                }
             });
         }
         // Run setup after the DOM is ready and Folium has declared its layer globals.
@@ -269,19 +312,25 @@ class ExclusiveLayerControl(MacroElement):
     )
 
     def __init__(
-        self, exclusive_names: list[str] | None = None, legend_ids: dict[str, str] | None = None
+        self,
+        exclusive_names: list[str] | None = None,
+        legend_ids: dict[str, str] | None = None,
+        metric_names: list[str] | None = None,
     ):
         """Initialize the ExclusiveLayerControl.
 
         Args:
-            exclusive_names: List of layer names that should be mutually exclusive.
-                Defaults to EXCLUSIVE_LAYER_NAMES.
+            exclusive_names: Density layer names that should be mutually
+                exclusive (radio). Defaults to DENSITY_LAYER_NAMES.
             legend_ids: Mapping from layer name to legend DOM element ID.
                 Defaults to LEGEND_IDS.
+            metric_names: Independent metric layer names whose legend rows
+                follow their on/off state. Defaults to METRIC_LAYER_NAMES.
         """
         super().__init__()
         self._name = "ExclusiveLayerControl"
         self.exclusive_names = (
-            exclusive_names if exclusive_names is not None else EXCLUSIVE_LAYER_NAMES
+            exclusive_names if exclusive_names is not None else DENSITY_LAYER_NAMES
         )
+        self.metric_names = metric_names if metric_names is not None else METRIC_LAYER_NAMES
         self.legend_ids = legend_ids if legend_ids is not None else LEGEND_IDS
