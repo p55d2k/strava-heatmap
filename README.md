@@ -63,7 +63,8 @@ CARTO_API_KEY = default_public_xxxxxxxxxxxxxxxxxxxxx
   "SPEED_MAX_MS": null,
   "HR_MIN_BPM": null,
   "HR_MAX_BPM": null,
-  "AUTO_RANGE_PCT": 5
+  "AUTO_RANGE_PCT": 5,
+  "DECAY_FACTOR": 0.5
 }
 ```
 
@@ -74,6 +75,7 @@ Key settings:
 - `METERS_PER_PIXEL`: Resolution (lower = more detail). Use ~3 for runs, ~10 for rides.
 - `RADIUS_KM` / `TRACK_CLIP_RADIUS_KM`: Filter radius around home
 - `CARTO_STYLE`: Basemap style — one of `"dark_all"` (default), `"light_all"`, or `"voyager"`
+- `DECAY_FACTOR`: Geometric decay (0.0–1.0) applied to repeated passes of the same cell *within a single activity*. `0.0` counts each cell once per activity (strict coverage); `1.0` counts every pass (inflates intensity for loops / out-and-backs). Default: `0.5`.
 
 4. Run:
 ```bash

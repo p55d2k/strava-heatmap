@@ -17,5 +17,6 @@
   "SPEED_MAX_MS": null,
   "HR_MIN_BPM": null,
   "HR_MAX_BPM": null,
-  "AUTO_RANGE_PCT": 5
+  "AUTO_RANGE_PCT": 5,
+  "DECAY_FACTOR": 0.5
 }
