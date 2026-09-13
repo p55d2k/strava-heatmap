@@ -324,6 +324,23 @@ class ExclusiveLayerControl(MacroElement):
         function setup() {
             var overlays = findOverlays();
             if (!map || !overlays) { setTimeout(setup, 100); return; }
+            // Initial sync: reconcile legend rows with the layers already on the
+            // map at load. Without this the static legend would show every
+            // density row until the first overlay event fires.
+            var activeDensity = null;
+            exclusiveNames.forEach(function(name) {
+                var layer = overlays[name];
+                if (layer && map.hasLayer(layer)) activeDensity = name;
+            });
+            if (activeDensity) {
+                showDensityLegend(activeDensity);
+            } else {
+                exclusiveNames.forEach(function(name) { setLegend(name, false); });
+            }
+            metricNames.forEach(function(name) {
+                var layer = overlays[name];
+                if (layer) setLegend(name, map.hasLayer(layer));
+            });
             map.on('overlayadd', function(e) {
                 // For overlay layers the event carries the layer name in
                 // e.name. Fall back to e.layer.options.name if needed.

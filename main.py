@@ -292,6 +292,7 @@ def run_generate(args: argparse.Namespace) -> None:
                 colormaps,
                 normalized["max_passes"],
                 max_passes_by_strategy=normalized["max_passes_by_strategy"],
+                decay_strategy=config.decay_strategy,
             )
             pbar.update(1)
 

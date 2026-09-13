@@ -174,18 +174,46 @@ class TestBuildLegendHtml:
         assert "descending" in html
         assert "ascending" in html
 
-    def test_first_row_visible_others_hidden(self):
-        """First legend row should be visible, others hidden."""
+    def test_only_active_strategy_log_row_visible_by_default(self):
+        """Only the active strategy's log legend row shows on first load."""
         html = build_legend_html(self.normalized, self.colormaps, self.normalized["max_passes"])
 
-        # First density row (decay linear) should be visible
-        assert 'id="legend-frequency-decay"' in html
-        assert "display:block" in html
+        # Default strategy is binary-per-activity; the map shows its log layer,
+        # so exactly that legend row should be visible on first paint.
+        assert (
+            'id="legend-frequency-binary-log" class="hcp-legend-row" style="display:block"' in html
+        )
 
-        # Other density rows should be hidden
-        assert 'id="legend-frequency-decay-log"' in html
-        assert "display:none" in html
-        assert 'id="legend-frequency-raw"' in html
+        # Every other density row stays hidden until an overlay event / toggle.
+        for hidden_id in (
+            "legend-frequency-decay",
+            "legend-frequency-decay-log",
+            "legend-frequency-binary",
+            "legend-frequency-raw",
+            "legend-frequency-raw-log",
+        ):
+            assert f'id="{hidden_id}" class="hcp-legend-row" style="display:none"' in html, (
+                f"legend row {hidden_id} should be hidden on first load"
+            )
+
+        # Exactly one legend row visible: the active strategy's log row.
+        assert html.count('style="display:block"') == 1
+
+    def test_strategy_parameter_switches_visible_legend_row(self):
+        """Passing a decay strategy makes that strategy's log row visible."""
+        html = build_legend_html(
+            self.normalized,
+            self.colormaps,
+            self.normalized["max_passes"],
+            decay_strategy="decay",
+        )
+        assert (
+            'id="legend-frequency-decay-log" class="hcp-legend-row" style="display:block"' in html
+        )
+        assert (
+            'id="legend-frequency-binary-log" class="hcp-legend-row" style="display:none"' in html
+        )
+        assert html.count('style="display:block"') == 1
 
 
 class TestLegendBuilder:

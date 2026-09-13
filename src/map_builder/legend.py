@@ -24,6 +24,7 @@ from string import Template
 from src.map_builder.constants import (
     DECAY_STRATEGIES,
     DECAY_STRATEGY_SHORT,
+    DEFAULT_DECAY_STRATEGY,
     density_layer_names,
 )
 from src.map_builder.utils import build_style_string, cmap_to_css
@@ -144,7 +145,6 @@ class LegendBuilder:
                     gradient=lambda ctx: cmap_to_css(ctx.colormaps["cmap_count"]),
                     label_lo="1 pass",
                     label_hi=lambda ctx, _s=strategy: _hi(ctx, _s),
-                    visible=True,
                     layer_name=linear_name,
                 )
             )
@@ -221,14 +221,25 @@ class LegendBuilder:
         colormaps: dict,
         max_passes: int,
         max_passes_by_strategy: dict[str, int] | None = None,
+        decay_strategy: str = DEFAULT_DECAY_STRATEGY,
     ) -> str:
-        """Build all configured legend rows as HTML."""
+        """Build all configured legend rows as HTML.
+
+        The density rows for the ``decay_strategy`` currently shown on the map
+        (its log variant is the layer added by default) are rendered visible;
+        every other density row stays hidden so the legend reflects the map on
+        first paint rather than waiting for an overlay event.
+        """
         ctx = LegendContext(
             normalized=normalized,
             colormaps=colormaps,
             max_passes=max_passes,
             max_passes_by_strategy=max_passes_by_strategy,
         )
+        # The map shows the active strategy's log layer by default; its legend
+        # row is the one to show. Row-level ``visible`` still wins for custom
+        # rows that opt in explicitly.
+        active_log_name = density_layer_names(decay_strategy)[1]
         rows = [
             legend_row(
                 row.row_id,
@@ -236,7 +247,7 @@ class LegendBuilder:
                 _resolve(row.gradient, ctx),
                 _resolve(row.label_lo, ctx),
                 _resolve(row.label_hi, ctx),
-                visible=row.visible,
+                visible=row.visible or row.layer_name == active_log_name,
             )
             for row in self.rows
         ]
@@ -248,9 +259,16 @@ class LegendBuilder:
         colormaps: dict,
         max_passes: int,
         max_passes_by_strategy: dict[str, int] | None = None,
+        decay_strategy: str = DEFAULT_DECAY_STRATEGY,
     ) -> str:
         """Build the complete legend HTML."""
-        rows = self.build_rows(normalized, colormaps, max_passes, max_passes_by_strategy)
+        rows = self.build_rows(
+            normalized,
+            colormaps,
+            max_passes,
+            max_passes_by_strategy,
+            decay_strategy=decay_strategy,
+        )
         style_attr = f' style="{self.container_style()}"' if self.styles else ""
         return _CONTAINER_TEMPLATE.substitute(rows=rows, style_attr=style_attr)
 
@@ -260,6 +278,13 @@ def build_legend_html(
     colormaps: dict,
     max_passes: int,
     max_passes_by_strategy: dict[str, int] | None = None,
+    decay_strategy: str = DEFAULT_DECAY_STRATEGY,
 ) -> str:
     """Build the complete legend HTML using the default LegendBuilder."""
-    return LegendBuilder().build(normalized, colormaps, max_passes, max_passes_by_strategy)
+    return LegendBuilder().build(
+        normalized,
+        colormaps,
+        max_passes,
+        max_passes_by_strategy,
+        decay_strategy=decay_strategy,
+    )
