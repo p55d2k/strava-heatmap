@@ -11,7 +11,7 @@ from pathlib import Path
 import folium
 from dotenv import load_dotenv
 
-from src.map_builder.constants import DEFAULT_CARTO_STYLE
+from src.map_builder.constants import DEFAULT_CARTO_STYLE, DEFAULT_DECAY_STRATEGY
 from src.map_builder.control import (
     ControlPanel,
     ExclusiveLayerControl,
@@ -69,6 +69,7 @@ def build_map(
     output_path: Path,
     map_opacity: float,
     carto_style: str = DEFAULT_CARTO_STYLE,
+    decay_strategy: str = DEFAULT_DECAY_STRATEGY,
     exclusive_layer_names: list[str] | None = None,
     metric_layer_names: list[str] | None = None,
     legend_ids: dict[str, str] | None = None,
@@ -86,6 +87,8 @@ def build_map(
         output_path: Path to save the output HTML file.
         map_opacity: Opacity value (0-1) for the heatmap image overlays.
         carto_style: CARTO basemap tile style ("voyager", "light_all", "dark_all").
+        decay_strategy: Active decay strategy key; drives the density layer pair
+            shown in the control panel's radio group and the dropdown default.
         exclusive_layer_names: Density layer names that should be mutually
             exclusive (radio) and drive density legend visibility. Defaults to
             ``DENSITY_LAYER_NAMES``.
@@ -153,6 +156,7 @@ def build_map(
         ControlPanel(
             map_opacity=map_opacity,
             carto_style=carto_style,
+            decay_strategy=decay_strategy,
             api_key=get_carto_api_key(),
             bounds=bounds,
             centre=centre,
@@ -161,6 +165,7 @@ def build_map(
                 has_tracks=bool(tracks),
                 exclusive_layer_names=exclusive_layer_names,
                 metric_layer_names=metric_layer_names,
+                decay_strategy=decay_strategy,
             ),
         ).add_to(m)
 

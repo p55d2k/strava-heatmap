@@ -10,6 +10,13 @@ import matplotlib.colors as mcolors
 import numpy as np
 from PIL import Image
 
+from src.map_builder.constants import (
+    DECAY_STRATEGIES,
+    DEFAULT_DECAY_STRATEGY,
+    density_layer_names,
+    strategy_norm_keys,
+)
+
 
 def build_cmap(name: str, nodes: list) -> mcolors.LinearSegmentedColormap:
     """Build a LinearSegmentedColormap from a list of (position, (R,G,B,A)) nodes."""
@@ -108,30 +115,45 @@ def _white_uri(alpha_norm: np.ndarray) -> str:
 
 
 def generate_layer_uris(
-    normalized: dict, colormaps: dict, progress_callback=None
+    normalized: dict,
+    colormaps: dict,
+    default_strategy: str = DEFAULT_DECAY_STRATEGY,
+    progress_callback=None,
 ) -> list[tuple[str, str, bool]]:
-    """Generate data URIs for all map layers."""
+    """Generate data URIs for all map layers.
+
+    Six GPS density layers are produced (each decay strategy × linear/log) plus
+    the four metric layers. Only the chosen ``default_strategy``'s log layer is
+    shown by default; the rest are added to the map but stay hidden so the
+    control panel can switch between strategies at runtime.
+    """
     if progress_callback:
         progress_callback(1)  # Colormaps created
-    layers = [
-        (
-            "GPS Density (log)",
-            _count_uri(normalized["count_log_norm"], colormaps["cmap_count"]),
-            True,
-        ),
-    ]
-    if progress_callback:
-        progress_callback(1)  # Layer 1/6: GPS Density (log)
+    layers: list[tuple[str, str, bool]] = []
 
-    layers.append(
-        (
-            "GPS Density (linear)",
-            _count_uri(normalized["count_norm"], colormaps["cmap_count"]),
-            False,
-        ),
-    )
+    for strat in DECAY_STRATEGIES:
+        norm_key, log_norm_key = strategy_norm_keys(strat)
+        linear_name, log_name = density_layer_names(strat)
+        visible = strat == default_strategy
+
+        layers.append(
+            (log_name, _count_uri(normalized[log_norm_key], colormaps["cmap_count"]), visible)
+        )
+        if progress_callback:
+            progress_callback(1)  # e.g. GPS Density (raw · log)
+
+        layers.append(
+            (
+                linear_name,
+                _count_uri(normalized[norm_key], colormaps["cmap_count"]),
+                False,
+            )
+        )
+        if progress_callback:
+            progress_callback(1)  # e.g. GPS Density (raw · linear)
+
     if progress_callback:
-        progress_callback(1)  # Layer 2/6: GPS Density (linear)
+        progress_callback(1)  # Pace (average)
 
     layers.append(
         (
@@ -143,7 +165,7 @@ def generate_layer_uris(
         ),
     )
     if progress_callback:
-        progress_callback(1)  # Layer 3/6: Pace (average)
+        progress_callback(1)  # Heart rate (average)
 
     layers.append(
         (
@@ -153,11 +175,11 @@ def generate_layer_uris(
         ),
     )
     if progress_callback:
-        progress_callback(1)  # Layer 4/6: Heart rate (average)
+        progress_callback(1)  # Gradient (absolute)
 
     layers.append(("Gradient (absolute)", _white_uri(normalized["alpha_grad"]), False))
     if progress_callback:
-        progress_callback(1)  # Layer 5/6: Gradient (absolute)
+        progress_callback(1)  # Gradient (change)
 
     layers.append(
         (
@@ -171,5 +193,5 @@ def generate_layer_uris(
         ),
     )
     if progress_callback:
-        progress_callback(1)  # Layer 6/6: Gradient (change)
+        progress_callback(1)  # Layers done
     return layers

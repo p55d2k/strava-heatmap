@@ -154,8 +154,9 @@ class TestBuildLegendHtml:
         assert 'class="hcp-legend"' in html
 
         # Check all legend rows present
-        assert "GPS Density (linear)" in html
-        assert "GPS Density (log)" in html
+        assert "GPS Density (decay · linear)" in html
+        assert "GPS Density (decay · log)" in html
+        assert "GPS Density (raw · log)" in html
         assert "Pace (average)" in html
         assert "Heart rate (average)" in html
         assert "Gradient (absolute)" in html
@@ -177,13 +178,14 @@ class TestBuildLegendHtml:
         """First legend row should be visible, others hidden."""
         html = build_legend_html(self.normalized, self.colormaps, self.normalized["max_passes"])
 
-        # First row (frequency linear) should be visible
-        assert 'id="legend-frequency"' in html
+        # First density row (decay linear) should be visible
+        assert 'id="legend-frequency-decay"' in html
         assert "display:block" in html
 
-        # Other rows should be hidden
-        assert 'id="legend-frequency-log"' in html
+        # Other density rows should be hidden
+        assert 'id="legend-frequency-decay-log"' in html
         assert "display:none" in html
+        assert 'id="legend-frequency-raw"' in html
 
 
 class TestLegendBuilder:
@@ -209,16 +211,24 @@ class TestLegendBuilder:
         """Default builder should expose the standard layer->legend id mapping."""
         builder = LegendBuilder()
         assert builder.exclusive_layer_names == [
-            "GPS Density (linear)",
-            "GPS Density (log)",
+            "GPS Density (decay · linear)",
+            "GPS Density (decay · log)",
+            "GPS Density (binary · linear)",
+            "GPS Density (binary · log)",
+            "GPS Density (raw · linear)",
+            "GPS Density (raw · log)",
             "Pace (average)",
             "Heart rate (average)",
             "Gradient (absolute)",
             "Gradient (change)",
         ]
         assert builder.legend_ids == {
-            "GPS Density (linear)": "legend-frequency",
-            "GPS Density (log)": "legend-frequency-log",
+            "GPS Density (decay · linear)": "legend-frequency-decay",
+            "GPS Density (decay · log)": "legend-frequency-decay-log",
+            "GPS Density (binary · linear)": "legend-frequency-binary",
+            "GPS Density (binary · log)": "legend-frequency-binary-log",
+            "GPS Density (raw · linear)": "legend-frequency-raw",
+            "GPS Density (raw · log)": "legend-frequency-raw-log",
             "Pace (average)": "legend-pace-avg",
             "Heart rate (average)": "legend-heart-rate-avg",
             "Gradient (absolute)": "legend-gradient",
@@ -226,15 +236,18 @@ class TestLegendBuilder:
         }
 
     def test_default_rows_renders_same_html(self):
-        """Default-builder output should match the legacy build output."""
+        """Default-builder output should include all strategy rows and metrics."""
         builder = LegendBuilder()
         html = builder.build(self.normalized, self.colormaps, self.normalized["max_passes"])
-        assert "GPS Density (linear)" in html
+        assert "GPS Density (decay · linear)" in html
+        assert "GPS Density (decay · log)" in html
         assert "Heart rate (average)" in html
         assert "120 bpm" in html
         assert "180 bpm" in html
         assert "2.0%" in html
         assert "10.0%" in html
+        # Each strategy's legend shows its own max-passes figure (fallback here).
+        assert "50 passes" in html
 
     def test_custom_rows_produce_only_configured_rows(self):
         """Custom rows should render exactly what is configured."""
@@ -773,14 +786,15 @@ class TestLayerGroupConfig:
 
     def setup_method(self):
         self.layers = [
-            ("GPS Density (linear)", "data:image/png;base64,1", True),
+            ("GPS Density (decay · linear)", "data:image/png;base64,1", True),
+            ("GPS Density (decay · log)", "data:image/png;base64,1b", False),
             ("Pace (average)", "data:image/png;base64,2", False),
             ("Custom overlay", "data:image/png;base64,3", True),
         ]
 
     def test_includes_tracks_group_when_present(self):
         """Should add a Raw GPS tracks checkbox group when tracks exist."""
-        groups = build_layer_group_config(self.layers, has_tracks=True)
+        groups = build_layer_group_config(self.layers, has_tracks=True, decay_strategy="decay")
         labels = [g["label"] for g in groups]
         assert "Raw GPS tracks" in labels
         tracks_group = next(g for g in groups if g["label"] == "Raw GPS tracks")
@@ -788,20 +802,21 @@ class TestLayerGroupConfig:
         assert tracks_group["layers"][0]["visible"] is False
 
     def test_exclusive_heatmap_layers_in_radio_group(self):
-        """Only the density variants should land in the exclusive radio group."""
-        groups = build_layer_group_config(self.layers, has_tracks=False)
+        """The active strategy's density pair should land in the radio group."""
+        groups = build_layer_group_config(self.layers, has_tracks=False, decay_strategy="decay")
         radio = [g for g in groups if g["mode"] == "radio"]
         assert radio
         labels = [g["label"] for g in radio]
         assert labels == ["Heatmap"]
         names = [lay["name"] for lay in radio[0]["layers"]]
-        assert "GPS Density (linear)" in names
+        assert "GPS Density (decay · linear)" in names
+        assert len(radio[0]["layers"]) == 2  # only the active strategy's pair
         assert "Custom overlay" not in names  # not a density layer
         assert "Pace (average)" not in names  # metric layers are independent now
 
     def test_metric_layers_in_independent_check_group(self):
         """Distinct metrics should be independent checkboxes, not exclusive."""
-        groups = build_layer_group_config(self.layers, has_tracks=False)
+        groups = build_layer_group_config(self.layers, has_tracks=False, decay_strategy="decay")
         metric_group = next(g for g in groups if g["label"] == "Metrics")
         assert metric_group["mode"] == "check"
         names = [lay["name"] for lay in metric_group["layers"]]
@@ -809,12 +824,12 @@ class TestLayerGroupConfig:
 
     def test_non_exclusive_layers_in_check_group(self):
         """Non-exclusive layers should be in a checkbox (independent) group."""
-        groups = build_layer_group_config(self.layers, has_tracks=False)
+        groups = build_layer_group_config(self.layers, has_tracks=False, decay_strategy="decay")
         checks = [g for g in groups if g["mode"] == "check"]
         assert checks
         names = [lay["name"] for g in checks for lay in g["layers"]]
         assert "Custom overlay" in names
-        assert "GPS Density (linear)" not in names
+        assert "GPS Density (decay · linear)" not in names
 
     def test_no_tracks_group_when_missing(self):
         """Should omit the tracks group when has_tracks is False."""

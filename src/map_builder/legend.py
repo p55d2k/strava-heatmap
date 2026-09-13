@@ -21,6 +21,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from string import Template
 
+from src.map_builder.constants import (
+    DECAY_STRATEGIES,
+    DECAY_STRATEGY_SHORT,
+    density_layer_names,
+)
 from src.map_builder.utils import build_style_string, cmap_to_css
 
 _ASSETS_DIR = Path(__file__).parent / "assets"
@@ -59,11 +64,20 @@ class LegendContext:
     normalized: dict
     colormaps: dict
     max_passes: int
+    max_passes_by_strategy: dict[str, int] | None = None
 
 
 def _resolve(value, ctx: LegendContext):
     """Return ``value`` resolved against ``ctx`` if it is a callable."""
     return value(ctx) if callable(value) else value
+
+
+def _max_passes(ctx: LegendContext, strategy: str) -> int:
+    """Return the max-pass legend count for a strategy, with a backward-compatible fallback."""
+    by_strategy = ctx.max_passes_by_strategy
+    if by_strategy and strategy in by_strategy:
+        return by_strategy[strategy]
+    return ctx.max_passes
 
 
 @dataclass(frozen=True)
@@ -111,24 +125,41 @@ class LegendBuilder:
 
     def default_rows(self) -> list[LegendRow]:
         """Return the default legend row definitions (configurable starting point)."""
-        return [
-            LegendRow(
-                row_id="legend-frequency",
-                title="GPS Density (linear)",
-                gradient=lambda ctx: cmap_to_css(ctx.colormaps["cmap_count"]),
-                label_lo="1 pass",
-                label_hi=lambda ctx: f"{ctx.max_passes} passes",
-                visible=True,
-                layer_name="GPS Density (linear)",
-            ),
-            LegendRow(
-                row_id="legend-frequency-log",
-                title="GPS Density (log)",
-                gradient=lambda ctx: cmap_to_css(ctx.colormaps["cmap_count"]),
-                label_lo="1 pass",
-                label_hi=lambda ctx: f"{ctx.max_passes} passes (log scale)",
-                layer_name="GPS Density (log)",
-            ),
+        rows: list[LegendRow] = []
+        # One linear + log legend row per decay strategy.
+        for strategy in DECAY_STRATEGIES:
+            linear_name, log_name = density_layer_names(strategy)
+            short = DECAY_STRATEGY_SHORT[strategy]
+            linear_id = f"legend-frequency-{short}"
+            log_id = f"{linear_id}-log"
+
+            def _hi(ctx: LegendContext, _s: str = strategy, _log: bool = False) -> str:
+                n = _max_passes(ctx, _s)
+                return f"{n} passes (log scale)" if _log else f"{n} passes"
+
+            rows.append(
+                LegendRow(
+                    row_id=linear_id,
+                    title=linear_name,
+                    gradient=lambda ctx: cmap_to_css(ctx.colormaps["cmap_count"]),
+                    label_lo="1 pass",
+                    label_hi=lambda ctx, _s=strategy: _hi(ctx, _s),
+                    visible=True,
+                    layer_name=linear_name,
+                )
+            )
+            rows.append(
+                LegendRow(
+                    row_id=log_id,
+                    title=log_name,
+                    gradient=lambda ctx: cmap_to_css(ctx.colormaps["cmap_count"]),
+                    label_lo="1 pass",
+                    label_hi=lambda ctx, _s=strategy: _hi(ctx, _s, _log=True),
+                    layer_name=log_name,
+                )
+            )
+
+        rows.append(
             LegendRow(
                 row_id="legend-pace-avg",
                 title="Pace (average)",
@@ -136,7 +167,9 @@ class LegendBuilder:
                 label_lo=lambda ctx: pace_str(ctx.normalized["s_lo"]),
                 label_hi=lambda ctx: pace_str(ctx.normalized["s_hi"]),
                 layer_name="Pace (average)",
-            ),
+            )
+        )
+        rows.append(
             LegendRow(
                 row_id="legend-heart-rate-avg",
                 title="Heart rate (average)",
@@ -144,7 +177,9 @@ class LegendBuilder:
                 label_lo=lambda ctx: f"{ctx.normalized['hr_lo']:.0f} bpm",
                 label_hi=lambda ctx: f"{ctx.normalized['hr_hi']:.0f} bpm",
                 layer_name="Heart rate (average)",
-            ),
+            )
+        )
+        rows.append(
             LegendRow(
                 row_id="legend-gradient",
                 title="Gradient (absolute)",
@@ -152,7 +187,9 @@ class LegendBuilder:
                 label_lo=lambda ctx: f"{ctx.normalized['g_lo'] * 100:.1f}%",
                 label_hi=lambda ctx: f"{ctx.normalized['g_hi'] * 100:.1f}% grade",
                 layer_name="Gradient (absolute)",
-            ),
+            )
+        )
+        rows.append(
             LegendRow(
                 row_id="legend-elev-change",
                 title="Gradient (change)",
@@ -160,8 +197,9 @@ class LegendBuilder:
                 label_lo="descending",
                 label_hi="ascending",
                 layer_name="Gradient (change)",
-            ),
-        ]
+            )
+        )
+        return rows
 
     @property
     def legend_ids(self) -> dict[str, str]:
@@ -177,9 +215,20 @@ class LegendBuilder:
         """Return the inline style string for the legend container."""
         return build_style_string(self.styles)
 
-    def build_rows(self, normalized: dict, colormaps: dict, max_passes: int) -> str:
+    def build_rows(
+        self,
+        normalized: dict,
+        colormaps: dict,
+        max_passes: int,
+        max_passes_by_strategy: dict[str, int] | None = None,
+    ) -> str:
         """Build all configured legend rows as HTML."""
-        ctx = LegendContext(normalized=normalized, colormaps=colormaps, max_passes=max_passes)
+        ctx = LegendContext(
+            normalized=normalized,
+            colormaps=colormaps,
+            max_passes=max_passes,
+            max_passes_by_strategy=max_passes_by_strategy,
+        )
         rows = [
             legend_row(
                 row.row_id,
@@ -193,13 +242,24 @@ class LegendBuilder:
         ]
         return "\n      ".join(rows)
 
-    def build(self, normalized: dict, colormaps: dict, max_passes: int) -> str:
+    def build(
+        self,
+        normalized: dict,
+        colormaps: dict,
+        max_passes: int,
+        max_passes_by_strategy: dict[str, int] | None = None,
+    ) -> str:
         """Build the complete legend HTML."""
-        rows = self.build_rows(normalized, colormaps, max_passes)
+        rows = self.build_rows(normalized, colormaps, max_passes, max_passes_by_strategy)
         style_attr = f' style="{self.container_style()}"' if self.styles else ""
         return _CONTAINER_TEMPLATE.substitute(rows=rows, style_attr=style_attr)
 
 
-def build_legend_html(normalized: dict, colormaps: dict, max_passes: int) -> str:
+def build_legend_html(
+    normalized: dict,
+    colormaps: dict,
+    max_passes: int,
+    max_passes_by_strategy: dict[str, int] | None = None,
+) -> str:
     """Build the complete legend HTML using the default LegendBuilder."""
-    return LegendBuilder().build(normalized, colormaps, max_passes)
+    return LegendBuilder().build(normalized, colormaps, max_passes, max_passes_by_strategy)

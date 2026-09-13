@@ -141,8 +141,52 @@
 
   /* ---- Layer toggle list ------------------------------------------------ */
 
-  // Build the toggle rows for each configured layer group.
-  function buildLayerList(container, layerGroups, map, overlays) {
+  // Build a single toggle row (radio or checkbox) bound to an overlay layer.
+  function buildToggleRow(lDef, mode, radioName, map, overlays) {
+    var row = document.createElement("label");
+    row.className = "hcp-layer-row";
+
+    var input = document.createElement("input");
+    input.type = mode === "radio" ? "radio" : "checkbox";
+    if (mode === "radio") {
+      input.name = radioName;
+    }
+    input.setAttribute("data-layer-name", lDef.name);
+
+    var layer = overlays ? overlays[lDef.name] : null;
+    input.checked = layer ? map.hasLayer(layer) : Boolean(lDef.visible);
+
+    input.addEventListener("change", function () {
+      if (!layer) return;
+      if (input.checked) {
+        if (!map.hasLayer(layer)) map.addLayer(layer);
+      } else {
+        if (map.hasLayer(layer)) map.removeLayer(layer);
+      }
+    });
+
+    row.appendChild(input);
+    var span = document.createElement("span");
+    span.textContent = lDef.name;
+    row.appendChild(span);
+    return row;
+  }
+
+  // Render a set of rows into a prepared container, replacing any previous rows.
+  function buildGroupRows(rows, lDefs, mode, radioName, map, overlays) {
+    rows.innerHTML = "";
+    lDefs.forEach(function (lDef) {
+      rows.appendChild(buildToggleRow(lDef, mode, radioName, map, overlays));
+    });
+  }
+
+  // Build the toggle rows for each configured layer group. The Heatmap (radio)
+  // group renders only the layers for the currently selected decay strategy; the
+  // pair is swapped at runtime from the density-mode dropdown. Returns the radio
+  // group's container reference so the panel can rebuild it on strategy change.
+  function buildLayerList(container, layerGroups, map, overlays, config) {
+    var densityRowsEl = null;
+    var radioName = null;
     layerGroups.forEach(function (group, gIdx) {
       var groupLabel = document.createElement("div");
       groupLabel.className = "hcp-label hcp-layer-group-label";
@@ -153,36 +197,20 @@
       rows.className = "hcp-layer-rows";
       container.appendChild(rows);
 
-      group.layers.forEach(function (lDef) {
-        var row = document.createElement("label");
-        row.className = "hcp-layer-row";
-
-        var input = document.createElement("input");
-        input.type = group.mode === "radio" ? "radio" : "checkbox";
-        if (group.mode === "radio") {
-          input.name = "hcp-layer-group-" + gIdx;
-        }
-        input.setAttribute("data-layer-name", lDef.name);
-
-        var layer = overlays ? overlays[lDef.name] : null;
-        input.checked = layer ? map.hasLayer(layer) : Boolean(lDef.visible);
-
-        input.addEventListener("change", function () {
-          if (!layer) return;
-          if (input.checked) {
-            if (!map.hasLayer(layer)) map.addLayer(layer);
-          } else {
-            if (map.hasLayer(layer)) map.removeLayer(layer);
-          }
+      if (group.mode === "radio") {
+        var activeNames =
+          (config.strategyLayers && config.strategyLayers[config.decayStrategy]) || [];
+        var lDefs = activeNames.map(function (n) {
+          return { name: n, visible: false };
         });
-
-        row.appendChild(input);
-        var span = document.createElement("span");
-        span.textContent = lDef.name;
-        row.appendChild(span);
-        rows.appendChild(row);
-      });
+        buildGroupRows(rows, lDefs, "radio", "hcp-layer-group-" + gIdx, map, overlays);
+        densityRowsEl = rows;
+        radioName = "hcp-layer-group-" + gIdx;
+      } else {
+        buildGroupRows(rows, group.layers, group.mode, null, map, overlays);
+      }
     });
+    return { densityRowsEl: densityRowsEl, radioName: radioName };
   }
 
   // Sync every toggle with the actual on-map state (after overlay events).
@@ -255,17 +283,73 @@
 
     /* --- Layer toggles ------------------------------------------------- */
     var layersContainer = panel.querySelector("#hcp-layers");
+    var strategySelect = panel.querySelector("#hcp-strategy");
+    var layerOverlays = null;
+    var densityRowsEl = null;
+    var densityRadioName = null;
+
+    function rebuildDensityGroup() {
+      if (!densityRowsEl) return;
+      var names =
+        (config.strategyLayers && config.strategyLayers[config.decayStrategy]) || [];
+      var lDefs = names.map(function (n) {
+        return { name: n, visible: false };
+      });
+      buildGroupRows(densityRowsEl, lDefs, "radio", densityRadioName, map, layerOverlays);
+    }
+
+    // Populate the density-mode dropdown and swap the heatmap layers when it changes.
+    function initStrategySelect() {
+      if (!strategySelect) return;
+      strategySelect.innerHTML = "";
+      (config.decayStrategyChoices || []).forEach(function (opt) {
+        var o = document.createElement("option");
+        o.value = opt.key;
+        o.textContent = opt.label;
+        strategySelect.appendChild(o);
+      });
+      strategySelect.value = config.decayStrategy;
+
+      strategySelect.addEventListener("change", function () {
+        var newKey = strategySelect.value;
+        if (!config.strategyLayers || !config.strategyLayers[newKey]) return;
+        if (newKey === config.decayStrategy) return;
+        var target = config.strategyLayers[newKey];
+
+        // Hide every density layer that belongs to another strategy.
+        (config.allDensityLayers || []).forEach(function (name) {
+          if (target.indexOf(name) !== -1) return;
+          var l = layerOverlays ? layerOverlays[name] : null;
+          if (l && map.hasLayer(l)) map.removeLayer(l);
+        });
+
+        // Show the new strategy's log layer by default.
+        var logLayer = layerOverlays ? layerOverlays[target[1]] : null;
+        if (logLayer && !map.hasLayer(logLayer)) map.addLayer(logLayer);
+
+        config.decayStrategy = newKey;
+        rebuildDensityGroup();
+      });
+    }
+
+    function setupLayerToggles() {
+      layerOverlays = findOverlays();
+      if (!layerOverlays) return false;
+      var r = buildLayerList(
+        layersContainer,
+        config.layerGroups,
+        map,
+        layerOverlays,
+        config
+      );
+      densityRowsEl = r.densityRowsEl;
+      densityRadioName = r.radioName;
+      wireLayerEvents(layersContainer, config.layerGroups, map, layerOverlays);
+      initStrategySelect();
+      return true;
+    }
+
     if (layersContainer && config.layerGroups && config.layerGroups.length) {
-      var layerOverlays = null;
-
-      function setupLayerToggles() {
-        layerOverlays = findOverlays();
-        if (!layerOverlays) return false;
-        buildLayerList(layersContainer, config.layerGroups, map, layerOverlays);
-        wireLayerEvents(layersContainer, config.layerGroups, map, layerOverlays);
-        return true;
-      }
-
       if (!setupLayerToggles()) {
         var attempts = 0;
         (function retryLayers() {

@@ -349,8 +349,25 @@ class ConfigModel(BaseModel):
         alias="DECAY_FACTOR",
         ge=0,
         le=1,
-        description="Decay factor for temporal fading of older activities (0.0 to 1.0).",
+        description=(
+            "Geometric decay (0.0-1.0) applied to repeated passes of the same cell "
+            'within a single activity. Only used when DECAY_STRATEGY is "decay". '
+            "0.0 counts each cell once per activity (strict coverage); 1.0 counts "
+            "every pass (inflates intensity for loops / out-and-backs)."
+        ),
         examples=[0.5, 0.3],
+    )
+    decay_strategy: Literal["decay", "binary-per-activity", "raw-count"] = Field(
+        default="binary-per-activity",
+        alias="DECAY_STRATEGY",
+        description=(
+            "How repeated passes of the same cell within a single activity are counted "
+            'for the GPS density layers. "decay" weights repeated passes by '
+            'DECAY_FACTOR**n; "binary-per-activity" counts each cell once per activity; '
+            '"raw-count" counts every pass. All strategies are rendered as selectable '
+            "layers in the generated control panel; this sets the default selection."
+        ),
+        examples=["decay", "binary-per-activity", "raw-count"],
     )
 
     # Optional path overrides (relative to project root)

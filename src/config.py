@@ -68,6 +68,7 @@ class Config:
         self.auto_range_pct = model.auto_range_pct
         self.max_consecutive_same_cell = model.max_consecutive_same_cell
         self.decay_factor = model.decay_factor
+        self.decay_strategy = model.decay_strategy
 
         # Paths are already resolved by ConfigModel
         self.cache_dir = Path(model.cache_dir)

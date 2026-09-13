@@ -90,6 +90,18 @@
   gap: 4px;
 }
 
+/* Density-mode dropdown */
+.heatmap-control-panel .hcp-select {
+  display: block;
+  width: 100%;
+  background: var(--hcp-control-bg);
+  color: var(--hcp-text);
+  border: 1px solid var(--hcp-control-border);
+  border-radius: 6px;
+  padding: 5px 6px;
+  font-size: 12px;
+}
+
 .heatmap-control-panel .hcp-segment {
   flex: 1;
   background: var(--hcp-control-bg);

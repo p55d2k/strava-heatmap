@@ -264,12 +264,17 @@ def run_generate(args: argparse.Namespace) -> None:
             )
         print_success("Grid normalization complete")
 
-        # Stage 5: Generating Map Layers (7 steps: colormaps + 6 layers)
+        # Stage 5: Generating Map Layers (1 + 10 layers: six density + four metrics)
         print_stage("Stage 5: Generating Map Layers")
-        with tqdm(total=7, desc="Generating layers", unit="layer", disable=not args.dev) as pbar:
+        with tqdm(total=12, desc="Generating layers", unit="layer", disable=not args.dev) as pbar:
             colormaps = create_colormaps()
             pbar.update(1)
-            layers = generate_layer_uris(normalized, colormaps, progress_callback=pbar.update)
+            layers = generate_layer_uris(
+                normalized,
+                colormaps,
+                default_strategy=config.decay_strategy,
+                progress_callback=pbar.update,
+            )
         print_success(f"Created {len(layers)} map layers")
 
         # Stage 6: Building Interactive Map (4 steps: bounds/centre, legend, build_map (3 sub-steps))
@@ -282,7 +287,12 @@ def run_generate(args: argparse.Namespace) -> None:
             pbar.update(1)
 
             legend_builder = LegendBuilder()
-            legend_html = legend_builder.build(normalized, colormaps, normalized["max_passes"])
+            legend_html = legend_builder.build(
+                normalized,
+                colormaps,
+                normalized["max_passes"],
+                max_passes_by_strategy=normalized["max_passes_by_strategy"],
+            )
             pbar.update(1)
 
             build_map(
@@ -294,6 +304,7 @@ def run_generate(args: argparse.Namespace) -> None:
                 config.output_html,
                 config.map_opacity,
                 carto_style=config.carto_style,
+                decay_strategy=config.decay_strategy,
                 exclusive_layer_names=DENSITY_LAYER_NAMES,
                 metric_layer_names=METRIC_LAYER_NAMES,
                 legend_ids=legend_builder.legend_ids,

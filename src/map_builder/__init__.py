@@ -15,7 +15,10 @@ Modules:
 from src.map_builder.constants import (
     CARTO_STYLE_LABELS,
     CARTO_STYLES,
+    DECAY_STRATEGIES,
+    DECAY_STRATEGY_LABELS,
     DEFAULT_CARTO_STYLE,
+    DEFAULT_DECAY_STRATEGY,
     DEFAULT_LEGEND_STYLES,
     DENSITY_LAYER_NAMES,
     EXCLUSIVE_LAYER_NAMES,
@@ -30,6 +33,7 @@ from src.map_builder.control import (
     carto_basemap_choices,
     control_panel_script,
     controls_css,
+    decay_strategy_choices,
 )
 from src.map_builder.legend import (
     LegendBuilder,
@@ -73,6 +77,10 @@ __all__ = [
     "build_layer_group_config",
     "control_panel_script",
     "carto_basemap_choices",
+    "decay_strategy_choices",
+    "DECAY_STRATEGIES",
+    "DECAY_STRATEGY_LABELS",
+    "DEFAULT_DECAY_STRATEGY",
     # Map builder
     "build_map",
     "build_tile_url",

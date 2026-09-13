@@ -83,6 +83,12 @@ def create_grids(
     elev_sum = np.zeros((grid_h, grid_w), dtype=np.float32)
     elev_n = np.zeros((grid_h, grid_w), dtype=np.float32)
 
+    # Additional count grids for the other decay strategies. These are appended at
+    # the END of the tuple so that `paint_segment`'s positional metric-grid indices
+    # (3..10) remain unchanged.
+    count_raw_grid = np.zeros((grid_h, grid_w), dtype=np.float32)
+    count_binary_grid = np.zeros((grid_h, grid_w), dtype=np.float32)
+
     return (
         grid_w,
         grid_h,
@@ -95,7 +101,20 @@ def create_grids(
         grad_n,
         elev_sum,
         elev_n,
+        count_raw_grid,
+        count_binary_grid,
     )
+
+
+def _geom_sum(n_visits: int, decay_factor: float) -> float:
+    """Return the geometric sum 1 + d + d^2 + ... + d^(n-1) for a decay factor d."""
+    if n_visits <= 1:
+        return 1.0
+    if decay_factor <= 0.0:
+        return 1.0
+    if decay_factor >= 1.0:
+        return float(n_visits)
+    return (1.0 - decay_factor**n_visits) / (1.0 - decay_factor)
 
 
 def _rasterize_track_points(
@@ -105,26 +124,31 @@ def _rasterize_track_points(
     grid_w: int,
     grid_h: int,
     count_grid: np.ndarray,
+    count_raw_grid: np.ndarray,
+    count_binary_grid: np.ndarray,
     max_consecutive_same_cell: int,
     decay_factor: float = 0.5,
 ) -> None:
-    """Rasterize a single track's points onto the count grid with consecutive cell cap.
+    """Rasterize a single track's points onto the strategy count grids.
 
-    Each grid cell visited within the *same activity* is counted with a
-    geometrically decaying weight: the first visit to a cell contributes 1.0,
-    the second `decay_factor`, the third `decay_factor**2`, and so on. This
-    prevents a single activity that repeatedly passes the same location (e.g.
-    laps on a running track, or an out-and-back route) from inflating the pass
-    count, while still rewarding genuinely higher training volume with a
-    diminishing signal.
+    Each activity (track) is processed in ONE pass with a consecutive-cell cap. For
+    every cell that is actually counted (i.e. passes ``max_consecutive_same_cell``),
+    we accumulate the number of counted visits ``n``. At the end of the activity we
+    distribute ``n`` into the three strategy grids:
 
-    Note: counts are decayed *per-activity*. The same cell visited across
-    different activities each starts fresh at 1.0, so multi-day route coverage
-    is unaffected.
+    * ``count_raw_grid``  — ``raw-count``: every counted pass contributes ``n``.
+    * ``count_binary_grid`` — ``binary-per-activity``: contributes ``1`` if ``n > 0``.
+    * ``count_grid``       — ``decay``: contributes the geometric sum
+      ``1 + decay_factor + decay_factor^2 + ... + decay_factor^(n-1)``.
+
+    This keeps rasterization cost at a single point loop (no per-strategy re-passes)
+    while deriving all three strategies from the same visit counts. The consecutive
+    cap prevents a stationary stretch (e.g. a forgotten stop) from dominating, and
+    the decay resets per activity so genuine multi-day coverage is unaffected.
     """
     same_cell_run = 0
     prev_xi = prev_yi = None
-    # Track visits per cell within this activity for decay
+    # Track visits per cell within this activity (counted samples only)
     cell_visits: dict[tuple[int, int], int] = {}
 
     for i in range(len(track_pts)):
@@ -137,10 +161,12 @@ def _rasterize_track_points(
                 same_cell_run = 1
                 prev_xi, prev_yi = xi, yi
             if same_cell_run <= max_consecutive_same_cell:
-                visits = cell_visits.get((xi, yi), 0)
-                weight = decay_factor**visits  # 1, d, d^2, d^3...
-                count_grid[yi, xi] += weight
-                cell_visits[(xi, yi)] = visits + 1
+                cell_visits[(xi, yi)] = cell_visits.get((xi, yi), 0) + 1
+
+    for (xi, yi), n_visits in cell_visits.items():
+        count_raw_grid[yi, xi] += n_visits
+        count_binary_grid[yi, xi] += 1
+        count_grid[yi, xi] += _geom_sum(n_visits, decay_factor)
 
 
 def paint_segment(x1, y1, x2, y2, speed_val, hr_val, grad_val, elev_val, grids):
@@ -220,6 +246,8 @@ def rasterize_tracks(
         grad_n,
         elev_sum,
         elev_n,
+        count_raw_grid,
+        count_binary_grid,
     ) = grids
 
     for _, track_pts in tqdm(tracks, desc="Rasterizing tracks", unit="track"):
@@ -248,6 +276,8 @@ def rasterize_tracks(
             grid_w,
             grid_h,
             count_grid,
+            count_raw_grid,
+            count_binary_grid,
             max_consecutive_same_cell,
             decay_factor,
         )
@@ -440,12 +470,26 @@ def compute_normalized_grids(grids: tuple, sigma: float, config, progress_callba
         grad_n,
         elev_sum,
         elev_n,
+        count_raw_grid,
+        count_binary_grid,
     ) = grids
 
     if progress_callback:
         progress_callback(1)  # Count grid done
 
     count_norm, count_log_norm, b_count, max_count = _compute_count_grid(count_grid, sigma)
+    (
+        count_raw_norm,
+        count_raw_log_norm,
+        _b_raw,
+        max_count_raw,
+    ) = _compute_count_grid(count_raw_grid, sigma)
+    (
+        count_binary_norm,
+        count_binary_log_norm,
+        _b_bin,
+        max_count_binary,
+    ) = _compute_count_grid(count_binary_grid, sigma)
 
     if progress_callback:
         progress_callback(1)  # Speed grid done
@@ -478,13 +522,18 @@ def compute_normalized_grids(grids: tuple, sigma: float, config, progress_callba
     max_passes = int(max_count)
 
     # Clean up intermediate arrays
-    del count_grid, speed_sum, speed_n, hr_sum, hr_n, grad_sum, grad_n, elev_sum, elev_n
-    del b_count
+    del count_grid, count_raw_grid, count_binary_grid, speed_sum, speed_n, hr_sum, hr_n
+    del grad_sum, grad_n, elev_sum, elev_n
+    del b_count, _b_raw, _b_bin
     gc.collect()
 
     return {
         "count_norm": count_norm,
         "count_log_norm": count_log_norm,
+        "count_raw_norm": count_raw_norm,
+        "count_raw_log_norm": count_raw_log_norm,
+        "count_binary_norm": count_binary_norm,
+        "count_binary_log_norm": count_binary_log_norm,
         "speed_norm": speed_norm,
         "hr_norm": hr_norm,
         "grad_norm": grad_norm,
@@ -500,4 +549,11 @@ def compute_normalized_grids(grids: tuple, sigma: float, config, progress_callba
         "g_lo": g_lo,
         "g_hi": g_hi,
         "max_passes": max_passes,
+        "max_passes_raw": int(max_count_raw),
+        "max_passes_binary": int(max_count_binary),
+        "max_passes_by_strategy": {
+            "decay": max_passes,
+            "raw-count": int(max_count_raw),
+            "binary-per-activity": int(max_count_binary),
+        },
     }

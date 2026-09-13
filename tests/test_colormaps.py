@@ -215,6 +215,10 @@ class TestGenerateLayerUris:
         self.normalized = {
             "count_norm": np.zeros((10, 10), dtype=np.float32),
             "count_log_norm": np.zeros((10, 10), dtype=np.float32),
+            "count_raw_norm": np.zeros((10, 10), dtype=np.float32),
+            "count_raw_log_norm": np.zeros((10, 10), dtype=np.float32),
+            "count_binary_norm": np.zeros((10, 10), dtype=np.float32),
+            "count_binary_log_norm": np.zeros((10, 10), dtype=np.float32),
             "speed_norm": np.zeros((10, 10), dtype=np.float32),
             "hr_norm": np.zeros((10, 10), dtype=np.float32),
             "grad_norm": np.zeros((10, 10), dtype=np.float32),
@@ -226,11 +230,11 @@ class TestGenerateLayerUris:
         }
         self.colormaps = create_colormaps()
 
-    def test_returns_six_layers(self):
-        """Should return list of 6 layer tuples."""
+    def test_returns_ten_layers(self):
+        """Should return list of 10 layer tuples (6 density + 4 metrics)."""
         layers = generate_layer_uris(self.normalized, self.colormaps)
 
-        assert len(layers) == 6
+        assert len(layers) == 10
         for layer in layers:
             assert len(layer) == 3  # (name, uri, visible)
             name, uri, visible = layer
@@ -238,21 +242,35 @@ class TestGenerateLayerUris:
             assert uri.startswith("data:image/png;base64,")
             assert isinstance(visible, bool)
 
-    def test_first_layer_is_visible(self):
-        """First layer (Frequency log) should be visible by default."""
+    def test_default_strategy_log_layer_is_visible(self):
+        """Default strategy's log layer should be visible; the rest hidden."""
         layers = generate_layer_uris(self.normalized, self.colormaps)
 
-        assert layers[0][2] is True  # visible
-        for layer in layers[1:]:
-            assert layer[2] is False  # not visible
+        for i, layer in enumerate(layers):
+            if i == 2:  # binary-per-activity log, visible by default
+                assert layer[2] is True
+            else:
+                assert layer[2] is False  # not visible
+
+    def test_default_strategy_controls_visibility(self):
+        """Only the chosen default strategy's log layer should be visible."""
+        layers = generate_layer_uris(self.normalized, self.colormaps, default_strategy="raw-count")
+
+        for i, layer in enumerate(layers):
+            # raw strategy starts at index 4 (decay 0-1, binary 2-3, raw 4-5)
+            assert layer[2] is (i == 4)
 
     def test_layer_names_match_expected(self):
-        """Layer names should match expected values."""
+        """Layer names should match expected values (density + metrics)."""
         layers = generate_layer_uris(self.normalized, self.colormaps)
 
         expected_names = [
-            "GPS Density (log)",
-            "GPS Density (linear)",
+            "GPS Density (decay · log)",
+            "GPS Density (decay · linear)",
+            "GPS Density (binary · log)",
+            "GPS Density (binary · linear)",
+            "GPS Density (raw · log)",
+            "GPS Density (raw · linear)",
             "Pace (average)",
             "Heart rate (average)",
             "Gradient (absolute)",

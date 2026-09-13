@@ -138,14 +138,14 @@ class TestCreateGrids:
         assert grid_h == 51  # (500-0)/10 + 1
 
     def test_returns_all_grid_arrays(self):
-        """Should return all 11 grid arrays."""
+        """Should return all 13 grid arrays."""
         result = create_grids(0.0, 100.0, 0.0, 100.0, 10.0)
 
-        assert len(result) == 11
+        assert len(result) == 13
         grid_w, grid_h = result[0], result[1]
         grids = result[2:]
 
-        assert len(grids) == 9
+        assert len(grids) == 11
         for grid in grids:
             assert grid.shape == (grid_h, grid_w)
             assert grid.dtype == np.float32
@@ -505,6 +505,93 @@ class TestRasterizeTracks:
         # 3 separate activities, each first visit -> 1 + 1 + 1 = 3.0
         assert np.sum(count_grid) == pytest.approx(3.0)
 
+    def test_derives_all_strategy_grids_in_one_pass(self):
+        """Raw/binary counts and the decay total share the same per-cell visits.
+
+        6 counted passes of the same cell within one activity must produce:
+        * raw-count grid = 6
+        * binary-per-activity grid = 1
+        * decay grid = 1.96875 (geometric sum for decay_factor=0.5)
+        """
+        n_points = 6
+        self.to_utm.transform.return_value = (
+            np.full(n_points, 500100.0),
+            np.full(n_points, 5000100.0),
+        )
+        self.to_wm.transform.return_value = (
+            np.full(n_points, -13499950.0),
+            np.full(n_points, 5699950.0),
+        )
+
+        tracks = [
+            ("track_laps", [[45.0, -122.0, None, None, 100.0]] * n_points),
+        ]
+
+        rasterize_tracks(
+            tracks,
+            self.to_wm,
+            self.to_utm,
+            self.home_x_utm,
+            self.home_y_utm,
+            clip_m=None,
+            x_min_wm=self.x_min_wm,
+            y_max_wm=self.y_max_wm,
+            meters_per_pixel=self.meters_per_pixel,
+            max_consecutive_same_cell=100,
+            decay_factor=0.5,
+            grids=self.grids,
+        )
+
+        raw_grid = self.grids[11]
+        binary_grid = self.grids[12]
+        decay_grid = self.grids[2]
+
+        assert np.sum(raw_grid) == 6
+        assert np.sum(binary_grid) == 1
+        assert np.sum(decay_grid) == pytest.approx(1.96875)
+
+    def test_raw_and_binary_cross_activities(self):
+        """Raw-count sums passes across activities; binary counts coverage.
+
+        One pass per cell across 3 activities -> raw = 3, binary = 3, decay = 3.
+        """
+        self.to_utm.transform.return_value = (
+            np.array([500100.0, 500100.0, 500100.0]),
+            np.array([5000100.0, 5000100.0, 5000100.0]),
+        )
+        self.to_wm.transform.return_value = (
+            np.array([-13499950.0, -13499950.0, -13499950.0]),
+            np.array([5699950.0, 5699950.0, 5699950.0]),
+        )
+
+        tracks = [
+            ("run_1", [[45.0, -122.0, None, None, 100.0]]),
+            ("run_2", [[45.0, -122.0, None, None, 100.0]]),
+            ("run_3", [[45.0, -122.0, None, None, 100.0]]),
+        ]
+
+        rasterize_tracks(
+            tracks,
+            self.to_wm,
+            self.to_utm,
+            self.home_x_utm,
+            self.home_y_utm,
+            clip_m=None,
+            x_min_wm=self.x_min_wm,
+            y_max_wm=self.y_max_wm,
+            meters_per_pixel=self.meters_per_pixel,
+            max_consecutive_same_cell=100,
+            decay_factor=0.5,
+            grids=self.grids,
+        )
+
+        raw_grid = self.grids[11]
+        binary_grid = self.grids[12]
+
+        assert np.sum(raw_grid) == 3
+        assert np.sum(binary_grid) == 3
+        assert np.sum(self.grids[2]) == pytest.approx(3.0)  # decay == raw here
+
 
 class TestComputeNormalizedGrids:
     """Tests for compute_normalized_grids function."""
@@ -545,6 +632,8 @@ class TestComputeNormalizedGrids:
             self.grad_n,
             self.elev_sum,
             self.elev_n,
+            np.zeros((self.grid_h, self.grid_w), dtype=np.float32),
+            np.zeros((self.grid_h, self.grid_w), dtype=np.float32),
         )
 
         # Mock config
@@ -562,6 +651,10 @@ class TestComputeNormalizedGrids:
         expected_keys = [
             "count_norm",
             "count_log_norm",
+            "count_raw_norm",
+            "count_raw_log_norm",
+            "count_binary_norm",
+            "count_binary_log_norm",
             "speed_norm",
             "hr_norm",
             "grad_norm",
@@ -577,6 +670,9 @@ class TestComputeNormalizedGrids:
             "g_lo",
             "g_hi",
             "max_passes",
+            "max_passes_raw",
+            "max_passes_binary",
+            "max_passes_by_strategy",
         ]
 
         for key in expected_keys:
@@ -664,8 +760,12 @@ class TestComputeNormalizedGrids:
             np.zeros((10, 10), dtype=np.float32),
             np.zeros((10, 10), dtype=np.float32),
             np.zeros((10, 10), dtype=np.float32),
+            np.zeros((10, 10), dtype=np.float32),
+            np.zeros((10, 10), dtype=np.float32),
         )
-        count_only[2][5, 5] = 3.0  # Add a single count so count_norm is valid
+        count_only[2][5, 5] = 3.0  # Add a single count so decay norm is valid
+        count_only[11][5, 5] = 3.0  # raw-count grid
+        count_only[12][5, 5] = 1.0  # binary grid
 
         # Should not raise and return all expected keys
         result = compute_normalized_grids(count_only, sigma=1.0, config=self.config)
@@ -673,6 +773,10 @@ class TestComputeNormalizedGrids:
         expected_keys = [
             "count_norm",
             "count_log_norm",
+            "count_raw_norm",
+            "count_raw_log_norm",
+            "count_binary_norm",
+            "count_binary_log_norm",
             "speed_norm",
             "hr_norm",
             "grad_norm",
@@ -688,6 +792,9 @@ class TestComputeNormalizedGrids:
             "g_lo",
             "g_hi",
             "max_passes",
+            "max_passes_raw",
+            "max_passes_binary",
+            "max_passes_by_strategy",
         ]
         for key in expected_keys:
             assert key in result, f"Missing key: {key}"
@@ -697,6 +804,8 @@ class TestComputeNormalizedGrids:
         empty_grids = (
             10,
             10,
+            np.zeros((10, 10), dtype=np.float32),
+            np.zeros((10, 10), dtype=np.float32),
             np.zeros((10, 10), dtype=np.float32),
             np.zeros((10, 10), dtype=np.float32),
             np.zeros((10, 10), dtype=np.float32),

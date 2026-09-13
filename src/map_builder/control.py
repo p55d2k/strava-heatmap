@@ -26,10 +26,15 @@ from jinja2 import Template as JinjaTemplate
 from src.map_builder.constants import (
     CARTO_STYLE_LABELS,
     CARTO_STYLES,
+    DECAY_STRATEGIES,
+    DECAY_STRATEGY_LABELS,
     DEFAULT_CARTO_STYLE,
+    DEFAULT_DECAY_STRATEGY,
     DENSITY_LAYER_NAMES,
     LEGEND_IDS,
     METRIC_LAYER_NAMES,
+    density_layer_names,
+    strategy_layers_map,
 )
 
 # Directory holding the external CSS / HTML / JS assets.
@@ -59,6 +64,19 @@ def carto_basemap_choices(styles: list[str] | None = None) -> list[dict[str, str
     return [{"key": style, "label": CARTO_STYLE_LABELS.get(style, style)} for style in chosen]
 
 
+def decay_strategy_choices(strategies: list[str] | None = None) -> list[dict[str, str]]:
+    """Return the density-strategy ``{key, label}`` choices for the control panel.
+
+    Args:
+        strategies: Decay strategy keys to expose. Defaults to ``DECAY_STRATEGIES``.
+
+    Returns:
+        A list of ``{"key": ..., "label": ...}`` dicts, in the given order.
+    """
+    chosen = strategies if strategies is not None else list(DECAY_STRATEGIES)
+    return [{"key": s, "label": DECAY_STRATEGY_LABELS.get(s, s)} for s in chosen]
+
+
 def control_panel_script() -> str:
     """Return the contents of the companion ``assets/panel.js`` browser script."""
     return _read("panel.js")
@@ -84,12 +102,16 @@ def build_layer_group_config(
     has_tracks: bool = True,
     exclusive_layer_names: list[str] | None = None,
     metric_layer_names: list[str] | None = None,
+    decay_strategy: str = DEFAULT_DECAY_STRATEGY,
 ) -> list[dict]:
     """Build the ``layerGroups`` config consumed by ``assets/panel.js``.
 
     Layer toggles are split into two groups under Option B:
-    * ``Heatmap`` (radio) — the GPS density variants. They are alternative
-      renderings of the same count data, so only one can be shown at a time.
+    * ``Heatmap`` (radio) — the GPS density variants for the *active* decay
+      strategy (its linear + log pair). They are alternative renderings of the
+      same count data, so only one can be shown at a time. The rest of the
+      strategy pairs are exposed to the panel via the strategy dropdown, which
+      swaps which pair the radio group shows.
     * ``Metrics`` (check) — the distinct analysis metrics (pace, HR, gradients)
       that may each be toggled independently so several can be overlaid.
 
@@ -101,6 +123,8 @@ def build_layer_group_config(
             (radio group). Defaults to ``DENSITY_LAYER_NAMES``.
         metric_layer_names: Distinct metric layer names shown as independent
             checkboxes. Defaults to ``METRIC_LAYER_NAMES``.
+        decay_strategy: The active decay strategy key; its two density layers
+            are shown in the initial radio group.
 
     Returns:
         A list of ``{label, mode, layers}`` groups for the panel's layer list.
@@ -121,8 +145,12 @@ def build_layer_group_config(
     def _item(name: str, visible: bool) -> dict:
         return {"name": name, "visible": visible}
 
+    # Only the selected strategy's linear + log layers populate the radio group.
+    active_names = set(density_layer_names(decay_strategy))
     density_layers = [
-        _item(name, visible) for name, _, visible in overlay_layers if name in exclusive
+        _item(name, visible)
+        for name, _, visible in overlay_layers
+        if name in exclusive and name in active_names
     ]
     metric_layers = [_item(name, visible) for name, _, visible in overlay_layers if name in metrics]
     known = exclusive | metrics
@@ -184,6 +212,10 @@ class ControlPanel(MacroElement):
         panel_id: str = "heatmap-control-panel",
         legend_id: str = "heatmap-legend",
         layer_groups: list[dict] | None = None,
+        decay_strategy: str = DEFAULT_DECAY_STRATEGY,
+        strategy_choices: list[dict[str, str]] | None = None,
+        strategy_layers: dict[str, list[str]] | None = None,
+        all_density_layers: list[str] | None = None,
     ):
         """Initialize the ControlPanel.
 
@@ -199,6 +231,15 @@ class ControlPanel(MacroElement):
             legend_id: DOM id of the legend container toggled by the panel.
             layer_groups: ``layerGroups`` config for the panel's layer toggles;
                 see :func:`build_layer_group_config`.
+            decay_strategy: Active decay strategy key driving the density radio
+                group and the dropdown's initial value.
+            strategy_choices: ``[{key, label}]`` for the density-mode dropdown.
+                Defaults to :func:`decay_strategy_choices`.
+            strategy_layers: Map of strategy key -> ``[linear, log]`` density
+                layer names, used by the JS to swap layers. Defaults to
+                :func:`strategy_layers_map`.
+            all_density_layers: Every density layer name (all strategies), used
+                for exclusivity when switching. Defaults to ``DENSITY_LAYER_NAMES``.
         """
         super().__init__()
         self._name = "ControlPanel"
@@ -215,6 +256,14 @@ class ControlPanel(MacroElement):
             "zoomStart": zoom_start,
             "legendId": legend_id,
             "layerGroups": layer_groups or [],
+            "decayStrategy": decay_strategy,
+            "decayStrategyChoices": strategy_choices
+            if strategy_choices is not None
+            else decay_strategy_choices(),
+            "strategyLayers": strategy_layers
+            if strategy_layers is not None
+            else strategy_layers_map(),
+            "allDensityLayers": all_density_layers or DENSITY_LAYER_NAMES,
         }
         self.config_json = json.dumps(config)
 
