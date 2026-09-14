@@ -664,6 +664,7 @@ class TestControlPanel:
         assert "hcp-reset" in html
         assert "hcp-legend" in html
         assert "hcp-toggle" in html
+        assert "hcp-apply" not in html
 
     def test_html_respects_opacity(self):
         """build_control_panel_html should reflect the given opacity percentage."""
@@ -676,6 +677,8 @@ class TestControlPanel:
         assert "initHeatmapControlPanel" in script
         assert "findOverlays" in script
         assert "basemaps.cartocdn.com" in script
+        assert "redrawVisibleOverlays" in script
+        assert '"zoomend"' in script
 
     def test_carto_basemap_choices_default(self):
         """carto_basemap_choices should return default styles with labels."""

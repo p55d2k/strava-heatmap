@@ -130,6 +130,30 @@
     }
   }
 
+  // Force a fresh client-side redraw of every currently visible overlay layer.
+  // Heatmap overlays are FeatureGroups wrapping ImageOverlays. ImageOverlays
+  // (single static data-URI images) occasionally fail to reposition when the
+  // map zooms while a layer is shown, leaving the heatmap stale until you pan.
+  // Calling redraw() re-applies the layer's bounds so it always matches the
+  // current view. It is invoked automatically on zoom end (see init), not by a
+  // manual button — for already-correctly-rendered layers this is a cheap no-op.
+  function redrawVisibleOverlays(map) {
+    var overlays = findOverlays();
+    if (!overlays) return;
+    for (var name in overlays) {
+      if (!Object.prototype.hasOwnProperty.call(overlays, name)) continue;
+      var layer = overlays[name];
+      if (!layer || !map.hasLayer(layer)) continue;
+      if (typeof layer.eachLayer === "function") {
+        layer.eachLayer(function (sub) {
+          if (sub && typeof sub.redraw === "function") sub.redraw();
+        });
+      } else if (typeof layer.redraw === "function") {
+        layer.redraw();
+      }
+    }
+  }
+
   function updateSegmentStates(segmentBox, key) {
     var children = segmentBox.children;
     for (var i = 0; i < children.length; i++) {
@@ -404,6 +428,15 @@
         legend.style.display = legendVisible ? "block" : "none";
       });
     }
+
+    /* --- Auto-correct overlay rendering after zoom ----------------------- */
+    // ImageOverlays inside FeatureGroups can occasionally fail to reposition
+    // when the map zooms while a layer is shown (the classic stale-overlay
+    // bug). Redraw the visible overlays automatically on zoom end so the
+    // heatmap matches the current view without any manual action.
+    map.on("zoomend", function () {
+      redrawVisibleOverlays(map);
+    });
 
     /* --- Collapse / expand ---------------------------------------------- */
     var toggle = panel.querySelector("#hcp-toggle");
