@@ -27,6 +27,7 @@ from src.map_builder import (
     legend_row,
     pace_str,
 )
+from src.map_builder.constants import TRACK_OPACITY
 
 
 class TestCmapToCss:
@@ -421,6 +422,10 @@ class TestBuildMap:
 
         # Verify polylines for tracks
         assert mock_polyline.call_count == 2  # Two tracks
+        # Every track polyline should be seeded with the shared TRACK_OPACITY so
+        # it stays consistent with the control-panel slider's initial value.
+        for call in mock_polyline.call_args_list:
+            assert call[1]["opacity"] == TRACK_OPACITY
 
         # Verify image overlays for layers
         assert mock_image_overlay.call_count == 2  # Two layers
@@ -654,22 +659,33 @@ class TestControlPanel:
 
     def test_html_contains_panel_markup(self):
         """build_control_panel_html should contain the key controls."""
-        html = build_control_panel_html(opacity=0.7)
+        html = build_control_panel_html()
         assert "heatmap-control-panel" in html
         assert "hcp-basemap" in html
-        assert "hcp-opacity" in html
-        assert 'value="70"' in html
-        assert "70%" in html
+        assert "hcp-layers" in html
+        assert "hcp-opacity-toggle" in html
         assert "hcp-fit" in html
         assert "hcp-reset" in html
         assert "hcp-legend" in html
-        assert "hcp-toggle" in html
+        # The sidebar always stays open; no collapse/re-open controls exist.
+        assert "hcp-toggle" not in html
+        assert "hcp-reopen" not in html
+        assert "hcp-sidebar-collapsed" not in html
         assert "hcp-apply" not in html
+        # The old single global opacity slider is gone; per-layer sliders are
+        # rendered client-side by panel.js, so the static markup has no slider.
+        assert "hcp-opacity-value" not in html
+        assert 'id="hcp-opacity"' not in html
+        # Layer-opacity controls are collapsed by default (hidden until toggled).
+        assert "heatmap-control-panel hcp-opacity-collapsed" in html
+        assert 'aria-expanded="false"' in html
 
-    def test_html_respects_opacity(self):
-        """build_control_panel_html should reflect the given opacity percentage."""
-        assert 'value="85"' in build_control_panel_html(opacity=0.85)
-        assert 'value="0"' in build_control_panel_html(opacity=0.0)
+    def test_html_has_no_inline_opacity(self):
+        """build_control_panel_html no longer hard-codes an opacity percentage."""
+        html = build_control_panel_html()
+        assert "opacity_pct" not in html
+        assert 'value="85"' not in html
+        assert 'value="0"' not in html
 
     def test_script_contains_init_function(self):
         """control_panel_script should expose initHeatmapControlPanel."""
@@ -870,6 +886,34 @@ class TestLayerGroupConfig:
     def test_empty_layers(self):
         """With no overlay layers and no tracks, groups should be empty."""
         assert build_layer_group_config([], has_tracks=False) == []
+
+    def test_layers_carry_per_layer_opacity(self):
+        """Heatmap/metric layers seed per-layer opacity from map_opacity, while the
+        raw GPS tracks keep their own vector stroke opacity (TRACK_OPACITY)."""
+        groups = build_layer_group_config(self.layers, has_tracks=True, decay_strategy="decay")
+        names = {g["label"]: g for g in groups}
+        # Raw GPS tracks group uses the vector stroke default, not map_opacity.
+        assert names["Raw GPS tracks"]["layers"][0]["opacity"] == TRACK_OPACITY
+        # Every raster/heatmap layer across all other groups defaults to 0.85.
+        for g in groups:
+            for lay in g["layers"]:
+                if g["label"] == "Raw GPS tracks":
+                    assert lay["opacity"] == TRACK_OPACITY
+                else:
+                    assert lay["opacity"] == 0.85
+
+    def test_layer_opacity_respects_map_opacity(self):
+        """map_opacity should flow into every raster layer entry's opacity, but not
+        into the raw GPS tracks (a vector layer with its own fixed stroke opacity)."""
+        groups = build_layer_group_config(
+            self.layers, has_tracks=True, decay_strategy="decay", map_opacity=0.4
+        )
+        for g in groups:
+            for lay in g["layers"]:
+                if g["label"] == "Raw GPS tracks":
+                    assert lay["opacity"] == TRACK_OPACITY
+                else:
+                    assert lay["opacity"] == 0.4
 
     """Tests for CARTO API key loading and tile URL building."""
 

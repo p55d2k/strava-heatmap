@@ -89,11 +89,11 @@ function querySelectorIn(root, sel) {
   return null;
 }
 function makeEl(tag, id) {
-  return {
+  const el = {
     tagName: (tag || "div").toUpperCase(), id: id || "",
-    type: "", name: "", value: "", textContent: "", innerHTML: "",
+    type: "", name: "", value: "", textContent: "",
     className: "", checked: false, style: { display: "" },
-    children: [], attributes: {}, _listeners: {}, classList: mkClassList(),
+    children: [], attributes: {}, _listeners: {}, _html: "", classList: mkClassList(),
     setAttribute(k, v) { this.attributes[k] = String(v); },
     getAttribute(k) { return k in this.attributes ? this.attributes[k] : null; },
     appendChild(c) { this.children.push(c); return c; },
@@ -101,6 +101,12 @@ function makeEl(tag, id) {
     dispatch(evt, detail) { (this._listeners[evt] || []).forEach((f) => f(detail || {})); },
     querySelector(sel) { return querySelectorIn(this, sel); },
   };
+  // Faithfully mirror real DOM containers: innerHTML = "" empties the children.
+  Object.defineProperty(el, "innerHTML", {
+    get() { return el._html; },
+    set(v) { el._html = String(v); if (String(v) === "") el.children.length = 0; },
+  });
+  return el;
 }
 
 const byId = new Map();
@@ -123,7 +129,29 @@ for (const pid of config.__panelIds) {
 }
 // ---- Minimal fake Leaflet map + overlay registry ------------------------
 function makeOverlay(name) {
-  return { name, options: { name }, setOpacity() {}, redraw() {}, eachLayer() {} };
+  // A FeatureGroup exposing a single ImageOverlay child, mirroring how Folium
+  // nests heatmap overlays. setOpacity must be reached through eachLayer().
+  const sub = { opts: [], setOpacity(o) { this.opts.push(o); }, redraw() {} };
+  return {
+    name,
+    options: { name },
+    sub,
+    setOpacity(o) { sub.opts.push(o); },
+    eachLayer(fn) { fn(sub); },
+    redraw() {},
+  };
+}
+function makeVectorOverlay(name) {
+  // A FeatureGroup wrapping vector children (Leaflet PolyLines), mirroring the
+  // Raw GPS tracks layer: like a real Path it exposes setStyle, not setOpacity.
+  const sub = { styles: [], setStyle(o) { this.styles.push(o); }, redraw() {} };
+  return {
+    name,
+    options: { name },
+    sub,
+    eachLayer(fn) { fn(sub); },
+    redraw() {},
+  };
 }
 function makeMap() {
   const onMap = new Set();
@@ -154,7 +182,10 @@ function makeMap() {
 
 const map = makeMap();
 const overlays = {};
-for (const nm of layerNames) overlays[nm] = makeOverlay(nm);
+for (const nm of layerNames) {
+  // The raw GPS tracks are vector polylines, so model them as a vector overlay.
+  overlays[nm] = nm === "Raw GPS tracks" ? makeVectorOverlay(nm) : makeOverlay(nm);
+}
 
 // Global scope so the free `window` / `document` / `<mapVar>` lookups resolve.
 const windowObj = {};
@@ -236,6 +267,56 @@ function toggle(layerName, checked) {
      "decay log row shown after density-mode switch");
   ok(rowVisible("GPS Density (binary · log)") === "none",
      "binary log row hidden after density-mode switch");
+
+// Scenario F - per-layer opacity sliders affect only their own layer, and the
+  // "Opacity" toggle collapses every slider at once.
+  const paceSlider = panel.querySelector('input[data-layer-opacity="Pace (average)"]');
+  assert.ok(paceSlider, "per-layer opacity slider exists for Pace (average)");
+  paceSlider.value = "30";
+  paceSlider.dispatch("input");
+  const paceLayer = overlays["Pace (average)"];
+  ok(paceLayer.sub.opts[paceLayer.sub.opts.length - 1] === 0.3,
+     "paced overlay takes the slider value 0.3");
+
+  const hrLayer = overlays["Heart rate (average)"];
+  ok(hrLayer.sub.opts[hrLayer.sub.opts.length - 1] === 0.85,
+     "unrelated HR layer keeps its own default opacity 0.85");
+
+  // Scenario G - the Raw GPS tracks layer is a set of vector polylines (Leaflet
+  // Paths expose setStyle, not setOpacity), so its slider must drive the layer
+  // via setStyle instead. Regression test for "changing tracks opacity did nothing".
+  const trackLayer = overlays["Raw GPS tracks"];
+  ok(trackLayer && typeof trackLayer.sub.setStyle === "function",
+     "raw GPS tracks overlay is modelled as a vector layer");
+  const trackSlider = panel.querySelector('input[data-layer-opacity="Raw GPS tracks"]');
+  assert.ok(trackSlider, "tracks opacity slider exists");
+  const initialTrack = trackLayer.sub.styles[trackLayer.sub.styles.length - 1];
+  ok(initialTrack && initialTrack.opacity === 0.4,
+     "tracks slider initialises to TRACK_OPACITY 0.4");
+  trackSlider.value = "20";
+  trackSlider.dispatch("input");
+  const lastTrack = trackLayer.sub.styles[trackLayer.sub.styles.length - 1];
+  ok(lastTrack && lastTrack.opacity === 0.2 && lastTrack.fillOpacity === 0.2,
+     "tracks vector layer takes the slider value 0.2 via setStyle");
+  ok(hrLayer.sub.opts[hrLayer.sub.opts.length - 1] === 0.85,
+     "heatmap image-overlay opacity unaffected by the tracks slider");
+
+  // Scenario F2 - the heatmap variants are a mutually-exclusive radio pair, so
+  // only the currently-displayed density variant shows an opacity slider.
+  const densityNames = config.__layerNames.filter((n) => n.startsWith("GPS Density"));
+  const visibleDensity = densityNames.filter((n) => {
+    // Visibility is applied to the wrapper item, which now carries the same
+    // data-layer-opacity tag (and is found by the bare attribute selector).
+    const s = panel.querySelector('[data-layer-opacity="' + n + '"]');
+    return s && s.style.display !== "none";
+  });
+  ok(visibleDensity.length === 1 && visibleDensity[0] === "GPS Density (decay · log)",
+     "only the active heatmap variant shows an opacity slider, got: " + visibleDensity.join(","));
+
+  const opToggle = byId.get("hcp-opacity-toggle");
+  opToggle.dispatch("click");
+  ok(panel.classList.contains("hcp-opacity-collapsed"),
+     "opacity toggle collapses the per-layer sliders");
 
   console.log("ALL_PASS");
   process.exit(0);

@@ -1,10 +1,9 @@
 <!-- Heatmap control panel markup.
-     Template placeholders: $opacity_pct (integer 0-100). -->
-<div id="heatmap-control-panel" class="heatmap-control-panel" aria-label="Map controls">
+     Layer opacity sliders are rendered client-side by assets/panel.js, one per
+     overlay layer, and are collapsed by default ("Layer opacity" toggle). -->
+<div id="heatmap-control-panel" class="heatmap-control-panel hcp-opacity-collapsed" aria-label="Map controls">
   <div class="hcp-header">
     <span>Map Controls</span>
-    <button type="button" id="hcp-toggle" class="hcp-toggle-btn"
-            title="Expand / collapse">&minus;</button>
   </div>
   <div class="hcp-body">
     <div class="hcp-section">
@@ -18,11 +17,12 @@
     <div class="hcp-section hcp-section-layers">
       <div id="hcp-layers"></div>
     </div>
-    <div class="hcp-section">
-      <label class="hcp-label" for="hcp-opacity">
-        Opacity <span id="hcp-opacity-value">$opacity_pct%</span>
-      </label>
-      <input type="range" id="hcp-opacity" min="0" max="100" step="1" value="$opacity_pct" />
+    <div class="hcp-section hcp-section-opacity">
+      <button type="button" id="hcp-opacity-toggle" class="hcp-opacity-toggle"
+              aria-expanded="false" title="Show / hide layer opacity sliders">
+        <span>Layer opacity</span> <span class="hcp-caret">&#9656;</span>
+      </button>
+      <div id="hcp-opacity-list"></div>
     </div>
     <div class="hcp-section hcp-actions">
       <button type="button" id="hcp-fit">Fit map</button>

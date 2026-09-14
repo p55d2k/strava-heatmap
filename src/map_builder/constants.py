@@ -69,6 +69,11 @@ METRIC_LAYER_NAMES = [
     "Gradient (change)",
 ]
 
+# Default stroke opacity for the raw GPS track polylines.  Kept as a constant
+# so that both the Folium PolyLine build step and the control-panel layer-group
+# config agree on the initial value the per-layer opacity slider starts at.
+TRACK_OPACITY = 0.4
+
 # Backwards-compatible alias for the set of mutually exclusive (radio) layers.
 EXCLUSIVE_LAYER_NAMES = DENSITY_LAYER_NAMES
 

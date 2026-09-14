@@ -7,8 +7,9 @@ This module provides:
   mutually exclusive and switches legends based on the active layer.
 * ``ControlPanel`` — a single, self-contained control panel embedded in the
   generated HTML. It merges the stock Leaflet layer control and the basemap
-  style switcher into one top-right panel: layer toggles, opacity slider,
-  fit/reset, legend toggle and collapse/expand. The interactive behaviour
+  style switcher into one top-right panel: layer toggles with per-layer opacity
+  sliders (collapsible to keep the panel compact), fit/reset, legend toggle and
+  collapse/expand. The interactive behaviour
   lives in the companion ``assets/panel.js`` file which is inlined into the
   output so that everything works from a ``file://`` URL with no server.
 
@@ -18,7 +19,6 @@ readable and the styling stays consistent with the legend.
 
 import json
 from pathlib import Path
-from string import Template
 
 from folium import MacroElement
 from jinja2 import Template as JinjaTemplate
@@ -33,6 +33,7 @@ from src.map_builder.constants import (
     DENSITY_LAYER_NAMES,
     LEGEND_IDS,
     METRIC_LAYER_NAMES,
+    TRACK_OPACITY,
     density_layer_names,
     strategy_layers_map,
 )
@@ -82,19 +83,19 @@ def control_panel_script() -> str:
     return _read("panel.js")
 
 
-def build_control_panel_html(opacity: float = 0.85) -> str:
+def build_control_panel_html() -> str:
     """Generate the control panel markup as an HTML string.
 
-    Args:
-        opacity: Initial heatmap overlay opacity (0.0-1.0), used to set the
-            slider's starting value and displayed percentage.
+    There is no standalone global opacity slider in the markup: per-layer
+    opacity sliders (one per overlay layer) are rendered client-side by
+    ``assets/panel.js`` and default to the runtime ``opacity`` value in the
+    panel config. Styling is applied separately via :func:`controls_css`, so it
+    stays consistent with the legend.
 
     Returns:
-        The ``<div>`` snippet for the panel. Styling is applied separately via
-        :func:`controls_css`, so it stays consistent with the legend.
+        The ``<div>`` snippet for the panel.
     """
-    pct = int(round(float(opacity) * 100))
-    return Template(_read("control_panel.html")).substitute(opacity_pct=pct)
+    return _read("control_panel.html")
 
 
 def build_layer_group_config(
@@ -103,6 +104,7 @@ def build_layer_group_config(
     exclusive_layer_names: list[str] | None = None,
     metric_layer_names: list[str] | None = None,
     decay_strategy: str = DEFAULT_DECAY_STRATEGY,
+    map_opacity: float = 0.85,
 ) -> list[dict]:
     """Build the ``layerGroups`` config consumed by ``assets/panel.js``.
 
@@ -115,6 +117,10 @@ def build_layer_group_config(
     * ``Metrics`` (check) — the distinct analysis metrics (pace, HR, gradients)
       that may each be toggled independently so several can be overlaid.
 
+    Every returned layer entry carries its own ``opacity`` (0.0-1.0), seeded
+    from ``map_opacity``, so the panel can render a per-layer opacity slider
+    for each layer independently.
+
     Args:
         overlay_layers: The ``(name, image_uri, visible)`` tuples handed to
             ``build_map`` for each heatmap overlay layer.
@@ -125,6 +131,7 @@ def build_layer_group_config(
             checkboxes. Defaults to ``METRIC_LAYER_NAMES``.
         decay_strategy: The active decay strategy key; its two density layers
             are shown in the initial radio group.
+        map_opacity: Default per-layer opacity (0.0-1.0) applied to every layer.
 
     Returns:
         A list of ``{label, mode, layers}`` groups for the panel's layer list.
@@ -138,12 +145,18 @@ def build_layer_group_config(
             {
                 "label": "Raw GPS tracks",
                 "mode": "check",
-                "layers": [{"name": "Raw GPS tracks", "visible": False}],
+                "layers": [
+                    {
+                        "name": "Raw GPS tracks",
+                        "visible": False,
+                        "opacity": TRACK_OPACITY,  # mirrors the PolyLine stroke opacity
+                    }
+                ],
             }
         )
 
     def _item(name: str, visible: bool) -> dict:
-        return {"name": name, "visible": visible}
+        return {"name": name, "visible": visible, "opacity": map_opacity}
 
     # Only the selected strategy's linear + log layers populate the radio group.
     active_names = set(density_layer_names(decay_strategy))
@@ -243,7 +256,7 @@ class ControlPanel(MacroElement):
         """
         super().__init__()
         self._name = "ControlPanel"
-        self.html = build_control_panel_html(opacity=map_opacity)
+        self.html = build_control_panel_html()
         self.script_code = control_panel_script()
         config = {
             "panelId": panel_id,

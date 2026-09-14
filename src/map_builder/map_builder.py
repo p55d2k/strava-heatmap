@@ -11,7 +11,11 @@ from pathlib import Path
 import folium
 from dotenv import load_dotenv
 
-from src.map_builder.constants import DEFAULT_CARTO_STYLE, DEFAULT_DECAY_STRATEGY
+from src.map_builder.constants import (
+    DEFAULT_CARTO_STYLE,
+    DEFAULT_DECAY_STRATEGY,
+    TRACK_OPACITY,
+)
 from src.map_builder.control import (
     ControlPanel,
     ExclusiveLayerControl,
@@ -117,7 +121,7 @@ def build_map(
             locations=[(p[0], p[1]) for p in pts],
             color="#fc4c02",
             weight=1,
-            opacity=0.4,
+            opacity=TRACK_OPACITY,
             tooltip=label,
         ).add_to(track_group)
     track_group.add_to(m)
@@ -166,6 +170,7 @@ def build_map(
                 exclusive_layer_names=exclusive_layer_names,
                 metric_layer_names=metric_layer_names,
                 decay_strategy=decay_strategy,
+                map_opacity=map_opacity,
             ),
         ).add_to(m)
 

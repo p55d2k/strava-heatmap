@@ -17,6 +17,9 @@
   --hcp-control-border: rgba(255, 255, 255, 0.14);
   --hcp-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial,
     sans-serif;
+  /* The map controls live in a full-height sidebar; the Leaflet map is offset
+     by this width so it fills the remaining viewport. */
+  --hcp-sidebar-width: 300px;
 }
 
 /* Hide the stock Leaflet layer control — its capabilities are merged into
@@ -27,41 +30,53 @@
 }
 
 /* -------------------------------------------------- Heatmap control panel */
-
+/* The control panel is a full-height column docked to the left edge of the
+   page (a real sidebar, not an island over the map). The Leaflet map is pushed
+   to the right by --hcp-sidebar-width (see the .folium-map rule below). */
 .heatmap-control-panel {
   position: fixed;
-  top: 10px;
-  right: 10px;
+  top: 0;
+  left: 0;
+  bottom: 0;
   z-index: 5000;
-  width: 240px;
+  width: var(--hcp-sidebar-width, 300px);
   background: var(--hcp-bg);
-  border: 1px solid var(--hcp-border);
-  border-radius: var(--hcp-radius);
+  border-right: 1px solid var(--hcp-border);
   box-shadow: var(--hcp-shadow);
   color: var(--hcp-text);
   font-family: var(--hcp-font);
   font-size: 12px;
   line-height: 1.4;
   user-select: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* Push the Leaflet map (Folium's .folium-map container) out from under the
+   sidebar so it occupies the rest of the viewport rather than being covered. */
+.folium-map {
+  margin-left: var(--hcp-sidebar-width, 300px);
+  width: calc(100% - var(--hcp-sidebar-width, 300px));
+  height: 100vh;
 }
 
 .heatmap-control-panel .hcp-header {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 9px 12px;
+  padding: 12px 14px;
   font-weight: 600;
   color: var(--hcp-text-strong);
+  background: var(--hcp-bg);
   border-bottom: 1px solid rgba(255, 255, 255, 0.08);
 }
 
 .heatmap-control-panel .hcp-body {
   padding: 12px;
   display: block;
-}
-
-.heatmap-control-panel.hcp-collapsed .hcp-body {
-  display: none;
 }
 
 .heatmap-control-panel .hcp-section {
@@ -125,6 +140,38 @@
 }
 
 /* Overlay / layer toggles */
+.heatmap-control-panel .hcp-section-layers {
+  display: flex;
+  flex-direction: column;
+}
+
+.heatmap-control-panel .hcp-opacity-toggle {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  background: none;
+  border: 1px solid var(--hcp-control-border);
+  border-radius: 6px;
+  color: var(--hcp-text);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+}
+
+.heatmap-control-panel .hcp-opacity-toggle:hover {
+  color: var(--hcp-text-strong);
+  border-color: var(--hcp-accent);
+}
+
+.heatmap-control-panel .hcp-section-opacity:last-child {
+  margin-bottom: 0;
+}
+
 .heatmap-control-panel .hcp-label.hcp-layer-group-label {
   margin-top: 10px;
 }
@@ -152,10 +199,43 @@
   flex: none;
 }
 
-/* Opacity slider */
-.heatmap-control-panel input[type="range"] {
+/* Per-layer opacity sliders, grouped in the collapsible opacity section. */
+.heatmap-control-panel .hcp-layer-opacity {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 4px 0;
+}
+
+.heatmap-control-panel .hcp-layer-opacity .hcp-layer-opacity-name {
+  color: var(--hcp-text);
+  font-size: 10.5px;
+  line-height: 1.2;
+}
+
+.heatmap-control-panel .hcp-layer-opacity-control {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.heatmap-control-panel .hcp-layer-opacity input[type="range"] {
   width: 100%;
+  flex: 1;
+  min-width: 0;
   accent-color: var(--hcp-accent);
+}
+
+.heatmap-control-panel .hcp-layer-opacity .hcp-layer-opacity-value {
+  color: var(--hcp-text-muted);
+  font-size: 10px;
+  min-width: 30px;
+  text-align: right;
+  flex: none;
+}
+
+.heatmap-control-panel.hcp-opacity-collapsed #hcp-opacity-list {
+  display: none;
 }
 
 /* Fit / reset / legend buttons */
@@ -177,17 +257,6 @@
 
 .heatmap-control-panel .hcp-actions button:hover {
   background: rgba(255, 255, 255, 0.12);
-}
-
-/* Collapse / expand toggle button */
-.heatmap-control-panel .hcp-toggle-btn {
-  background: none;
-  border: none;
-  color: var(--hcp-text-strong);
-  font-size: 16px;
-  line-height: 1;
-  cursor: pointer;
-  padding: 0 2px;
 }
 
 /* ---------------------------------------------------------- Heatmap legend */
