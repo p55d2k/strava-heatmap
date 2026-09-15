@@ -13,7 +13,8 @@ from dotenv import load_dotenv
 
 from src.map_builder.constants import (
     DEFAULT_CARTO_STYLE,
-    DEFAULT_DECAY_STRATEGY,
+    INDEPENDENT_LAYER_NAMES,
+    METRIC_LAYER_NAMES,
     TRACK_OPACITY,
 )
 from src.map_builder.control import (
@@ -73,7 +74,6 @@ def build_map(
     output_path: Path,
     map_opacity: float,
     carto_style: str = DEFAULT_CARTO_STYLE,
-    decay_strategy: str = DEFAULT_DECAY_STRATEGY,
     exclusive_layer_names: list[str] | None = None,
     metric_layer_names: list[str] | None = None,
     legend_ids: dict[str, str] | None = None,
@@ -91,14 +91,13 @@ def build_map(
         output_path: Path to save the output HTML file.
         map_opacity: Opacity value (0-1) for the heatmap image overlays.
         carto_style: CARTO basemap tile style ("voyager", "light_all", "dark_all").
-        decay_strategy: Active decay strategy key; drives the density layer pair
-            shown in the control panel's radio group and the dropdown default.
-        exclusive_layer_names: Density layer names that should be mutually
-            exclusive (radio) and drive density legend visibility. Defaults to
-            ``DENSITY_LAYER_NAMES``.
-        metric_layer_names: Distinct metric layer names shown as independent
-            checkboxes whose legend rows follow their on/off state. Defaults to
-            ``METRIC_LAYER_NAMES``.
+        exclusive_layer_names: Layer names rendered as mutually exclusive (radio).
+            Defaults to empty; the density-concept Heatmap radio group and its
+            map-level exclusivity are defined by the panel layer-group config and
+            enforced client-side by panel.js.
+        metric_layer_names: Independent layer names whose legend rows follow their
+            on/off state. Defaults to ``INDEPENDENT_LAYER_NAMES`` (the two density
+            concepts plus the four metrics).
         legend_ids: Mapping from layer name to legend row DOM id for dynamic
             legend visibility. Defaults to the constants in ``LEGEND_IDS``.
         control_panel: When True, embed the in-HTML control panel (basemap
@@ -153,23 +152,22 @@ def build_map(
     ExclusiveLayerControl(
         exclusive_names=exclusive_layer_names,
         legend_ids=legend_ids,
-        metric_names=metric_layer_names,
+        metric_names=(
+            metric_layer_names if metric_layer_names is not None else INDEPENDENT_LAYER_NAMES
+        ),
     ).add_to(m)
 
     if control_panel:
         ControlPanel(
             map_opacity=map_opacity,
             carto_style=carto_style,
-            decay_strategy=decay_strategy,
             api_key=get_carto_api_key(),
             bounds=bounds,
             centre=centre,
             layer_groups=build_layer_group_config(
                 overlay_layers=layers,
                 has_tracks=bool(tracks),
-                exclusive_layer_names=exclusive_layer_names,
-                metric_layer_names=metric_layer_names,
-                decay_strategy=decay_strategy,
+                metric_layer_names=METRIC_LAYER_NAMES,
                 map_opacity=map_opacity,
             ),
         ).add_to(m)

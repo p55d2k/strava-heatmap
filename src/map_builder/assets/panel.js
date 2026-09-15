@@ -227,13 +227,12 @@
     });
   }
 
-  // Build the toggle rows for each configured layer group. The Heatmap (radio)
-  // group renders only the layers for the currently selected decay strategy; the
-  // pair is swapped at runtime from the density-mode dropdown. Returns the radio
-  // group's container reference so the panel can rebuild it on strategy change.
-  function buildLayerList(container, layerGroups, map, overlays, config, onRadioChange) {
-    var densityRowsEl = null;
-    var radioName = null;
+  // Build the toggle rows for each configured layer group. Groups use two modes:
+  //   * "radio"  (Heatmap density concepts) — mutually exclusive; selecting one
+  //     removes the other layer(s) in the group from the map so stacked
+  //     heatmaps can never overlap.
+  //   * "check"  (metrics, raw tracks) — each layer toggles independently.
+  function buildLayerList(container, layerGroups, map, overlays, config) {
     layerGroups.forEach(function (group, gIdx) {
       var groupLabel = document.createElement("div");
       groupLabel.className = "hcp-label hcp-layer-group-label";
@@ -244,20 +243,30 @@
       rows.className = "hcp-layer-rows";
       container.appendChild(rows);
 
+      // For a radio group, enforce exclusivity at the map level: when one variant
+      // is selected, hide every other variant in the same group. The resulting
+      // overlayadd / overlayremove events keep legend rows in sync automatically.
+      var onRadioChange = null;
       if (group.mode === "radio") {
-        var activeNames =
-          (config.strategyLayers && config.strategyLayers[config.decayStrategy]) || [];
-        var lDefs = activeNames.map(function (n) {
-          return { name: n, visible: false };
-        });
-        buildGroupRows(rows, lDefs, "radio", "hcp-layer-group-" + gIdx, map, overlays, onRadioChange);
-        densityRowsEl = rows;
-        radioName = "hcp-layer-group-" + gIdx;
-      } else {
-        buildGroupRows(rows, group.layers, group.mode, null, map, overlays, onRadioChange);
+        onRadioChange = function (selectedName) {
+          group.layers.forEach(function (other) {
+            if (other.name === selectedName) return;
+            var otherLayer = overlays ? overlays[other.name] : null;
+            if (otherLayer && map.hasLayer(otherLayer)) map.removeLayer(otherLayer);
+          });
+        };
       }
+
+      buildGroupRows(
+        rows,
+        group.layers,
+        group.mode,
+        "hcp-layer-group-" + gIdx,
+        map,
+        overlays,
+        onRadioChange
+      );
     });
-    return { densityRowsEl: densityRowsEl, radioName: radioName };
   }
 
   /* ---- Layer opacity sliders (collapsible section) --------------------- */
@@ -307,64 +316,21 @@
   }
 
   // Render the opacity sliders for every layer, in the same order as the toggle
-  // list, into a prepared container. For radio groups (e.g. the heatmap
-  // log/linear pair) only the *current* strategy's pair gets a slider, and only
-  // one is shown at a time -- setActive(name) swaps which one. Returns that
-  // selector so the panel can follow radio changes at runtime.
+  // list, into a prepared container. Every layer is independent, so each gets
+  // its own always-visible slider (no radio-pair swap needed).
   function buildOpacityList(container, layerGroups, map, overlays, config, defaultOpacity) {
     container.innerHTML = "";
     var byName = {};
-    var radioGroups = [];
 
     layerGroups.forEach(function (group) {
-      if (group.mode === "radio") {
-        // Radio groups swap their members on strategy change (like the toggle
-        // rows do), so render the pair for the currently selected strategy.
-        var activeNames =
-          (config.strategyLayers && config.strategyLayers[config.decayStrategy]) || [];
-        var names = [];
-        var active = null;
-        activeNames.forEach(function (name) {
-          names.push(name);
-          var lDef = null;
-          group.layers.forEach(function (cand) {
-            if (cand.name === name) lDef = cand;
-          });
-          var el = buildOpacitySlider(name, initialOpacityFor(lDef, defaultOpacity), overlays);
-          byName[name] = el;
-          container.appendChild(el);
-          if (active === null) {
-            var layer = overlays ? overlays[name] : null;
-            if (layer && map.hasLayer(layer)) active = name;
-          }
-        });
-        radioGroups.push({ names: names, active: active });
-      } else {
-        group.layers.forEach(function (lDef) {
-          var el = buildOpacitySlider(lDef.name, initialOpacityFor(lDef, defaultOpacity), overlays);
-          byName[lDef.name] = el;
-          container.appendChild(el);
-        });
-      }
-    });
-
-    function setActive(name) {
-      radioGroups.forEach(function (g) {
-        var inGroup = g.names.indexOf(name) !== -1;
-        g.names.forEach(function (n) {
-          var el = byName[n];
-          if (el) el.style.display = inGroup && n === name ? "" : "none";
-        });
+      group.layers.forEach(function (lDef) {
+        var el = buildOpacitySlider(lDef.name, initialOpacityFor(lDef, defaultOpacity), overlays);
+        byName[lDef.name] = el;
+        container.appendChild(el);
       });
-    }
-
-    // Show the currently on-map density variant's slider; hide the rest of the
-    // mutually-exclusive pair so there is only ever one heatmap slider.
-    radioGroups.forEach(function (g) {
-      if (g.active) setActive(g.active);
     });
 
-    return { setActive: setActive };
+    return {};
   }
 
   // Sync every toggle with the actual on-map state (after overlay events).
@@ -437,19 +403,15 @@
 
     /* --- Layer toggles ------------------------------------------------- */
     var layersContainer = panel.querySelector("#hcp-layers");
-    var strategySelect = panel.querySelector("#hcp-strategy");
     var layerOverlays = null;
-    var densityRowsEl = null;
-    var densityRadioName = null;
     var defaultOpacity =
       typeof config.opacity === "number" ? config.opacity : 0.85;
     var opacityListEl = panel.querySelector("#hcp-opacity-list");
-    var densityOpacitySelector = null;
 
     // (Re)render the collapsible opacity sliders for the current overlay state.
     function renderOpacityList() {
       if (!opacityListEl) return;
-      densityOpacitySelector = buildOpacityList(
+      buildOpacityList(
         opacityListEl,
         config.layerGroups,
         map,
@@ -459,75 +421,18 @@
       );
     }
 
-    // Follow a heatmap radio (log/linear) switch so only that variant's slider is
-    // shown at a time.
-    function onRadioSelect(name) {
-      if (densityOpacitySelector && densityOpacitySelector.setActive) {
-        densityOpacitySelector.setActive(name);
-      }
-    }
-
-    function rebuildDensityGroup() {
-      if (!densityRowsEl) return;
-      var names =
-        (config.strategyLayers && config.strategyLayers[config.decayStrategy]) || [];
-      var lDefs = names.map(function (n) {
-        return { name: n, visible: false };
-      });
-      buildGroupRows(densityRowsEl, lDefs, "radio", densityRadioName, map, layerOverlays, onRadioSelect);
-      renderOpacityList();
-    }
-
-    // Populate the density-mode dropdown and swap the heatmap layers when it changes.
-    function initStrategySelect() {
-      if (!strategySelect) return;
-      strategySelect.innerHTML = "";
-      (config.decayStrategyChoices || []).forEach(function (opt) {
-        var o = document.createElement("option");
-        o.value = opt.key;
-        o.textContent = opt.label;
-        strategySelect.appendChild(o);
-      });
-      strategySelect.value = config.decayStrategy;
-
-      strategySelect.addEventListener("change", function () {
-        var newKey = strategySelect.value;
-        if (!config.strategyLayers || !config.strategyLayers[newKey]) return;
-        if (newKey === config.decayStrategy) return;
-        var target = config.strategyLayers[newKey];
-
-        // Hide every density layer that belongs to another strategy.
-        (config.allDensityLayers || []).forEach(function (name) {
-          if (target.indexOf(name) !== -1) return;
-          var l = layerOverlays ? layerOverlays[name] : null;
-          if (l && map.hasLayer(l)) map.removeLayer(l);
-        });
-
-        // Show the new strategy's log layer by default.
-        var logLayer = layerOverlays ? layerOverlays[target[1]] : null;
-        if (logLayer && !map.hasLayer(logLayer)) map.addLayer(logLayer);
-
-        config.decayStrategy = newKey;
-        rebuildDensityGroup();
-      });
-    }
-
     function setupLayerToggles() {
       layerOverlays = findOverlays();
       if (!layerOverlays) return false;
-      var r = buildLayerList(
+      buildLayerList(
         layersContainer,
         config.layerGroups,
         map,
         layerOverlays,
-        config,
-        onRadioSelect
+        config
       );
-      densityRowsEl = r.densityRowsEl;
-      densityRadioName = r.radioName;
       renderOpacityList();
       wireLayerEvents(layersContainer, config.layerGroups, map, layerOverlays);
-      initStrategySelect();
       return true;
     }
 

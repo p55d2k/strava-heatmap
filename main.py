@@ -27,8 +27,7 @@ from src.data_loader import (
     load_tracks,
 )
 from src.map_builder import (
-    DENSITY_LAYER_NAMES,
-    METRIC_LAYER_NAMES,
+    INDEPENDENT_LAYER_NAMES,
     LegendBuilder,
     build_map,
 )
@@ -264,15 +263,14 @@ def run_generate(args: argparse.Namespace) -> None:
             )
         print_success("Grid normalization complete")
 
-        # Stage 5: Generating Map Layers (1 + 10 layers: six density + four metrics)
+        # Stage 5: Generating Map Layers (1 colormap step + 7 layer steps: two GPS density concept layers + four metrics)
         print_stage("Stage 5: Generating Map Layers")
-        with tqdm(total=12, desc="Generating layers", unit="layer", disable=not args.dev) as pbar:
+        with tqdm(total=8, desc="Generating layers", unit="layer", disable=not args.dev) as pbar:
             colormaps = create_colormaps()
             pbar.update(1)
             layers = generate_layer_uris(
                 normalized,
                 colormaps,
-                default_strategy=config.decay_strategy,
                 progress_callback=pbar.update,
             )
         print_success(f"Created {len(layers)} map layers")
@@ -292,7 +290,6 @@ def run_generate(args: argparse.Namespace) -> None:
                 colormaps,
                 normalized["max_passes"],
                 max_passes_by_strategy=normalized["max_passes_by_strategy"],
-                decay_strategy=config.decay_strategy,
             )
             pbar.update(1)
 
@@ -305,9 +302,7 @@ def run_generate(args: argparse.Namespace) -> None:
                 config.output_html,
                 config.map_opacity,
                 carto_style=config.carto_style,
-                decay_strategy=config.decay_strategy,
-                exclusive_layer_names=DENSITY_LAYER_NAMES,
-                metric_layer_names=METRIC_LAYER_NAMES,
+                metric_layer_names=INDEPENDENT_LAYER_NAMES,
                 legend_ids=legend_builder.legend_ids,
                 progress_callback=pbar.update,
             )

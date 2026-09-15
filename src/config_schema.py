@@ -350,24 +350,14 @@ class ConfigModel(BaseModel):
         ge=0,
         le=1,
         description=(
-            "Geometric decay (0.0-1.0) applied to repeated passes of the same cell "
-            'within a single activity. Only used when DECAY_STRATEGY is "decay". '
-            "0.0 counts each cell once per activity (strict coverage); 1.0 counts "
-            "every pass (inflates intensity for loops / out-and-backs)."
+            "Geometric decay (0.0-1.0) applied to repeated passes of the same "
+            'cell within a single activity. Drives the "GPS Density (Time '
+            'Spent)" layer: 0.0 counts each cell once per activity (maximal '
+            "spread); 1.0 counts every pass (inflates intensity for loops / "
+            'out-and-backs). "Coverage (Places Visited)" always counts each '
+            "cell once per activity regardless of this value."
         ),
         examples=[0.5, 0.3],
-    )
-    decay_strategy: Literal["decay", "binary-per-activity", "raw-count"] = Field(
-        default="binary-per-activity",
-        alias="DECAY_STRATEGY",
-        description=(
-            "How repeated passes of the same cell within a single activity are counted "
-            'for the GPS density layers. "decay" weights repeated passes by '
-            'DECAY_FACTOR**n; "binary-per-activity" counts each cell once per activity; '
-            '"raw-count" counts every pass. All strategies are rendered as selectable '
-            "layers in the generated control panel; this sets the default selection."
-        ),
-        examples=["decay", "binary-per-activity", "raw-count"],
     )
 
     # Optional path overrides (relative to project root)

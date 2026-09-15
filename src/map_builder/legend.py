@@ -22,10 +22,8 @@ from pathlib import Path
 from string import Template
 
 from src.map_builder.constants import (
-    DECAY_STRATEGIES,
-    DECAY_STRATEGY_SHORT,
-    DEFAULT_DECAY_STRATEGY,
-    density_layer_names,
+    COVERAGE_LAYER,
+    TIME_SPENT_LAYER,
 )
 from src.map_builder.utils import build_style_string, cmap_to_css
 
@@ -127,37 +125,31 @@ class LegendBuilder:
     def default_rows(self) -> list[LegendRow]:
         """Return the default legend row definitions (configurable starting point)."""
         rows: list[LegendRow] = []
-        # One linear + log legend row per decay strategy.
-        for strategy in DECAY_STRATEGIES:
-            linear_name, log_name = density_layer_names(strategy)
-            short = DECAY_STRATEGY_SHORT[strategy]
-            linear_id = f"legend-frequency-{short}"
-            log_id = f"{linear_id}-log"
-
-            def _hi(ctx: LegendContext, _s: str = strategy, _log: bool = False) -> str:
-                n = _max_passes(ctx, _s)
-                return f"{n} passes (log scale)" if _log else f"{n} passes"
-
-            rows.append(
-                LegendRow(
-                    row_id=linear_id,
-                    title=linear_name,
-                    gradient=lambda ctx: cmap_to_css(ctx.colormaps["cmap_count"]),
-                    label_lo="1 pass",
-                    label_hi=lambda ctx, _s=strategy: _hi(ctx, _s),
-                    layer_name=linear_name,
-                )
+        # GPS Density (Time Spent) — decay-weighted pass counts (log scale).
+        rows.append(
+            LegendRow(
+                row_id="legend-time-spent",
+                title="GPS Density (Time Spent)",
+                gradient=lambda ctx: cmap_to_css(ctx.colormaps["cmap_count"]),
+                label_lo="1 pass",
+                label_hi=lambda ctx: f"{_max_passes(ctx, 'decay')} passes (log scale)",
+                layer_name=TIME_SPENT_LAYER,
+                # This layer is shown on the map by default, so its legend row
+                # should be visible on first paint (before the JS re-syncs it).
+                visible=True,
             )
-            rows.append(
-                LegendRow(
-                    row_id=log_id,
-                    title=log_name,
-                    gradient=lambda ctx: cmap_to_css(ctx.colormaps["cmap_count"]),
-                    label_lo="1 pass",
-                    label_hi=lambda ctx, _s=strategy: _hi(ctx, _s, _log=True),
-                    layer_name=log_name,
-                )
+        )
+        # Coverage (Places Visited) — each cell counted once per activity.
+        rows.append(
+            LegendRow(
+                row_id="legend-coverage",
+                title="Coverage (Places Visited)",
+                gradient=lambda ctx: cmap_to_css(ctx.colormaps["cmap_count"]),
+                label_lo="1 pass",
+                label_hi=lambda ctx: f"{_max_passes(ctx, 'binary-per-activity')} passes",
+                layer_name=COVERAGE_LAYER,
             )
+        )
 
         rows.append(
             LegendRow(
@@ -221,14 +213,13 @@ class LegendBuilder:
         colormaps: dict,
         max_passes: int,
         max_passes_by_strategy: dict[str, int] | None = None,
-        decay_strategy: str = DEFAULT_DECAY_STRATEGY,
     ) -> str:
         """Build all configured legend rows as HTML.
 
-        The density rows for the ``decay_strategy`` currently shown on the map
-        (its log variant is the layer added by default) are rendered visible;
-        every other density row stays hidden so the legend reflects the map on
-        first paint rather than waiting for an overlay event.
+        Rows are rendered exactly in the configured order. Visibility comes from
+        each row's own ``visible`` flag (default ``False``), so by default only
+        the "GPS Density (Time Spent)" row is shown on first paint; the dynamic
+        layer control immediately re-syncs every row to the actual layer state.
         """
         ctx = LegendContext(
             normalized=normalized,
@@ -236,22 +227,17 @@ class LegendBuilder:
             max_passes=max_passes,
             max_passes_by_strategy=max_passes_by_strategy,
         )
-        # The map shows the active strategy's log layer by default; its legend
-        # row is the one to show. Row-level ``visible`` still wins for custom
-        # rows that opt in explicitly.
-        active_log_name = density_layer_names(decay_strategy)[1]
-        rows = [
+        return "\n      ".join(
             legend_row(
                 row.row_id,
                 row.title,
                 _resolve(row.gradient, ctx),
                 _resolve(row.label_lo, ctx),
                 _resolve(row.label_hi, ctx),
-                visible=row.visible or row.layer_name == active_log_name,
+                visible=row.visible,
             )
             for row in self.rows
-        ]
-        return "\n      ".join(rows)
+        )
 
     def build(
         self,
@@ -259,7 +245,6 @@ class LegendBuilder:
         colormaps: dict,
         max_passes: int,
         max_passes_by_strategy: dict[str, int] | None = None,
-        decay_strategy: str = DEFAULT_DECAY_STRATEGY,
     ) -> str:
         """Build the complete legend HTML."""
         rows = self.build_rows(
@@ -267,7 +252,6 @@ class LegendBuilder:
             colormaps,
             max_passes,
             max_passes_by_strategy,
-            decay_strategy=decay_strategy,
         )
         style_attr = f' style="{self.container_style()}"' if self.styles else ""
         return _CONTAINER_TEMPLATE.substitute(rows=rows, style_attr=style_attr)
@@ -278,13 +262,6 @@ def build_legend_html(
     colormaps: dict,
     max_passes: int,
     max_passes_by_strategy: dict[str, int] | None = None,
-    decay_strategy: str = DEFAULT_DECAY_STRATEGY,
 ) -> str:
     """Build the complete legend HTML using the default LegendBuilder."""
-    return LegendBuilder().build(
-        normalized,
-        colormaps,
-        max_passes,
-        max_passes_by_strategy,
-        decay_strategy=decay_strategy,
-    )
+    return LegendBuilder().build(normalized, colormaps, max_passes, max_passes_by_strategy)

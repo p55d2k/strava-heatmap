@@ -26,16 +26,12 @@ from jinja2 import Template as JinjaTemplate
 from src.map_builder.constants import (
     CARTO_STYLE_LABELS,
     CARTO_STYLES,
-    DECAY_STRATEGIES,
-    DECAY_STRATEGY_LABELS,
     DEFAULT_CARTO_STYLE,
-    DEFAULT_DECAY_STRATEGY,
     DENSITY_LAYER_NAMES,
+    INDEPENDENT_LAYER_NAMES,
     LEGEND_IDS,
     METRIC_LAYER_NAMES,
     TRACK_OPACITY,
-    density_layer_names,
-    strategy_layers_map,
 )
 
 # Directory holding the external CSS / HTML / JS assets.
@@ -65,19 +61,6 @@ def carto_basemap_choices(styles: list[str] | None = None) -> list[dict[str, str
     return [{"key": style, "label": CARTO_STYLE_LABELS.get(style, style)} for style in chosen]
 
 
-def decay_strategy_choices(strategies: list[str] | None = None) -> list[dict[str, str]]:
-    """Return the density-strategy ``{key, label}`` choices for the control panel.
-
-    Args:
-        strategies: Decay strategy keys to expose. Defaults to ``DECAY_STRATEGIES``.
-
-    Returns:
-        A list of ``{"key": ..., "label": ...}`` dicts, in the given order.
-    """
-    chosen = strategies if strategies is not None else list(DECAY_STRATEGIES)
-    return [{"key": s, "label": DECAY_STRATEGY_LABELS.get(s, s)} for s in chosen]
-
-
 def control_panel_script() -> str:
     """Return the contents of the companion ``assets/panel.js`` browser script."""
     return _read("panel.js")
@@ -101,43 +84,42 @@ def build_control_panel_html() -> str:
 def build_layer_group_config(
     overlay_layers: list[tuple[str, str, bool]],
     has_tracks: bool = True,
-    exclusive_layer_names: list[str] | None = None,
     metric_layer_names: list[str] | None = None,
-    decay_strategy: str = DEFAULT_DECAY_STRATEGY,
     map_opacity: float = 0.85,
 ) -> list[dict]:
     """Build the ``layerGroups`` config consumed by ``assets/panel.js``.
 
-    Layer toggles are split into two groups under Option B:
-    * ``Heatmap`` (radio) — the GPS density variants for the *active* decay
-      strategy (its linear + log pair). They are alternative renderings of the
-      same count data, so only one can be shown at a time. The rest of the
-      strategy pairs are exposed to the panel via the strategy dropdown, which
-      swaps which pair the radio group shows.
+    The layer ``mode`` controls how the panel presents toggles for each group:
+    * ``Heatmap`` (radio) — the two GPS density concept layers (Time Spent /
+      Coverage) are mutually exclusive (only one can be visible at a time)
+      because stacking them produces no meaningful result.
     * ``Metrics`` (check) — the distinct analysis metrics (pace, HR, gradients)
-      that may each be toggled independently so several can be overlaid.
+      that may each be toggled independently.
+    * ``Raw GPS tracks`` (check) — independent checkbox overlay.
 
     Every returned layer entry carries its own ``opacity`` (0.0-1.0), seeded
-    from ``map_opacity``, so the panel can render a per-layer opacity slider
-    for each layer independently.
+    from ``map_opacity``, so the panel can render a per-layer opacity slider for
+    each layer independently.
 
     Args:
         overlay_layers: The ``(name, image_uri, visible)`` tuples handed to
             ``build_map`` for each heatmap overlay layer.
         has_tracks: Whether raw GPS tracks are present (adds a checkbox group).
-        exclusive_layer_names: Density layer names that are mutually exclusive
-            (radio group). Defaults to ``DENSITY_LAYER_NAMES``.
         metric_layer_names: Distinct metric layer names shown as independent
             checkboxes. Defaults to ``METRIC_LAYER_NAMES``.
-        decay_strategy: The active decay strategy key; its two density layers
-            are shown in the initial radio group.
         map_opacity: Default per-layer opacity (0.0-1.0) applied to every layer.
 
     Returns:
         A list of ``{label, mode, layers}`` groups for the panel's layer list.
     """
-    exclusive = set(exclusive_layer_names or DENSITY_LAYER_NAMES)
+    density = set(DENSITY_LAYER_NAMES)
     metrics = set(metric_layer_names or METRIC_LAYER_NAMES)
+    # The two GPS density concept layers (Time Spent / Coverage) belong in the
+    # "Heatmap" group only, never in "Metrics". A caller may pass an all-inclusive
+    # list (e.g. INDEPENDENT_LAYER_NAMES) as ``metric_layer_names`` for another
+    # purpose; without this guard those layers would be bucketed into BOTH groups
+    # and the panel would render duplicate toggles and duplicate opacity sliders.
+    metrics -= density
     groups: list[dict] = []
 
     if has_tracks:
@@ -158,15 +140,11 @@ def build_layer_group_config(
     def _item(name: str, visible: bool) -> dict:
         return {"name": name, "visible": visible, "opacity": map_opacity}
 
-    # Only the selected strategy's linear + log layers populate the radio group.
-    active_names = set(density_layer_names(decay_strategy))
     density_layers = [
-        _item(name, visible)
-        for name, _, visible in overlay_layers
-        if name in exclusive and name in active_names
+        _item(name, visible) for name, _, visible in overlay_layers if name in density
     ]
     metric_layers = [_item(name, visible) for name, _, visible in overlay_layers if name in metrics]
-    known = exclusive | metrics
+    known = density | metrics
     other_layers = [
         _item(name, visible) for name, _, visible in overlay_layers if name not in known
     ]
@@ -225,10 +203,6 @@ class ControlPanel(MacroElement):
         panel_id: str = "heatmap-control-panel",
         legend_id: str = "heatmap-legend",
         layer_groups: list[dict] | None = None,
-        decay_strategy: str = DEFAULT_DECAY_STRATEGY,
-        strategy_choices: list[dict[str, str]] | None = None,
-        strategy_layers: dict[str, list[str]] | None = None,
-        all_density_layers: list[str] | None = None,
     ):
         """Initialize the ControlPanel.
 
@@ -244,15 +218,6 @@ class ControlPanel(MacroElement):
             legend_id: DOM id of the legend container toggled by the panel.
             layer_groups: ``layerGroups`` config for the panel's layer toggles;
                 see :func:`build_layer_group_config`.
-            decay_strategy: Active decay strategy key driving the density radio
-                group and the dropdown's initial value.
-            strategy_choices: ``[{key, label}]`` for the density-mode dropdown.
-                Defaults to :func:`decay_strategy_choices`.
-            strategy_layers: Map of strategy key -> ``[linear, log]`` density
-                layer names, used by the JS to swap layers. Defaults to
-                :func:`strategy_layers_map`.
-            all_density_layers: Every density layer name (all strategies), used
-                for exclusivity when switching. Defaults to ``DENSITY_LAYER_NAMES``.
         """
         super().__init__()
         self._name = "ControlPanel"
@@ -269,27 +234,20 @@ class ControlPanel(MacroElement):
             "zoomStart": zoom_start,
             "legendId": legend_id,
             "layerGroups": layer_groups or [],
-            "decayStrategy": decay_strategy,
-            "decayStrategyChoices": strategy_choices
-            if strategy_choices is not None
-            else decay_strategy_choices(),
-            "strategyLayers": strategy_layers
-            if strategy_layers is not None
-            else strategy_layers_map(),
-            "allDensityLayers": all_density_layers or DENSITY_LAYER_NAMES,
         }
         self.config_json = json.dumps(config)
 
 
 class ExclusiveLayerControl(MacroElement):
-    """Injects JavaScript to keep density layers mutually exclusive and to
-    show only the legend rows for the layers currently visible on the map.
+    """Injects JavaScript to show only the legend rows for the layers currently
+    visible on the map.
 
-    Behaviour under Option B:
-    * Density layers (radio) are mutually exclusive — switching one removes the
-      other and swaps the density legend row.
-    * Metric layers (checkboxes) are independent — adding/removing one shows or
-      hides its own legend row without affecting any other layer's row.
+    The two GPS density concepts (Heatmap group) are mutually exclusive radio
+    layers; ``exclusive_names`` drives that density legend row behaviour. The
+    remaining concept/metric layers (``metric_names``) are independent
+    checkboxes — adding/removing one shows/hides its own legend row without
+    affecting any other row. Defaults for both arguments are the empty list and
+    ``INDEPENDENT_LAYER_NAMES`` respectively.
     """
 
     _template = JinjaTemplate(
@@ -399,17 +357,17 @@ class ExclusiveLayerControl(MacroElement):
         """Initialize the ExclusiveLayerControl.
 
         Args:
-            exclusive_names: Density layer names that should be mutually
-                exclusive (radio). Defaults to DENSITY_LAYER_NAMES.
+            exclusive_names: Layer names that are mutually exclusive (radio).
+                Retained for backward compatibility; defaults to empty (all
+                layers are independent checkboxes).
             legend_ids: Mapping from layer name to legend DOM element ID.
                 Defaults to LEGEND_IDS.
-            metric_names: Independent metric layer names whose legend rows
-                follow their on/off state. Defaults to METRIC_LAYER_NAMES.
+            metric_names: Layer names whose legend rows follow their on/off
+                state. Defaults to INDEPENDENT_LAYER_NAMES (the two density
+                concepts plus the four metrics).
         """
         super().__init__()
         self._name = "ExclusiveLayerControl"
-        self.exclusive_names = (
-            exclusive_names if exclusive_names is not None else DENSITY_LAYER_NAMES
-        )
-        self.metric_names = metric_names if metric_names is not None else METRIC_LAYER_NAMES
+        self.exclusive_names = exclusive_names if exclusive_names is not None else []
+        self.metric_names = metric_names if metric_names is not None else INDEPENDENT_LAYER_NAMES
         self.legend_ids = legend_ids if legend_ids is not None else LEGEND_IDS

@@ -11,10 +11,8 @@ import numpy as np
 from PIL import Image
 
 from src.map_builder.constants import (
-    DECAY_STRATEGIES,
-    DEFAULT_DECAY_STRATEGY,
-    density_layer_names,
-    strategy_norm_keys,
+    COVERAGE_LAYER,
+    TIME_SPENT_LAYER,
 )
 
 
@@ -117,40 +115,39 @@ def _white_uri(alpha_norm: np.ndarray) -> str:
 def generate_layer_uris(
     normalized: dict,
     colormaps: dict,
-    default_strategy: str = DEFAULT_DECAY_STRATEGY,
     progress_callback=None,
 ) -> list[tuple[str, str, bool]]:
     """Generate data URIs for all map layers.
 
-    Six GPS density layers are produced (each decay strategy × linear/log) plus
-    the four metric layers. Only the chosen ``default_strategy``'s log layer is
-    shown by default; the rest are added to the map but stay hidden so the
-    control panel can switch between strategies at runtime.
+    Two GPS density concept layers are produced — "GPS Density (Time Spent)"
+    (decay-weighted pass counts on a log scale, shown by default) and "Coverage
+    (Places Visited)" (each cell counted once per activity, hidden by default) —
+    plus the four metric layers. Every layer is an independent (checkbox)
+    overlay the control panel can toggle at runtime.
     """
-    if progress_callback:
-        progress_callback(1)  # Colormaps created
     layers: list[tuple[str, str, bool]] = []
 
-    for strat in DECAY_STRATEGIES:
-        norm_key, log_norm_key = strategy_norm_keys(strat)
-        linear_name, log_name = density_layer_names(strat)
-        visible = strat == default_strategy
-
-        layers.append(
-            (log_name, _count_uri(normalized[log_norm_key], colormaps["cmap_count"]), visible)
+    # GPS Density (Time Spent) — decay-weighted pass counts (log scale).
+    layers.append(
+        (
+            TIME_SPENT_LAYER,
+            _count_uri(normalized["count_log_norm"], colormaps["cmap_count"]),
+            True,
         )
-        if progress_callback:
-            progress_callback(1)  # e.g. GPS Density (raw · log)
+    )
+    if progress_callback:
+        progress_callback(1)  # GPS Density (Time Spent)
 
-        layers.append(
-            (
-                linear_name,
-                _count_uri(normalized[norm_key], colormaps["cmap_count"]),
-                False,
-            )
+    # Coverage (Places Visited) — each cell counted once per activity (linear).
+    layers.append(
+        (
+            COVERAGE_LAYER,
+            _count_uri(normalized["count_binary_norm"], colormaps["cmap_count"]),
+            False,
         )
-        if progress_callback:
-            progress_callback(1)  # e.g. GPS Density (raw · linear)
+    )
+    if progress_callback:
+        progress_callback(1)  # Coverage (Places Visited)
 
     if progress_callback:
         progress_callback(1)  # Pace (average)

@@ -5,7 +5,9 @@ JavaScript that are only loosely coupled: the control panel
 (``assets/panel.js``) toggles overlay layers on/off by calling
 ``map.addLayer`` / ``map.removeLayer``, and ``ExclusiveLayerControl`` listens
 to Leaflet's ``overlayadd`` / ``overlayremove`` events to show/hide the matching
-legend rows (density rows are mutually exclusive; metric rows are independent).
+legend rows (the two GPS density concepts are mutually-exclusive radio layers;
+the remaining metric layers are independent checkboxes whose legend rows
+follow their on/off state).
 
 This module runs the *real* production scripts (rendered exactly as they are
 embedded into the HTML) through Node with a lightweight fake DOM / Leaflet map, so
@@ -194,8 +196,8 @@ global.window = windowObj;
 global.document = documentObj;
 global[mapVar] = map; // the exclusive script's `var map = <name>;`
 
-// Mirror Folium's first paint: the active strategy's log layer is on the map.
-map.addLayer(overlays["GPS Density (binary · log)"]);
+// Mirror Folium's first paint: the default-on Time Spent layer is on the map.
+map.addLayer(overlays["GPS Density (Time Spent)"]);
 
 // ---- Run the REAL production scripts ------------------------------------
 eval(fs.readFileSync(path.join(DIR, "exclusive.js"), "utf8"));
@@ -226,19 +228,28 @@ function toggle(layerName, checked) {
 
   const ok = (cond, msg) => { assert.ok(cond, msg); console.log("PASS: " + msg); };
 
-  // Initial paint: only the active strategy's log density row is visible.
-  ok(rowVisible("GPS Density (binary · log)") === "block",
-     "initial: binary log density row visible");
-  ok(rowVisible("GPS Density (binary · linear)") === "none",
-     "initial: binary linear density row hidden");
+  // Initial paint: the default-on Time Spent density row is visible, the
+  // independent Coverage concept is hidden, and metrics start hidden.
+  ok(rowVisible("GPS Density (Time Spent)") === "block",
+     "initial: Time Spent density row visible");
+  ok(rowVisible("Coverage (Places Visited)") === "none",
+     "initial: Coverage density row hidden");
   ok(rowVisible("Pace (average)") === "none", "initial: pace metric row hidden");
 
-  // Scenario A - flip the density radio to the linear variant: rows swap.
-  toggle("GPS Density (binary · linear)", true);
-  ok(rowVisible("GPS Density (binary · linear)") === "block",
-     "density linear row shown after toggle");
-  ok(rowVisible("GPS Density (binary · log)") === "none",
-     "density log row hidden after switching density variant");
+  // Scenario A - the two GPS density concepts are mutually-exclusive radio
+  // layers: toggling Coverage on removes Time Spent from the map and hides its
+  // legend row (stacked heatmaps must never overlap).
+  toggle("Coverage (Places Visited)", true);
+  ok(rowVisible("Coverage (Places Visited)") === "block",
+     "coverage row shown after radio on");
+  ok(rowVisible("GPS Density (Time Spent)") === "none",
+     "Time Spent hidden — density concepts are mutually exclusive");
+  // Selecting Time Spent again restores it and hides Coverage.
+  toggle("GPS Density (Time Spent)", true);
+  ok(rowVisible("GPS Density (Time Spent)") === "block",
+     "Time Spent shown again after radio re-selected");
+  ok(rowVisible("Coverage (Places Visited)") === "none",
+     "Coverage hidden when Time Spent is re-selected");
 
   // Scenario B - an independent metric checkbox shows/hides only its own row.
   toggle("Pace (average)", true);
@@ -249,24 +260,14 @@ function toggle(layerName, checked) {
   // Scenario C - a metric toggle must not disturb density / other metrics.
   toggle("Heart rate (average)", true);
   ok(rowVisible("Heart rate (average)") === "block", "HR row shown after toggle on");
-  ok(rowVisible("GPS Density (binary · linear)") === "block",
+  ok(rowVisible("GPS Density (Time Spent)") === "block",
      "density row unaffected by a metric toggle");
 
   // Scenario D - toggling an unbound layer (Raw GPS tracks) changes no legend row.
-  const before = rowVisible("GPS Density (binary · linear)");
+  const before = rowVisible("GPS Density (Time Spent)");
   toggle("Raw GPS tracks", true);
-  ok(rowVisible("GPS Density (binary · linear)") === before,
+  ok(rowVisible("GPS Density (Time Spent)") === before,
      "density row unchanged when toggling an unbound layer");
-
-  // Scenario E - switching the density-mode dropdown swaps the legend pair.
-  const sel = byId.get("hcp-strategy");
-  sel.value = "decay";
-  sel.dispatch("change");
-  await delay(0);
-  ok(rowVisible("GPS Density (decay · log)") === "block",
-     "decay log row shown after density-mode switch");
-  ok(rowVisible("GPS Density (binary · log)") === "none",
-     "binary log row hidden after density-mode switch");
 
 // Scenario F - per-layer opacity sliders affect only their own layer, and the
   // "Opacity" toggle collapses every slider at once.
@@ -301,17 +302,29 @@ function toggle(layerName, checked) {
   ok(hrLayer.sub.opts[hrLayer.sub.opts.length - 1] === 0.85,
      "heatmap image-overlay opacity unaffected by the tracks slider");
 
-  // Scenario F2 - the heatmap variants are a mutually-exclusive radio pair, so
-  // only the currently-displayed density variant shows an opacity slider.
-  const densityNames = config.__layerNames.filter((n) => n.startsWith("GPS Density"));
-  const visibleDensity = densityNames.filter((n) => {
-    // Visibility is applied to the wrapper item, which now carries the same
-    // data-layer-opacity tag (and is found by the bare attribute selector).
+  // Scenario F2 - density concepts are a mutually-exclusive radio pair, but each
+  // still keeps its own always-visible opacity slider (sliders are per-layer,
+  // independent of which heatmap variant is currently shown).
+  const allLayerNames = config.__layerNames;
+  const hiddenSliders = allLayerNames.filter((n) => {
     const s = panel.querySelector('[data-layer-opacity="' + n + '"]');
-    return s && s.style.display !== "none";
+    return !s || s.style.display === "none";
   });
-  ok(visibleDensity.length === 1 && visibleDensity[0] === "GPS Density (decay · log)",
-     "only the active heatmap variant shows an opacity slider, got: " + visibleDensity.join(","));
+  ok(hiddenSliders.length === 0,
+     "every layer has a visible opacity slider, hidden/missing: " + hiddenSliders.join(","));
+  // Both density sliders are present and independent.
+  const tsSlider = panel.querySelector('input[data-layer-opacity="GPS Density (Time Spent)"]');
+  const covSlider = panel.querySelector('[data-layer-opacity="Coverage (Places Visited)"]');
+  ok(tsSlider && covSlider,
+     "both Time Spent and Coverage get their own opacity sliders");
+  tsSlider.value = "40";
+  tsSlider.dispatch("input");
+  const tsLayer = overlays["GPS Density (Time Spent)"];
+  ok(tsLayer.sub.opts[tsLayer.sub.opts.length - 1] === 0.4,
+     "Time Spent slider drives only its own layer to 0.4");
+  const covLayer = overlays["Coverage (Places Visited)"];
+  ok(covLayer.sub.opts[covLayer.sub.opts.length - 1] === 0.85,
+     "Coverage opacity unaffected by the Time Spent slider");
 
   const opToggle = byId.get("hcp-opacity-toggle");
   opToggle.dispatch("click");

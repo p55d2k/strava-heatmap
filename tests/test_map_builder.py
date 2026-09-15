@@ -10,9 +10,12 @@ import pytest
 from src.map_builder import (
     CARTO_STYLES,
     DEFAULT_CARTO_STYLE,
+    INDEPENDENT_LAYER_NAMES,
+    METRIC_LAYER_NAMES,
     ControlPanel,
     ExclusiveLayerControl,
     LegendBuilder,
+    LegendContext,
     LegendRow,
     build_control_panel_html,
     build_layer_group_config,
@@ -155,9 +158,8 @@ class TestBuildLegendHtml:
         assert 'class="hcp-legend"' in html
 
         # Check all legend rows present
-        assert "GPS Density (decay · linear)" in html
-        assert "GPS Density (decay · log)" in html
-        assert "GPS Density (raw · log)" in html
+        assert "GPS Density (Time Spent)" in html
+        assert "Coverage (Places Visited)" in html
         assert "Pace (average)" in html
         assert "Heart rate (average)" in html
         assert "Gradient (absolute)" in html
@@ -175,45 +177,26 @@ class TestBuildLegendHtml:
         assert "descending" in html
         assert "ascending" in html
 
-    def test_only_active_strategy_log_row_visible_by_default(self):
-        """Only the active strategy's log legend row shows on first load."""
+    def test_density_rows_hidden_by_default(self):
+        """GPS Density (Time Spent) is visible on first paint (its layer is on
+        by default); Coverage is hidden until toggled on. The JS layer control
+        re-syncs all rows on DOMContentLoaded."""
         html = build_legend_html(self.normalized, self.colormaps, self.normalized["max_passes"])
 
-        # Default strategy is binary-per-activity; the map shows its log layer,
-        # so exactly that legend row should be visible on first paint.
-        assert (
-            'id="legend-frequency-binary-log" class="hcp-legend-row" style="display:block"' in html
+        # Time Spent layer is on by default → legend row must be visible.
+        assert 'id="legend-time-spent" class="hcp-legend-row" style="display:block"' in html, (
+            "legend-time-spent should be visible on first load"
         )
 
-        # Every other density row stays hidden until an overlay event / toggle.
+        # Coverage and metrics are hidden until toggled.
         for hidden_id in (
-            "legend-frequency-decay",
-            "legend-frequency-decay-log",
-            "legend-frequency-binary",
-            "legend-frequency-raw",
-            "legend-frequency-raw-log",
+            "legend-coverage",
+            "legend-pace-avg",
         ):
             assert f'id="{hidden_id}" class="hcp-legend-row" style="display:none"' in html, (
                 f"legend row {hidden_id} should be hidden on first load"
             )
-
-        # Exactly one legend row visible: the active strategy's log row.
-        assert html.count('style="display:block"') == 1
-
-    def test_strategy_parameter_switches_visible_legend_row(self):
-        """Passing a decay strategy makes that strategy's log row visible."""
-        html = build_legend_html(
-            self.normalized,
-            self.colormaps,
-            self.normalized["max_passes"],
-            decay_strategy="decay",
-        )
-        assert (
-            'id="legend-frequency-decay-log" class="hcp-legend-row" style="display:block"' in html
-        )
-        assert (
-            'id="legend-frequency-binary-log" class="hcp-legend-row" style="display:none"' in html
-        )
+        # Only the default-on layer (Time Spent) has a visible row on first paint.
         assert html.count('style="display:block"') == 1
 
 
@@ -240,24 +223,16 @@ class TestLegendBuilder:
         """Default builder should expose the standard layer->legend id mapping."""
         builder = LegendBuilder()
         assert builder.exclusive_layer_names == [
-            "GPS Density (decay · linear)",
-            "GPS Density (decay · log)",
-            "GPS Density (binary · linear)",
-            "GPS Density (binary · log)",
-            "GPS Density (raw · linear)",
-            "GPS Density (raw · log)",
+            "GPS Density (Time Spent)",
+            "Coverage (Places Visited)",
             "Pace (average)",
             "Heart rate (average)",
             "Gradient (absolute)",
             "Gradient (change)",
         ]
         assert builder.legend_ids == {
-            "GPS Density (decay · linear)": "legend-frequency-decay",
-            "GPS Density (decay · log)": "legend-frequency-decay-log",
-            "GPS Density (binary · linear)": "legend-frequency-binary",
-            "GPS Density (binary · log)": "legend-frequency-binary-log",
-            "GPS Density (raw · linear)": "legend-frequency-raw",
-            "GPS Density (raw · log)": "legend-frequency-raw-log",
+            "GPS Density (Time Spent)": "legend-time-spent",
+            "Coverage (Places Visited)": "legend-coverage",
             "Pace (average)": "legend-pace-avg",
             "Heart rate (average)": "legend-heart-rate-avg",
             "Gradient (absolute)": "legend-gradient",
@@ -265,17 +240,17 @@ class TestLegendBuilder:
         }
 
     def test_default_rows_renders_same_html(self):
-        """Default-builder output should include all strategy rows and metrics."""
+        """Default-builder output should include both density concepts and metrics."""
         builder = LegendBuilder()
         html = builder.build(self.normalized, self.colormaps, self.normalized["max_passes"])
-        assert "GPS Density (decay · linear)" in html
-        assert "GPS Density (decay · log)" in html
+        assert "GPS Density (Time Spent)" in html
+        assert "Coverage (Places Visited)" in html
         assert "Heart rate (average)" in html
         assert "120 bpm" in html
         assert "180 bpm" in html
         assert "2.0%" in html
         assert "10.0%" in html
-        # Each strategy's legend shows its own max-passes figure (fallback here).
+        # The Time Spent layer shows the max-passes figure on a log scale.
         assert "50 passes" in html
 
     def test_custom_rows_produce_only_configured_rows(self):
@@ -713,6 +688,40 @@ class TestControlPanel:
         assert module.get("script") is not None
 
 
+class TestLegendBuilderDefaultRows:
+    """Tests for the default legend-row definitions produced by LegendBuilder."""
+
+    def _density_rows(self):
+        cmap = MagicMock()
+        cmap.side_effect = lambda t: (t, 1 - t, 0.5, 1.0)  # Red to blue gradient
+        by_strategy = {"decay": 10, "binary-per-activity": 3, "raw-count": 7}
+        rows = {r.row_id: r for r in LegendBuilder().default_rows()}
+        ctx = LegendContext(
+            normalized={},
+            colormaps={"cmap_count": cmap},
+            max_passes=10,
+            max_passes_by_strategy=by_strategy,
+        )
+        return rows, ctx
+
+    def test_time_spent_row_visible_on_first_paint(self):
+        """GPS Density (Time Spent) is on by default, so its legend row must be
+        shown on first paint (before the JS re-syncs to the map state)."""
+        rows, ctx = self._density_rows()
+        row = rows["legend-time-spent"]
+        assert row.visible is True
+        assert row.label_hi(ctx) == "10 passes (log scale)"
+
+    def test_coverage_row_hidden_and_uses_binary_per_activity_max(self):
+        """Coverage counts each cell once per activity, so its header uses the
+        binary-per-activity max-pass count, and stays hidden by default (the
+        Coverage layer is off by default)."""
+        rows, ctx = self._density_rows()
+        row = rows["legend-coverage"]
+        assert row.visible is False
+        assert row.label_hi(ctx) == "3 passes"
+
+
 class TestBuildMapControlPanel:
     """Tests for the control_panel flag passed to build_map."""
 
@@ -833,50 +842,84 @@ class TestLayerGroupConfig:
 
     def setup_method(self):
         self.layers = [
-            ("GPS Density (decay · linear)", "data:image/png;base64,1", True),
-            ("GPS Density (decay · log)", "data:image/png;base64,1b", False),
+            ("GPS Density (Time Spent)", "data:image/png;base64,1", True),
+            ("Coverage (Places Visited)", "data:image/png;base64,1b", False),
             ("Pace (average)", "data:image/png;base64,2", False),
             ("Custom overlay", "data:image/png;base64,3", True),
         ]
 
     def test_includes_tracks_group_when_present(self):
         """Should add a Raw GPS tracks checkbox group when tracks exist."""
-        groups = build_layer_group_config(self.layers, has_tracks=True, decay_strategy="decay")
+        groups = build_layer_group_config(self.layers, has_tracks=True)
         labels = [g["label"] for g in groups]
         assert "Raw GPS tracks" in labels
         tracks_group = next(g for g in groups if g["label"] == "Raw GPS tracks")
         assert tracks_group["mode"] == "check"
         assert tracks_group["layers"][0]["visible"] is False
 
-    def test_exclusive_heatmap_layers_in_radio_group(self):
-        """The active strategy's density pair should land in the radio group."""
-        groups = build_layer_group_config(self.layers, has_tracks=False, decay_strategy="decay")
-        radio = [g for g in groups if g["mode"] == "radio"]
-        assert radio
-        labels = [g["label"] for g in radio]
-        assert labels == ["Heatmap"]
-        names = [lay["name"] for lay in radio[0]["layers"]]
-        assert "GPS Density (decay · linear)" in names
-        assert len(radio[0]["layers"]) == 2  # only the active strategy's pair
-        assert "Custom overlay" not in names  # not a density layer
-        assert "Pace (average)" not in names  # metric layers are independent now
+    def test_density_layers_in_radio_group(self):
+        """Both density concepts are a mutually-exclusive radio group (radio)."""
+        groups = build_layer_group_config(self.layers, has_tracks=False)
+        heatmap = next(g for g in groups if g["label"] == "Heatmap")
+        assert heatmap["mode"] == "radio"
+        names = [lay["name"] for lay in heatmap["layers"]]
+        assert names == ["GPS Density (Time Spent)", "Coverage (Places Visited)"]
+        assert len(heatmap["layers"]) == 2
+        assert "Custom overlay" not in names
+        assert "Pace (average)" not in names  # metric layers stay independent checkboxes
 
     def test_metric_layers_in_independent_check_group(self):
         """Distinct metrics should be independent checkboxes, not exclusive."""
-        groups = build_layer_group_config(self.layers, has_tracks=False, decay_strategy="decay")
+        groups = build_layer_group_config(self.layers, has_tracks=False)
         metric_group = next(g for g in groups if g["label"] == "Metrics")
         assert metric_group["mode"] == "check"
         names = [lay["name"] for lay in metric_group["layers"]]
         assert "Pace (average)" in names
 
+    def test_density_not_duplicated_when_metric_names_is_independent_list(self):
+        """Regression: passing the all-inclusive INDEPENDENT_LAYER_NAMES as
+        ``metric_layer_names`` (as the production ``build_map`` call does) must
+        NOT bucket the density concept layers into both the Heatmap and Metrics
+        groups. Each heatmap layer must appear exactly once across all groups so
+        the panel renders one toggle and one opacity slider per layer."""
+        overlay_layers = [
+            (name, "data:image/png;base64,x", False) for name in INDEPENDENT_LAYER_NAMES
+        ]
+        groups = build_layer_group_config(
+            overlay_layers,
+            has_tracks=False,
+            metric_layer_names=INDEPENDENT_LAYER_NAMES,
+        )
+
+        # Every layer name appears at most once across all groups (deduplication).
+        seen: list[str] = []
+        for group in groups:
+            for lay in group["layers"]:
+                seen.append(lay["name"])
+        assert len(seen) == len(set(seen)), f"duplicate layer(s): {seen}"
+
+        # Density layers live only under "Heatmap"; the four pure metrics under "Metrics".
+        by_label = {g["label"]: [lay["name"] for lay in g["layers"]] for g in groups}
+        heatmap_names = by_label.get("Heatmap", [])
+        metric_names = by_label.get("Metrics", [])
+
+        for density_name in ["GPS Density (Time Spent)", "Coverage (Places Visited)"]:
+            assert heatmap_names.count(density_name) == 1
+            assert density_name not in metric_names
+
+        for metric_name in METRIC_LAYER_NAMES:
+            assert metric_names.count(metric_name) == 1
+
     def test_non_exclusive_layers_in_check_group(self):
         """Non-exclusive layers should be in a checkbox (independent) group."""
-        groups = build_layer_group_config(self.layers, has_tracks=False, decay_strategy="decay")
+        groups = build_layer_group_config(self.layers, has_tracks=False)
         checks = [g for g in groups if g["mode"] == "check"]
         assert checks
         names = [lay["name"] for g in checks for lay in g["layers"]]
         assert "Custom overlay" in names
-        assert "GPS Density (decay · linear)" not in names
+        metric_names_group = next(g for g in groups if g["label"] == "Metrics")
+        metric_names_list = [lay["name"] for lay in metric_names_group["layers"]]
+        assert "Pace (average)" in metric_names_list  # metrics stay checkboxes
 
     def test_no_tracks_group_when_missing(self):
         """Should omit the tracks group when has_tracks is False."""
@@ -890,7 +933,7 @@ class TestLayerGroupConfig:
     def test_layers_carry_per_layer_opacity(self):
         """Heatmap/metric layers seed per-layer opacity from map_opacity, while the
         raw GPS tracks keep their own vector stroke opacity (TRACK_OPACITY)."""
-        groups = build_layer_group_config(self.layers, has_tracks=True, decay_strategy="decay")
+        groups = build_layer_group_config(self.layers, has_tracks=True)
         names = {g["label"]: g for g in groups}
         # Raw GPS tracks group uses the vector stroke default, not map_opacity.
         assert names["Raw GPS tracks"]["layers"][0]["opacity"] == TRACK_OPACITY
@@ -905,9 +948,7 @@ class TestLayerGroupConfig:
     def test_layer_opacity_respects_map_opacity(self):
         """map_opacity should flow into every raster layer entry's opacity, but not
         into the raw GPS tracks (a vector layer with its own fixed stroke opacity)."""
-        groups = build_layer_group_config(
-            self.layers, has_tracks=True, decay_strategy="decay", map_opacity=0.4
-        )
+        groups = build_layer_group_config(self.layers, has_tracks=True, map_opacity=0.4)
         for g in groups:
             for lay in g["layers"]:
                 if g["label"] == "Raw GPS tracks":

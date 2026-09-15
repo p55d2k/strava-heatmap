@@ -16,49 +16,16 @@ CARTO_STYLE_LABELS = {
     "dark_all": "Dark",
 }
 
-# Decay strategies selectable in the control panel. These mirror the values of
-# the DECAY_STRATEGY config key. Labels are shown in the panel dropdown; short
-# tokens are used inside layer names and normalized-grid dict keys.
-DECAY_STRATEGIES = ["decay", "binary-per-activity", "raw-count"]
-
-DECAY_STRATEGY_LABELS = {
-    "decay": "Decay",
-    "binary-per-activity": "Binary per activity",
-    "raw-count": "Raw count",
-}
-
-DEFAULT_DECAY_STRATEGY = "binary-per-activity"
-
-DECAY_STRATEGY_SHORT = {
-    "decay": "decay",
-    "binary-per-activity": "binary",
-    "raw-count": "raw",
-}
-
-
-def strategy_norm_keys(strategy: str) -> tuple[str, str]:
-    """Return the ``(norm, log_norm)`` keys for a strategy in the normalized dict."""
-    short = DECAY_STRATEGY_SHORT[strategy]
-    if strategy == "decay":
-        return "count_norm", "count_log_norm"
-    return f"count_{short}_norm", f"count_{short}_log_norm"
-
-
-def density_layer_names(strategy: str) -> list[str]:
-    """Return the two density layer names (linear, log) for a strategy."""
-    short = DECAY_STRATEGY_SHORT[strategy]
-    return [f"GPS Density ({short} · linear)", f"GPS Density ({short} · log)"]
-
-
-def strategy_layers_map() -> dict[str, list[str]]:
-    """Map each strategy key to its ``[linear, log]`` density layer names."""
-    return {strat: density_layer_names(strat) for strat in DECAY_STRATEGIES}
-
-
-# GPS density variants are alternative renderings of the SAME count data, so
-# they stay mutually exclusive (a radio group) in the layer control. Each
-# strategy contributes a linear + log pair.
-DENSITY_LAYER_NAMES = [layer for strat in DECAY_STRATEGIES for layer in density_layer_names(strat)]
+# The two primary heatmap concept layers. They render alternative views of the
+# same GPS data on different scales, so they form a mutually-exclusive (radio)
+# pair in the panel — only one is shown at a time:
+#   * "GPS Density (Time Spent)"  — decay-weighted pass counts (log scale), so
+#     the brightness reflects how much time you've spent on each path.
+#   * "Coverage (Places Visited)" — each cell counted once per activity, so it
+#     shows everywhere you've been without re-visits dominating.
+TIME_SPENT_LAYER = "GPS Density (Time Spent)"
+COVERAGE_LAYER = "Coverage (Places Visited)"
+DENSITY_LAYER_NAMES = [TIME_SPENT_LAYER, COVERAGE_LAYER]
 
 # Distinct analysis metrics that may each be overlaid independently; these are
 # rendered as independent checkboxes in the layer control.
@@ -69,34 +36,35 @@ METRIC_LAYER_NAMES = [
     "Gradient (change)",
 ]
 
+# All independently-toggleable concept + metric layers. The raw GPS tracks
+# overlay is separate (a vector layer) and is NOT bound to a legend row.
+INDEPENDENT_LAYER_NAMES = DENSITY_LAYER_NAMES + METRIC_LAYER_NAMES
+
+# The density-concept Heatmap group (GPS Density / Coverage) is mutually
+# exclusive (radio) and is defined by the panel's layer-group config; map-level
+# exclusivity is enforced client-side by panel.js. This legacy constant is kept
+# empty for backward compatibility — no exclusive names flow into
+# ExclusiveLayerControl.
+EXCLUSIVE_LAYER_NAMES: list[str] = []
+
 # Default stroke opacity for the raw GPS track polylines.  Kept as a constant
 # so that both the Folium PolyLine build step and the control-panel layer-group
 # config agree on the initial value the per-layer opacity slider starts at.
 TRACK_OPACITY = 0.4
 
-# Backwards-compatible alias for the set of mutually exclusive (radio) layers.
-EXCLUSIVE_LAYER_NAMES = DENSITY_LAYER_NAMES
 
-
-# Maps each exclusive layer name to its corresponding legend DIV id. The ids
-# mirror the ones produced by ``LegendBuilder.default_rows`` so the dynamic
-# layer control can show/hide the right legend row.
+# Maps each layer name to its corresponding legend DIV id. The ids mirror the
+# ones produced by ``LegendBuilder.default_rows`` so the dynamic layer control
+# can show/hide the right legend row.
 def _build_legend_ids() -> dict[str, str]:
-    ids: dict[str, str] = {}
-    for strat in DECAY_STRATEGIES:
-        short = DECAY_STRATEGY_SHORT[strat]
-        linear, log = density_layer_names(strat)
-        ids[linear] = f"legend-frequency-{short}"
-        ids[log] = f"legend-frequency-{short}-log"
-    ids.update(
-        {
-            "Pace (average)": "legend-pace-avg",
-            "Heart rate (average)": "legend-heart-rate-avg",
-            "Gradient (absolute)": "legend-gradient",
-            "Gradient (change)": "legend-elev-change",
-        }
-    )
-    return ids
+    return {
+        TIME_SPENT_LAYER: "legend-time-spent",
+        COVERAGE_LAYER: "legend-coverage",
+        "Pace (average)": "legend-pace-avg",
+        "Heart rate (average)": "legend-heart-rate-avg",
+        "Gradient (absolute)": "legend-gradient",
+        "Gradient (change)": "legend-elev-change",
+    }
 
 
 LEGEND_IDS = _build_legend_ids()

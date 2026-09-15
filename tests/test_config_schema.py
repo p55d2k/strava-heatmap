@@ -51,7 +51,6 @@ class TestConfigSchema:
             "AUTO_RANGE_PCT",
             "MAX_CONSECUTIVE_SAME_CELL",
             "DECAY_FACTOR",
-            "DECAY_STRATEGY",
             "CACHE_DIR",
             "OUTPUT_DIR",
             "ACTIVITIES_CSV",
@@ -89,7 +88,6 @@ class TestConfigSchema:
                 "AUTO_RANGE_PCT": 5,
                 "MAX_CONSECUTIVE_SAME_CELL": 3,
                 "DECAY_FACTOR": 0.5,
-                "DECAY_STRATEGY": "binary-per-activity",
             }
 
             # ConfigModel uses aliases to match config.json keys
