@@ -354,10 +354,21 @@ class ConfigModel(BaseModel):
             'cell within a single activity. Drives the "GPS Density (Time '
             'Spent)" layer: 0.0 counts each cell once per activity (maximal '
             "spread); 1.0 counts every pass (inflates intensity for loops / "
-            'out-and-backs). "Coverage (Places Visited)" always counts each '
+            'out-and-backs). "Coverage (% of Activities)" always counts each '
             "cell once per activity regardless of this value."
         ),
         examples=[0.5, 0.3],
+    )
+    coverage_normalization: Literal["pct", "max"] = Field(
+        default="pct",
+        alias="COVERAGE_NORMALIZATION",
+        description=(
+            'Normalization basis for the "Coverage (% of Activities)" layer: '
+            '"pct" (default) = each cell shows the percentage of all activities '
+            'that visited it; "max" = each cell is scaled relative to the '
+            "most-visited cell (legacy)."
+        ),
+        examples=["pct", "max"],
     )
 
     # Optional path overrides (relative to project root)

@@ -128,7 +128,7 @@ def _rasterize_track_points(
     count_binary_grid: np.ndarray,
     max_consecutive_same_cell: int,
     decay_factor: float = 0.5,
-) -> None:
+) -> int:
     """Rasterize a single track's points onto the strategy count grids.
 
     Each activity (track) is processed in ONE pass with a consecutive-cell cap. For
@@ -145,6 +145,11 @@ def _rasterize_track_points(
     while deriving all three strategies from the same visit counts. The consecutive
     cap prevents a stationary stretch (e.g. a forgotten stop) from dominating, and
     the decay resets per activity so genuine multi-day coverage is unaffected.
+
+    Returns:
+        ``1`` if the activity contributed at least one cell to the coverage
+        (``count_binary_grid``), else ``0``. This is used as the denominator for
+        percentage-of-activities coverage normalization.
     """
     same_cell_run = 0
     prev_xi = prev_yi = None
@@ -163,10 +168,13 @@ def _rasterize_track_points(
             if same_cell_run <= max_consecutive_same_cell:
                 cell_visits[(xi, yi)] = cell_visits.get((xi, yi), 0) + 1
 
+    if not cell_visits:
+        return 0
     for (xi, yi), n_visits in cell_visits.items():
         count_raw_grid[yi, xi] += n_visits
         count_binary_grid[yi, xi] += 1
         count_grid[yi, xi] += _geom_sum(n_visits, decay_factor)
+    return 1
 
 
 def paint_segment(x1, y1, x2, y2, speed_val, hr_val, grad_val, elev_val, grids):
@@ -218,7 +226,7 @@ def rasterize_tracks(
     max_consecutive_same_cell: int,
     grids: tuple,
     decay_factor: float = 0.5,
-) -> None:
+) -> int:
     """Rasterize all tracks onto the grids.
 
     Points are incrementally binned into the count grid. To avoid a single
@@ -233,6 +241,12 @@ def rasterize_tracks(
     a geometric decay (`decay_factor`**n) so that loop/out-and-back routes
     (e.g. running-track laps) don't inflate the pass count. The decay resets per
     activity, so genuine coverage across different days is preserved.
+
+    Returns:
+        The number of activities that contributed at least one counted cell.
+        This is the denominator for the percentage-of-activities coverage
+        normalization (activities that produced no in-bounds / counted samples
+        are excluded).
     """
     (
         grid_w,
@@ -249,6 +263,8 @@ def rasterize_tracks(
         count_raw_grid,
         count_binary_grid,
     ) = grids
+
+    rasterized_count = 0
 
     for _, track_pts in tqdm(tracks, desc="Rasterizing tracks", unit="track"):
         lats_a = np.array([p[0] for p in track_pts])
@@ -269,7 +285,7 @@ def rasterize_tracks(
         px = (xs_wm - x_min_wm) / meters_per_pixel
         py = (y_max_wm - ys_wm) / meters_per_pixel
 
-        _rasterize_track_points(
+        rasterized_count += _rasterize_track_points(
             track_pts,
             px,
             py,
@@ -313,6 +329,8 @@ def rasterize_tracks(
             paint_segment(
                 px[i], py[i], px[i + 1], py[i + 1], seg_speed, seg_hr, seg_grad, seg_elev, grids
             )
+
+    return rasterized_count
 
 
 def _compute_count_grid(count_grid: np.ndarray, sigma: float) -> tuple:
@@ -456,7 +474,9 @@ def _compute_alpha_masks(
     return alpha_speed, alpha_hr, alpha_grad, alpha_elev
 
 
-def compute_normalized_grids(grids: tuple, sigma: float, config, progress_callback=None) -> dict:
+def compute_normalized_grids(
+    grids: tuple, sigma: float, config, n_activities: int = 0, progress_callback=None
+) -> dict:
     """Apply Gaussian blur and compute normalized grids for all metrics."""
     (
         grid_w,
@@ -490,6 +510,14 @@ def compute_normalized_grids(grids: tuple, sigma: float, config, progress_callba
         _b_bin,
         max_count_binary,
     ) = _compute_count_grid(count_binary_grid, sigma)
+
+    # Percentage-of-activities coverage normalization: each cell = (number of
+    # distinct activities that visited it) / (total activities). 1.0 means every
+    # activity visited the cell. This preserves the full 1x-to-Nx contrast so
+    # frequently-visited and rarely-visited routes are clearly distinguishable.
+    # Guard against a zero/absent activity count.
+    count_binary_pct_norm = np.clip(_b_bin / max(int(n_activities), 1), 0, 1)
+    coverage_normalization = getattr(config, "coverage_normalization", "pct")
 
     if progress_callback:
         progress_callback(1)  # Speed grid done
@@ -534,6 +562,7 @@ def compute_normalized_grids(grids: tuple, sigma: float, config, progress_callba
         "count_raw_log_norm": count_raw_log_norm,
         "count_binary_norm": count_binary_norm,
         "count_binary_log_norm": count_binary_log_norm,
+        "count_binary_pct_norm": count_binary_pct_norm,
         "speed_norm": speed_norm,
         "hr_norm": hr_norm,
         "grad_norm": grad_norm,
@@ -556,4 +585,6 @@ def compute_normalized_grids(grids: tuple, sigma: float, config, progress_callba
             "raw-count": int(max_count_raw),
             "binary-per-activity": int(max_count_binary),
         },
+        "n_activities": int(n_activities),
+        "coverage_normalization": coverage_normalization,
     }

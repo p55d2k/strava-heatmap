@@ -240,7 +240,7 @@ def run_generate(args: argparse.Namespace) -> None:
 
         grids = create_grids(x_min_wm, x_max_wm, y_min_wm, y_max_wm, config.meters_per_pixel)
 
-        rasterize_tracks(
+        n_activities = rasterize_tracks(
             tracks,
             to_wm,
             to_utm,
@@ -259,7 +259,11 @@ def run_generate(args: argparse.Namespace) -> None:
         print_stage("Stage 4: Computing Normalized Grids")
         with tqdm(total=6, desc="Normalizing grids", unit="step", disable=not args.dev) as pbar:
             normalized = compute_normalized_grids(
-                grids, config.blur_sigma_px, config, progress_callback=pbar.update
+                grids,
+                config.blur_sigma_px,
+                config,
+                n_activities=n_activities,
+                progress_callback=pbar.update,
             )
         print_success("Grid normalization complete")
 
@@ -271,6 +275,7 @@ def run_generate(args: argparse.Namespace) -> None:
             layers = generate_layer_uris(
                 normalized,
                 colormaps,
+                coverage_normalization=config.coverage_normalization,
                 progress_callback=pbar.update,
             )
         print_success(f"Created {len(layers)} map layers")

@@ -51,6 +51,7 @@ class TestConfigSchema:
             "AUTO_RANGE_PCT",
             "MAX_CONSECUTIVE_SAME_CELL",
             "DECAY_FACTOR",
+            "COVERAGE_NORMALIZATION",
             "CACHE_DIR",
             "OUTPUT_DIR",
             "ACTIVITIES_CSV",

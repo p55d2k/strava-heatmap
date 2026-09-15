@@ -232,15 +232,15 @@ function toggle(layerName, checked) {
   // independent Coverage concept is hidden, and metrics start hidden.
   ok(rowVisible("GPS Density (Time Spent)") === "block",
      "initial: Time Spent density row visible");
-  ok(rowVisible("Coverage (Places Visited)") === "none",
+  ok(rowVisible("Coverage (% of Activities)") === "none",
      "initial: Coverage density row hidden");
   ok(rowVisible("Pace (average)") === "none", "initial: pace metric row hidden");
 
   // Scenario A - the two GPS density concepts are mutually-exclusive radio
   // layers: toggling Coverage on removes Time Spent from the map and hides its
   // legend row (stacked heatmaps must never overlap).
-  toggle("Coverage (Places Visited)", true);
-  ok(rowVisible("Coverage (Places Visited)") === "block",
+  toggle("Coverage (% of Activities)", true);
+  ok(rowVisible("Coverage (% of Activities)") === "block",
      "coverage row shown after radio on");
   ok(rowVisible("GPS Density (Time Spent)") === "none",
      "Time Spent hidden — density concepts are mutually exclusive");
@@ -248,7 +248,7 @@ function toggle(layerName, checked) {
   toggle("GPS Density (Time Spent)", true);
   ok(rowVisible("GPS Density (Time Spent)") === "block",
      "Time Spent shown again after radio re-selected");
-  ok(rowVisible("Coverage (Places Visited)") === "none",
+  ok(rowVisible("Coverage (% of Activities)") === "none",
      "Coverage hidden when Time Spent is re-selected");
 
   // Scenario B - an independent metric checkbox shows/hides only its own row.
@@ -314,7 +314,7 @@ function toggle(layerName, checked) {
      "every layer has a visible opacity slider, hidden/missing: " + hiddenSliders.join(","));
   // Both density sliders are present and independent.
   const tsSlider = panel.querySelector('input[data-layer-opacity="GPS Density (Time Spent)"]');
-  const covSlider = panel.querySelector('[data-layer-opacity="Coverage (Places Visited)"]');
+  const covSlider = panel.querySelector('[data-layer-opacity="Coverage (% of Activities)"]');
   ok(tsSlider && covSlider,
      "both Time Spent and Coverage get their own opacity sliders");
   tsSlider.value = "40";
@@ -322,7 +322,7 @@ function toggle(layerName, checked) {
   const tsLayer = overlays["GPS Density (Time Spent)"];
   ok(tsLayer.sub.opts[tsLayer.sub.opts.length - 1] === 0.4,
      "Time Spent slider drives only its own layer to 0.4");
-  const covLayer = overlays["Coverage (Places Visited)"];
+  const covLayer = overlays["Coverage (% of Activities)"];
   ok(covLayer.sub.opts[covLayer.sub.opts.length - 1] === 0.85,
      "Coverage opacity unaffected by the Time Spent slider");
 

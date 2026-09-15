@@ -224,6 +224,7 @@ class TestGenerateLayerUris:
             "count_raw_log_norm": np.zeros((10, 10), dtype=np.float32),
             "count_binary_norm": np.zeros((10, 10), dtype=np.float32),
             "count_binary_log_norm": np.zeros((10, 10), dtype=np.float32),
+            "count_binary_pct_norm": np.zeros((10, 10), dtype=np.float32),
             "speed_norm": np.zeros((10, 10), dtype=np.float32),
             "hr_norm": np.zeros((10, 10), dtype=np.float32),
             "grad_norm": np.zeros((10, 10), dtype=np.float32),
@@ -262,3 +263,34 @@ class TestGenerateLayerUris:
 
         expected_names = DENSITY_LAYER_NAMES + METRIC_LAYER_NAMES
         assert [layer[0] for layer in layers] == expected_names
+
+    def test_coverage_layer_selects_normalization_grid(self, monkeypatch):
+        """The coverage layer URI should be produced from the grid selected by
+        ``coverage_normalization`` (``"pct"`` → ``count_binary_pct_norm``,
+        ``"max"`` → ``count_binary_norm``)."""
+        from src.map_builder.constants import COVERAGE_LAYER
+
+        captured = []
+
+        def _spy_count_uri(norm, cmap):
+            captured.append(norm)
+            return "data:image/png;base64,stub"
+
+        monkeypatch.setattr("src.colormaps._count_uri", _spy_count_uri)
+
+        pct_sentinel = object()
+        max_sentinel = object()
+        self.normalized["count_binary_norm"] = max_sentinel
+        self.normalized["count_binary_pct_norm"] = pct_sentinel
+
+        # coverage_normalization="pct" → coverage layer uses pct grid
+        layers = generate_layer_uris(self.normalized, self.colormaps, coverage_normalization="pct")
+        assert len(captured) >= 2
+        assert captured[1] is pct_sentinel
+        coverage_layer = [layer for layer in layers if layer[0] == COVERAGE_LAYER][0]
+        assert coverage_layer[0] == COVERAGE_LAYER
+
+        captured.clear()
+        # coverage_normalization="max" → coverage layer uses max grid
+        layers = generate_layer_uris(self.normalized, self.colormaps, coverage_normalization="max")
+        assert captured[1] is max_sentinel

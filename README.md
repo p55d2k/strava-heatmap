@@ -9,7 +9,7 @@ The output is a single HTML file with six layers — two GPS-density concepts pl
 | Layer                     | Colour         | Shows                                              |
 | ------------------------- | -------------- | -------------------------------------------------- |
 | GPS Density (Time Spent)  | Orange         | Decay-weighted pass counts (log scale), so brightness reflects time spent on each path |
-| Coverage (Places Visited) | Orange         | Each cell counted once per activity — everywhere you've been, without re-visits dominating |
+| Coverage (% of Activities) | Orange         | Share of activities that visited each cell (a clean 1x–Nx gradient, no sqrt flattening) |
 | Pace (average)            | Blue           | Average pace - brighter = faster                   |
 | Heart rate (average)      | Red            | Average HR - brighter = higher                     |
 | Gradient (absolute)       | White          | Steepness - brighter = steeper                     |
@@ -20,7 +20,7 @@ The two density concepts are independent layers:
 - **GPS Density (Time Spent)** is shown by default and weights how often you
   revisit a cell within a single activity using `DECAY_FACTOR` (0.0 counts each
   cell once per activity for maximal spread; 1.0 counts every pass).
-- **Coverage (Places Visited)** always counts each cell once per activity,
+- **Coverage (% of Activities)** always counts each cell once per activity,
   regardless of `DECAY_FACTOR`.
 
 In the on-map control panel, the two density concepts are a mutually-exclusive
@@ -79,7 +79,8 @@ CARTO_API_KEY = default_public_xxxxxxxxxxxxxxxxxxxxx
   "HR_MAX_BPM": null,
   "AUTO_RANGE_PCT": 5,
   "MAX_CONSECUTIVE_SAME_CELL": 3,
-  "DECAY_FACTOR": 0.5
+  "DECAY_FACTOR": 0.5,
+  "COVERAGE_NORMALIZATION": "pct"
 }
 ```
 
@@ -91,10 +92,11 @@ Key settings:
 - `RADIUS_KM` / `TRACK_CLIP_RADIUS_KM`: Filter radius around home
 - `CARTO_STYLE`: Basemap style — one of `"dark_all"` (default), `"light_all"`, or `"voyager"`
 - `MAX_CONSECUTIVE_SAME_CELL`: Maximum consecutive GPS points binned into the same grid cell before they are skipped (1–10, default `3`). Prevents a stationary stretch (e.g. a forgotten stop) from dominating the frequency layer.
-- `DECAY_FACTOR`: Geometric decay (0.0–1.0) applied to repeated passes of the same cell *within a single activity*. `DECAY_FACTOR = 0` counts each cell once per activity (maximal spread); `DECAY_FACTOR = 1` counts every pass (inflates intensity for loops / out-and-backs). Controls the **GPS Density (Time Spent)** layer only; **Coverage (Places Visited)** always counts each cell once per activity regardless of this value. Default: `0.5`.
+- `DECAY_FACTOR`: Geometric decay (0.0–1.0) applied to repeated passes of the same cell *within a single activity*. `DECAY_FACTOR = 0` counts each cell once per activity (maximal spread); `DECAY_FACTOR = 1` counts every pass (inflates intensity for loops / out-and-backs). Controls the **GPS Density (Time Spent)** layer only; **Coverage (% of Activities)** always counts each cell once per activity regardless of this value. Default: `0.5`.
+- `COVERAGE_NORMALIZATION`: How the **Coverage (% of Activities)** layer is scaled. `"pct"` (default) = each cell shows the percentage of all activities that visited it; `"max"` = each cell is scaled relative to the most-visited cell (legacy behavior). Default: `"pct"`.
 Two GPS density concept layers are always shown as independent toggles in the control panel:
   - **GPS Density (Time Spent)** (default-on): decay-weighted pass counts on a log scale, driven by `DECAY_FACTOR`.
-  - **Coverage (Places Visited)**: each cell counted once per activity (pure coverage, no intensity from re-visits), always on a linear scale.
+  - **Coverage (% of Activities)**: each cell counted once per activity (pure coverage, no intensity from re-visits), on a linear scale by percentage of activities (or relative to max visits when `COVERAGE_NORMALIZATION: "max"`).
 
 4. Run:
 ```bash

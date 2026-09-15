@@ -139,14 +139,25 @@ class LegendBuilder:
                 visible=True,
             )
         )
-        # Coverage (Places Visited) — each cell counted once per activity.
+        # Coverage (% of Activities) — fraction of all activities that visited
+        # each cell. When normalized by percentage of activities ("pct", the
+        # default), the legend reads as an activity count; in the legacy "max"
+        # basis it reads as the binary-per-activity max-pass count.
         rows.append(
             LegendRow(
                 row_id="legend-coverage",
-                title="Coverage (Places Visited)",
+                title="Coverage (% of Activities)",
                 gradient=lambda ctx: cmap_to_css(ctx.colormaps["cmap_count"]),
-                label_lo="1 pass",
-                label_hi=lambda ctx: f"{_max_passes(ctx, 'binary-per-activity')} passes",
+                label_lo=lambda ctx: (
+                    "1 activity"
+                    if ctx.normalized.get("coverage_normalization") == "pct"
+                    else "1 pass"
+                ),
+                label_hi=lambda ctx: (
+                    f"{ctx.normalized.get('n_activities', 0)} activities (100%)"
+                    if ctx.normalized.get("coverage_normalization") == "pct"
+                    else f"{_max_passes(ctx, 'binary-per-activity')} passes"
+                ),
                 layer_name=COVERAGE_LAYER,
             )
         )

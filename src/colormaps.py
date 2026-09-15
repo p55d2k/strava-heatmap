@@ -116,14 +116,20 @@ def generate_layer_uris(
     normalized: dict,
     colormaps: dict,
     progress_callback=None,
+    coverage_normalization: str = "max",
 ) -> list[tuple[str, str, bool]]:
     """Generate data URIs for all map layers.
 
     Two GPS density concept layers are produced — "GPS Density (Time Spent)"
     (decay-weighted pass counts on a log scale, shown by default) and "Coverage
-    (Places Visited)" (each cell counted once per activity, hidden by default) —
-    plus the four metric layers. Every layer is an independent (checkbox)
-    overlay the control panel can toggle at runtime.
+    (% of Activities)" (percentage of activities visiting each cell, hidden by
+    default) — plus the four metric layers. Every layer is an independent
+    (checkbox) overlay the control panel can toggle at runtime.
+
+    Args:
+        coverage_normalization: Basis for the "Coverage (% of Activities)" grid
+            — ``"pct"`` shows the percentage of activities that visited each
+            cell, ``"max"`` scales relative to the most-visited cell (legacy).
     """
     layers: list[tuple[str, str, bool]] = []
 
@@ -138,16 +144,21 @@ def generate_layer_uris(
     if progress_callback:
         progress_callback(1)  # GPS Density (Time Spent)
 
-    # Coverage (Places Visited) — each cell counted once per activity (linear).
+    # Coverage (% of Activities) — fraction of activities visiting each cell.
+    _coverage_grid = (
+        normalized["count_binary_pct_norm"]
+        if coverage_normalization == "pct"
+        else normalized["count_binary_norm"]
+    )
     layers.append(
         (
             COVERAGE_LAYER,
-            _count_uri(normalized["count_binary_norm"], colormaps["cmap_count"]),
+            _count_uri(_coverage_grid, colormaps["cmap_count"]),
             False,
         )
     )
     if progress_callback:
-        progress_callback(1)  # Coverage (Places Visited)
+        progress_callback(1)  # Coverage (% of Activities)
 
     if progress_callback:
         progress_callback(1)  # Pace (average)

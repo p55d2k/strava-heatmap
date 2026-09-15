@@ -592,6 +592,49 @@ class TestRasterizeTracks:
         assert np.sum(binary_grid) == 3
         assert np.sum(self.grids[2]) == pytest.approx(3.0)  # decay == raw here
 
+    def test_rasterize_tracks_returns_activity_count(self):
+        """rasterize_tracks should return the number of activities that contributed cells."""
+        to_wm = MagicMock()
+        to_utm = MagicMock()
+
+        to_utm.transform.return_value = (
+            np.array([500000.0, 500010.0]),
+            np.array([5000000.0, 5000010.0]),
+        )
+        to_wm.transform.return_value = (
+            np.array([-13500050.0, -13500040.0]),
+            np.array([5700050.0, 5700060.0]),
+        )
+
+        grids = create_grids(
+            -13500100.0,
+            -13500000.0,
+            5700000.0,
+            5700100.0,
+            10.0,
+        )
+
+        tracks = [
+            ("track1", [[45.0, -122.0, 5.0, 150, 100.0], [45.001, -122.001, 5.0, 150, 101.0]]),
+            ("track2", [[45.0, -122.0, 5.0, 150, 200.0], [45.001, -122.001, 5.0, 150, 201.0]]),
+        ]
+
+        count = rasterize_tracks(
+            tracks,
+            to_wm,
+            to_utm,
+            500000.0,
+            5000000.0,
+            clip_m=None,
+            x_min_wm=-13500100.0,
+            y_max_wm=5700100.0,
+            meters_per_pixel=10.0,
+            max_consecutive_same_cell=3,
+            grids=grids,
+        )
+
+        assert count == 2
+
 
 class TestComputeNormalizedGrids:
     """Tests for compute_normalized_grids function."""
@@ -643,6 +686,7 @@ class TestComputeNormalizedGrids:
         self.config.hr_min_bpm = None
         self.config.hr_max_bpm = None
         self.config.auto_range_pct = 5
+        self.config.coverage_normalization = "max"
 
     def test_returns_all_normalized_grids(self):
         """Should return dict with all expected normalized grids."""
@@ -655,6 +699,7 @@ class TestComputeNormalizedGrids:
             "count_raw_log_norm",
             "count_binary_norm",
             "count_binary_log_norm",
+            "count_binary_pct_norm",
             "speed_norm",
             "hr_norm",
             "grad_norm",
@@ -673,6 +718,8 @@ class TestComputeNormalizedGrids:
             "max_passes_raw",
             "max_passes_binary",
             "max_passes_by_strategy",
+            "n_activities",
+            "coverage_normalization",
         ]
 
         for key in expected_keys:
@@ -777,6 +824,7 @@ class TestComputeNormalizedGrids:
             "count_raw_log_norm",
             "count_binary_norm",
             "count_binary_log_norm",
+            "count_binary_pct_norm",
             "speed_norm",
             "hr_norm",
             "grad_norm",
@@ -795,6 +843,8 @@ class TestComputeNormalizedGrids:
             "max_passes_raw",
             "max_passes_binary",
             "max_passes_by_strategy",
+            "n_activities",
+            "coverage_normalization",
         ]
         for key in expected_keys:
             assert key in result, f"Missing key: {key}"
@@ -824,3 +874,74 @@ class TestComputeNormalizedGrids:
         assert "speed_norm" in result
         assert "hr_norm" in result
         assert result["max_passes"] == 0
+
+    def test_binary_pct_normalization(self):
+        """count_binary_pct_norm should equal (blurred binary) / n_activities,
+        clamped to [0, 1]."""
+        # Build a small grid with known binary coverage
+        grids = (
+            10,
+            10,
+            np.zeros((10, 10), dtype=np.float32),  # count_grid (decay)
+            np.zeros((10, 10), dtype=np.float32),  # speed_sum
+            np.zeros((10, 10), dtype=np.float32),  # speed_n
+            np.zeros((10, 10), dtype=np.float32),  # hr_sum
+            np.zeros((10, 10), dtype=np.float32),  # hr_n
+            np.zeros((10, 10), dtype=np.float32),  # grad_sum
+            np.zeros((10, 10), dtype=np.float32),  # grad_n
+            np.zeros((10, 10), dtype=np.float32),  # elev_sum
+            np.zeros((10, 10), dtype=np.float32),  # elev_n
+            np.zeros((10, 10), dtype=np.float32),  # count_raw_grid
+            np.zeros((10, 10), dtype=np.float32),  # count_binary_grid
+        )
+        # Put known binary values — 2 activities visited cell (5,5), 4 visited (6,6)
+        grids[12][5, 5] = 2.0
+        grids[12][6, 6] = 4.0
+
+        config = MagicMock()
+        config.speed_min_ms = None
+        config.speed_max_ms = None
+        config.hr_min_bpm = None
+        config.hr_max_bpm = None
+        config.auto_range_pct = 5
+        config.coverage_normalization = "pct"
+
+        # With sigma=0, gaussian_filter is identity
+        result = compute_normalized_grids(grids, sigma=0.0, config=config, n_activities=10)
+
+        assert result["n_activities"] == 10
+        assert result["coverage_normalization"] == "pct"
+        assert result["count_binary_pct_norm"].dtype == np.float32
+        # Cell (5,5) was visited by 2 out of 10 activities → pct = 0.2
+        assert abs(result["count_binary_pct_norm"][5, 5] - 0.2) < 1e-6
+        # Cell (6,6) was visited by 4 out of 10 → pct = 0.4
+        assert abs(result["count_binary_pct_norm"][6, 6] - 0.4) < 1e-6
+        # All other cells should be 0
+        assert abs(result["count_binary_pct_norm"][0, 0]) < 1e-6
+        assert result["count_binary_pct_norm"].max() <= 1.0
+
+    def test_binary_pct_normalization_clips_at_one(self):
+        """Percentage should be clamped to 1.0 even if n_activities is very small."""
+        grids = (
+            5,
+            5,
+            np.zeros((5, 5), dtype=np.float32),
+            np.zeros((5, 5), dtype=np.float32),
+            np.zeros((5, 5), dtype=np.float32),
+            np.zeros((5, 5), dtype=np.float32),
+            np.zeros((5, 5), dtype=np.float32),
+            np.zeros((5, 5), dtype=np.float32),
+            np.zeros((5, 5), dtype=np.float32),
+            np.zeros((5, 5), dtype=np.float32),
+            np.zeros((5, 5), dtype=np.float32),
+            np.zeros((5, 5), dtype=np.float32),
+            np.zeros((5, 5), dtype=np.float32),
+        )
+        grids[12][2, 2] = 15.0  # more than n_activities
+
+        config = MagicMock()
+        config.coverage_normalization = "pct"
+
+        result = compute_normalized_grids(grids, sigma=0.0, config=config, n_activities=3)
+        # 15/3 = 5.0 but clipped to 1.0
+        assert result["count_binary_pct_norm"][2, 2] == 1.0

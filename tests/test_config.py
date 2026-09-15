@@ -73,6 +73,7 @@ class TestConfig:
         assert config.hr_max_bpm is None
         assert config.auto_range_pct == 5
         assert config.max_consecutive_same_cell == 3
+        assert config.coverage_normalization == "pct"  # default when omitted
 
     def test_creates_cache_and_output_dirs(self):
         """Should create cache and output directories."""

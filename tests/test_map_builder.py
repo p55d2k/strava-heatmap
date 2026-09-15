@@ -138,6 +138,8 @@ class TestBuildLegendHtml:
             "g_lo": 0.02,
             "g_hi": 0.10,
             "max_passes": 50,
+            "coverage_normalization": "pct",
+            "n_activities": 100,
         }
         self.colormaps = {
             "cmap_count": MagicMock(),
@@ -159,7 +161,7 @@ class TestBuildLegendHtml:
 
         # Check all legend rows present
         assert "GPS Density (Time Spent)" in html
-        assert "Coverage (Places Visited)" in html
+        assert "Coverage (% of Activities)" in html
         assert "Pace (average)" in html
         assert "Heart rate (average)" in html
         assert "Gradient (absolute)" in html
@@ -213,6 +215,8 @@ class TestLegendBuilder:
             "g_lo": 0.02,
             "g_hi": 0.10,
             "max_passes": 50,
+            "coverage_normalization": "pct",
+            "n_activities": 100,
         }
         self.colormaps = {
             key: MagicMock(side_effect=lambda t: (t, 1 - t, 0.5, 1.0))
@@ -224,7 +228,7 @@ class TestLegendBuilder:
         builder = LegendBuilder()
         assert builder.exclusive_layer_names == [
             "GPS Density (Time Spent)",
-            "Coverage (Places Visited)",
+            "Coverage (% of Activities)",
             "Pace (average)",
             "Heart rate (average)",
             "Gradient (absolute)",
@@ -232,7 +236,7 @@ class TestLegendBuilder:
         ]
         assert builder.legend_ids == {
             "GPS Density (Time Spent)": "legend-time-spent",
-            "Coverage (Places Visited)": "legend-coverage",
+            "Coverage (% of Activities)": "legend-coverage",
             "Pace (average)": "legend-pace-avg",
             "Heart rate (average)": "legend-heart-rate-avg",
             "Gradient (absolute)": "legend-gradient",
@@ -244,7 +248,7 @@ class TestLegendBuilder:
         builder = LegendBuilder()
         html = builder.build(self.normalized, self.colormaps, self.normalized["max_passes"])
         assert "GPS Density (Time Spent)" in html
-        assert "Coverage (Places Visited)" in html
+        assert "Coverage (% of Activities)" in html
         assert "Heart rate (average)" in html
         assert "120 bpm" in html
         assert "180 bpm" in html
@@ -721,6 +725,24 @@ class TestLegendBuilderDefaultRows:
         assert row.visible is False
         assert row.label_hi(ctx) == "3 passes"
 
+    def test_coverage_pct_mode_labels(self):
+        """When coverage_normalization="pct", the coverage row should show
+        activity-count labels instead of max-pass labels."""
+        from src.map_builder.legend import LegendBuilder, LegendContext
+
+        cmap = MagicMock()
+        cmap.side_effect = lambda t: (t, 1 - t, 0.5, 1.0)
+        rows = {r.row_id: r for r in LegendBuilder().default_rows()}
+        ctx = LegendContext(
+            normalized={"coverage_normalization": "pct", "n_activities": 42},
+            colormaps={"cmap_count": cmap},
+            max_passes=10,
+            max_passes_by_strategy={"decay": 10, "binary-per-activity": 3, "raw-count": 7},
+        )
+        row = rows["legend-coverage"]
+        assert row.label_lo(ctx) == "1 activity"
+        assert row.label_hi(ctx) == "42 activities (100%)"
+
 
 class TestBuildMapControlPanel:
     """Tests for the control_panel flag passed to build_map."""
@@ -843,7 +865,7 @@ class TestLayerGroupConfig:
     def setup_method(self):
         self.layers = [
             ("GPS Density (Time Spent)", "data:image/png;base64,1", True),
-            ("Coverage (Places Visited)", "data:image/png;base64,1b", False),
+            ("Coverage (% of Activities)", "data:image/png;base64,1b", False),
             ("Pace (average)", "data:image/png;base64,2", False),
             ("Custom overlay", "data:image/png;base64,3", True),
         ]
@@ -863,7 +885,7 @@ class TestLayerGroupConfig:
         heatmap = next(g for g in groups if g["label"] == "Heatmap")
         assert heatmap["mode"] == "radio"
         names = [lay["name"] for lay in heatmap["layers"]]
-        assert names == ["GPS Density (Time Spent)", "Coverage (Places Visited)"]
+        assert names == ["GPS Density (Time Spent)", "Coverage (% of Activities)"]
         assert len(heatmap["layers"]) == 2
         assert "Custom overlay" not in names
         assert "Pace (average)" not in names  # metric layers stay independent checkboxes
@@ -903,7 +925,7 @@ class TestLayerGroupConfig:
         heatmap_names = by_label.get("Heatmap", [])
         metric_names = by_label.get("Metrics", [])
 
-        for density_name in ["GPS Density (Time Spent)", "Coverage (Places Visited)"]:
+        for density_name in ["GPS Density (Time Spent)", "Coverage (% of Activities)"]:
             assert heatmap_names.count(density_name) == 1
             assert density_name not in metric_names
 
