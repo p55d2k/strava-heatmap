@@ -28,6 +28,7 @@ from src.map_builder import (
     control_panel_script,
     controls_css,
     get_carto_api_key,
+    home_marker_radius,
     legend_row,
     pace_str,
 )
@@ -311,6 +312,32 @@ class TestLegendBuilder:
         assert "passes=7" in html
 
 
+class TestHomeMarkerRadius:
+    """Tests for the home_marker_radius helper."""
+
+    def test_returns_base_radius_at_base_zoom_14(self):
+        """At the default zoom 14 the radius should be 6 px."""
+        assert home_marker_radius(14) == 6
+
+    def test_grows_with_zoom(self):
+        """Radius should increase as zoom increases."""
+        assert home_marker_radius(16) > home_marker_radius(14)
+
+    def test_shrinks_at_low_zoom(self):
+        """Radius should not grow as zoom decreases below base."""
+        assert home_marker_radius(10) <= home_marker_radius(14)
+
+    def test_minimum_clamp(self):
+        """At very low zoom the radius should not go below the minimum."""
+        r = home_marker_radius(5)
+        assert r >= 4
+
+    def test_maximum_clamp(self):
+        """At very high zoom the radius should not exceed the maximum."""
+        r = home_marker_radius(25)
+        assert r <= 18
+
+
 @pytest.mark.usefixtures("carto_api_key")
 class TestBuildMap:
     """Tests for build_map function."""
@@ -331,6 +358,65 @@ class TestBuildMap:
         self.legend_html = "<div>Legend</div>"
         self.output_path = Path("/tmp/test_map.html")
         self.map_opacity = 0.7
+
+    @patch("src.map_builder.map_builder.ScalableHomeMarker")
+    def test_home_marker_added_when_home_provided(self, mock_home_marker):
+        """Should add a zoom-scalable marker at the home location when home is provided."""
+        mock_map = MagicMock()
+        with (
+            patch("src.map_builder.map_builder.folium.Map", return_value=mock_map),
+            patch("src.map_builder.map_builder.folium.TileLayer", return_value=MagicMock()),
+            patch("src.map_builder.map_builder.folium.FeatureGroup", return_value=MagicMock()),
+            patch("src.map_builder.map_builder.folium.PolyLine", return_value=MagicMock()),
+            patch(
+                "src.map_builder.map_builder.folium.raster_layers.ImageOverlay",
+                return_value=MagicMock(),
+            ),
+            patch("src.map_builder.map_builder.folium.LayerControl", return_value=MagicMock()),
+        ):
+            build_map(
+                self.tracks,
+                self.layers,
+                self.bounds,
+                self.centre,
+                self.legend_html,
+                self.output_path,
+                self.map_opacity,
+                home=self.home,
+            )
+
+        mock_home_marker.assert_called_once()
+        call = mock_home_marker.call_args[1]
+        assert call["location"] == self.home
+        # The marker should be added to the map instance once.
+        mock_home_marker.return_value.add_to.assert_called_once()
+
+    @patch("src.map_builder.map_builder.ScalableHomeMarker")
+    def test_no_home_marker_when_home_is_none(self, mock_home_marker):
+        """Should NOT add a marker when home is omitted (None)."""
+        mock_map = MagicMock()
+        with (
+            patch("src.map_builder.map_builder.folium.Map", return_value=mock_map),
+            patch("src.map_builder.map_builder.folium.TileLayer", return_value=MagicMock()),
+            patch("src.map_builder.map_builder.folium.FeatureGroup", return_value=MagicMock()),
+            patch("src.map_builder.map_builder.folium.PolyLine", return_value=MagicMock()),
+            patch(
+                "src.map_builder.map_builder.folium.raster_layers.ImageOverlay",
+                return_value=MagicMock(),
+            ),
+            patch("src.map_builder.map_builder.folium.LayerControl", return_value=MagicMock()),
+        ):
+            build_map(
+                self.tracks,
+                self.layers,
+                self.bounds,
+                self.centre,
+                self.legend_html,
+                self.output_path,
+                self.map_opacity,
+            )
+
+        mock_home_marker.assert_not_called()
 
     @patch("src.map_builder.map_builder.folium.Map")
     @patch("src.map_builder.map_builder.folium.TileLayer")

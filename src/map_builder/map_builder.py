@@ -10,6 +10,8 @@ from pathlib import Path
 
 import folium
 from dotenv import load_dotenv
+from folium import MacroElement
+from jinja2 import Template
 
 from src.map_builder.constants import (
     DEFAULT_CARTO_STYLE,
@@ -65,6 +67,86 @@ def build_tile_url(style: str = DEFAULT_CARTO_STYLE) -> str:
     return f"https://basemaps.cartocdn.com/rastertiles/{style}/{{z}}/{{x}}/{{y}}.png?key={key}"
 
 
+# Home marker sizing — Google-Maps style: the marker should shrink as you zoom
+# out and grow as you zoom in, instead of being a fixed-size dot that looks
+# oversized on a zoomed-out map.
+HOME_MARKER_BASE_ZOOM = 14  # the map's initial zoom_start
+HOME_MARKER_MIN_RADIUS = 4  # px, at low zoom
+HOME_MARKER_MAX_RADIUS = 18  # px, at high zoom
+
+
+def home_marker_radius(zoom: int, base_zoom: int = HOME_MARKER_BASE_ZOOM) -> int:
+    """Return the home-marker radius (px) for a given map zoom level.
+
+    The radius grows gently with zoom: ~6 px at the default zoom of 14 up to a
+    clamped maximum at very high zoom, and never smaller than ``MIN_RADIUS`` so
+    the marker stays visible when zoomed all the way out.
+    """
+    radius = 6 + (zoom - base_zoom) * 1.2
+    return max(HOME_MARKER_MIN_RADIUS, min(HOME_MARKER_MAX_RADIUS, round(radius)))
+
+
+class ScalableHomeMarker(MacroElement):
+    """A home pin that scales its radius with the map zoom level.
+
+    Renders a ``L.circleMarker`` (a round, white-ringed dot in the Strava
+    orange) and, client-side, listens on the map's ``zoomend`` event so the
+    marker's pixel radius tracks the zoom — small when zoomed out, larger when
+    zoomed in — instead of being a fixed-size icon.
+    """
+
+    _template = Template(
+        """
+        {% macro script(this, kwargs) %}
+            var {{ this.get_name() }} = L.circleMarker(
+                {{ this._location|tojson }},
+                {
+                    radius: {{ this._initial_radius }},
+                    color: "#ffffff",
+                    weight: 2.5,
+                    opacity: 1,
+                    fillColor: "#fc4c02",
+                    fillOpacity: 1,
+                    interactive: true
+                }
+            ).addTo({{ this._parent.get_name() }});
+            {{ this.get_name() }}.bindTooltip("Home");
+
+            function {{ this.get_name() }}_radius(zoom) {
+                var r = 6 + (zoom - {{ this._base_zoom }}) * 1.2;
+                return Math.max({{ this._min_radius }}, Math.min({{ this._max_radius }}, Math.round(r)));
+            }
+            function {{ this.get_name() }}_resize() {
+                {{ this.get_name() }}.setRadius(
+                    {{ this.get_name() }}_radius({{ this._parent.get_name() }}.getZoom())
+                );
+            }
+            {{ this.get_name() }}_resize();
+            {{ this._parent.get_name() }}.on("zoomend", {{ this.get_name() }}_resize);
+        {% endmacro %}
+        """
+    )
+
+    def __init__(
+        self,
+        location: list[float],
+        base_zoom: int = HOME_MARKER_BASE_ZOOM,
+    ):
+        """Initialize the scalable home marker.
+
+        Args:
+            location: ``[lat, lon]`` for the home position.
+            base_zoom: Zoom level the radius formula is anchored to.
+        """
+        super().__init__()
+        self._name = "ScalableHomeMarker"
+        self._location = location
+        self._base_zoom = base_zoom
+        self._initial_radius = home_marker_radius(base_zoom, base_zoom)
+        self._min_radius = HOME_MARKER_MIN_RADIUS
+        self._max_radius = HOME_MARKER_MAX_RADIUS
+
+
 def build_map(
     tracks: list[tuple[str, list]],
     layers: list[tuple[str, str, bool]],
@@ -101,8 +183,9 @@ def build_map(
             concepts plus the four metrics).
         legend_ids: Mapping from layer name to legend row DOM id for dynamic
             legend visibility. Defaults to the constants in ``LEGEND_IDS``.
-        home: [lat, lon] home location used for initial map view and Reset button.
-            Falls back to ``centre`` when ``None``.
+        home: [lat, lon] home location used for initial map view, the Reset
+            button, and a visible home marker. Falls back to ``centre`` when
+            ``None``.
         control_panel: When True, embed the in-HTML control panel (basemap
             style switcher, opacity slider, fit/reset, legend toggle).
         progress_callback: Optional callable invoked with a step count.
@@ -117,6 +200,12 @@ def build_map(
         show=True,
         max_zoom=20,
     ).add_to(m)
+
+    # Add a zoom-responsive marker for the home location so it is visually
+    # identifiable on the map without being a giant fixed dot (it shrinks/grows
+    # with zoom, Google-Maps style).
+    if home is not None:
+        ScalableHomeMarker(location=[home[0], home[1]]).add_to(m)
 
     track_group = folium.FeatureGroup(name="Raw GPS tracks", show=False)
     for label, pts in tracks:

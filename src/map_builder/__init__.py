@@ -43,9 +43,11 @@ from src.map_builder.legend import (
     pace_str,
 )
 from src.map_builder.map_builder import (
+    ScalableHomeMarker,
     build_map,
     build_tile_url,
     get_carto_api_key,
+    home_marker_radius,
 )
 from src.map_builder.utils import (
     cmap_to_css,
@@ -80,9 +82,11 @@ __all__ = [
     "control_panel_script",
     "carto_basemap_choices",
     # Map builder
+    "ScalableHomeMarker",
     "build_map",
     "build_tile_url",
     "get_carto_api_key",
+    "home_marker_radius",
     # Utils
     "cmap_to_css",
 ]
