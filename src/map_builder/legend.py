@@ -129,7 +129,7 @@ class LegendBuilder:
         rows.append(
             LegendRow(
                 row_id="legend-time-spent",
-                title="GPS Density (Time Spent)",
+                title="GPS Density",
                 gradient=lambda ctx: cmap_to_css(ctx.colormaps["cmap_count"]),
                 label_lo="1 pass",
                 label_hi=lambda ctx: f"{_max_passes(ctx, 'decay')} passes (log scale)",
@@ -139,14 +139,14 @@ class LegendBuilder:
                 visible=True,
             )
         )
-        # Coverage (% of Activities) — fraction of all activities that visited
+        # Coverage (Places Visited) — fraction of all activities that visited
         # each cell. When normalized by percentage of activities ("pct", the
         # default), the legend reads as an activity count; in the legacy "max"
         # basis it reads as the binary-per-activity max-pass count.
         rows.append(
             LegendRow(
                 row_id="legend-coverage",
-                title="Coverage (% of Activities)",
+                title="Coverage %",
                 gradient=lambda ctx: cmap_to_css(ctx.colormaps["cmap_count"]),
                 label_lo=lambda ctx: (
                     "1 activity"

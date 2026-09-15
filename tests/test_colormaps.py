@@ -222,9 +222,9 @@ class TestGenerateLayerUris:
             "count_log_norm": np.zeros((10, 10), dtype=np.float32),
             "count_raw_norm": np.zeros((10, 10), dtype=np.float32),
             "count_raw_log_norm": np.zeros((10, 10), dtype=np.float32),
-            "count_binary_norm": np.zeros((10, 10), dtype=np.float32),
-            "count_binary_log_norm": np.zeros((10, 10), dtype=np.float32),
-            "count_binary_pct_norm": np.zeros((10, 10), dtype=np.float32),
+            "unique_norm": np.zeros((10, 10), dtype=np.float32),
+            "unique_log_norm": np.zeros((10, 10), dtype=np.float32),
+            "unique_pct_norm": np.zeros((10, 10), dtype=np.float32),
             "speed_norm": np.zeros((10, 10), dtype=np.float32),
             "hr_norm": np.zeros((10, 10), dtype=np.float32),
             "grad_norm": np.zeros((10, 10), dtype=np.float32),
@@ -266,8 +266,8 @@ class TestGenerateLayerUris:
 
     def test_coverage_layer_selects_normalization_grid(self, monkeypatch):
         """The coverage layer URI should be produced from the grid selected by
-        ``coverage_normalization`` (``"pct"`` → ``count_binary_pct_norm``,
-        ``"max"`` → ``count_binary_norm``)."""
+        ``coverage_normalization`` (``"pct"`` → ``unique_pct_norm``,
+        ``"max"`` → ``unique_norm``)."""
         from src.map_builder.constants import COVERAGE_LAYER
 
         captured = []
@@ -280,8 +280,8 @@ class TestGenerateLayerUris:
 
         pct_sentinel = object()
         max_sentinel = object()
-        self.normalized["count_binary_norm"] = max_sentinel
-        self.normalized["count_binary_pct_norm"] = pct_sentinel
+        self.normalized["unique_norm"] = max_sentinel
+        self.normalized["unique_pct_norm"] = pct_sentinel
 
         # coverage_normalization="pct" → coverage layer uses pct grid
         layers = generate_layer_uris(self.normalized, self.colormaps, coverage_normalization="pct")

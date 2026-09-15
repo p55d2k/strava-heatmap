@@ -21,10 +21,10 @@ CARTO_STYLE_LABELS = {
 # pair in the panel — only one is shown at a time:
 #   * "GPS Density (Time Spent)"  — decay-weighted pass counts (log scale), so
 #     the brightness reflects how much time you've spent on each path.
-#   * "Coverage (% of Activities)" — fraction of all activities that visited
+#   * "Coverage (Places Visited)" — fraction of all activities that visited
 #     each cell, showing how widely you've covered the area.
 TIME_SPENT_LAYER = "GPS Density (Time Spent)"
-COVERAGE_LAYER = "Coverage (% of Activities)"
+COVERAGE_LAYER = "Coverage (Places Visited)"
 DENSITY_LAYER_NAMES = [TIME_SPENT_LAYER, COVERAGE_LAYER]
 
 # Distinct analysis metrics that may each be overlaid independently; these are

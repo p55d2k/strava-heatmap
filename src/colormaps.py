@@ -122,12 +122,12 @@ def generate_layer_uris(
 
     Two GPS density concept layers are produced — "GPS Density (Time Spent)"
     (decay-weighted pass counts on a log scale, shown by default) and "Coverage
-    (% of Activities)" (percentage of activities visiting each cell, hidden by
+    (Places Visited)" (percentage of activities visiting each cell, hidden by
     default) — plus the four metric layers. Every layer is an independent
     (checkbox) overlay the control panel can toggle at runtime.
 
     Args:
-        coverage_normalization: Basis for the "Coverage (% of Activities)" grid
+        coverage_normalization: Basis for the "Coverage (Places Visited)" grid
             — ``"pct"`` shows the percentage of activities that visited each
             cell, ``"max"`` scales relative to the most-visited cell (legacy).
     """
@@ -144,11 +144,11 @@ def generate_layer_uris(
     if progress_callback:
         progress_callback(1)  # GPS Density (Time Spent)
 
-    # Coverage (% of Activities) — fraction of activities visiting each cell.
+    # Coverage (Places Visited) — fraction of activities visiting each cell.
     _coverage_grid = (
-        normalized["count_binary_pct_norm"]
+        normalized["unique_pct_norm"]
         if coverage_normalization == "pct"
-        else normalized["count_binary_norm"]
+        else normalized["unique_norm"]
     )
     layers.append(
         (
@@ -158,7 +158,7 @@ def generate_layer_uris(
         )
     )
     if progress_callback:
-        progress_callback(1)  # Coverage (% of Activities)
+        progress_callback(1)  # Coverage (Places Visited)
 
     if progress_callback:
         progress_callback(1)  # Pace (average)

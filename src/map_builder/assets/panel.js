@@ -215,7 +215,7 @@
 
     row.appendChild(input);
     var span = document.createElement("span");
-    span.textContent = lDef.name;
+    span.textContent = lDef.label || lDef.name;
     row.appendChild(span);
     return row;
   }
@@ -316,19 +316,92 @@
     return item;
   }
 
-  // Render the opacity sliders for every layer, in the same order as the toggle
-  // list, into a prepared container. Every layer is independent, so each gets
-  // its own always-visible slider (no radio-pair swap needed).
+  // Build a single shared opacity slider for an entire radio group (e.g. the
+  // Heatmap density concepts "Time Spent" / "Coverage"). Because radio layers
+  // are mutually exclusive (only one is on the map at a time), one slider
+  // controls whichever variant is currently active rather than showing a slider
+  // per layer. On load, and whenever the active variant switches, the slider
+  // value is applied to the layer that is currently on the map.
+  function buildRadioGroupOpacitySlider(group, map, overlays) {
+    var item = document.createElement("div");
+    item.className = "hcp-layer-opacity";
+    item.setAttribute("data-layer-opacity", group.label);
+
+    var nameEl = document.createElement("span");
+    nameEl.className = "hcp-layer-opacity-name";
+    nameEl.textContent = group.label;
+    item.appendChild(nameEl);
+
+    var control = document.createElement("div");
+    control.className = "hcp-layer-opacity-control";
+
+    // The combined radio-group slider defaults to fully opaque (100%).
+    var initial = 1.0;
+
+    var input = document.createElement("input");
+    input.type = "range";
+    input.min = "0";
+    input.max = "100";
+    input.step = "1";
+    input.value = String(Math.round(initial * 100));
+    input.setAttribute("data-layer-opacity", group.label);
+    input.title = group.label + " opacity";
+
+    var valueEl = document.createElement("span");
+    valueEl.className = "hcp-layer-opacity-value";
+    valueEl.textContent = Math.round(initial * 100) + "%";
+
+    // Apply the slider's current value to whichever layer in the group is on the map.
+    function applyToActive() {
+      var pct = parseFloat(input.value) || 0;
+      group.layers.forEach(function (lDef) {
+        var layer = overlays ? overlays[lDef.name] : null;
+        if (layer && map.hasLayer(layer)) {
+          setLayerOpacityByName(lDef.name, overlays, pct / 100);
+        }
+      });
+    }
+
+    input.addEventListener("input", function () {
+      var pct = parseFloat(input.value) || 0;
+      valueEl.textContent = Math.round(pct) + "%";
+      applyToActive();
+    });
+
+    // When a different radio variant is switched on, carry the shared slider
+    // value over to the newly active layer automatically.
+    map.on("overlayadd", applyToActive);
+    map.on("overlayremove", applyToActive);
+
+    control.appendChild(input);
+    control.appendChild(valueEl);
+    item.appendChild(control);
+
+    // Match the currently active layer's opacity to the slider on load.
+    applyToActive();
+
+    return item;
+  }
+
+  // Render the opacity sliders for every layer group, into a prepared container.
+  // Checkbox groups (metrics, raw tracks) expose one slider per layer. Radio
+  // groups (e.g. the Heatmap density concepts) are mutually exclusive — only
+  // one is on the map at a time — so they share a single combined slider
+  // labelled by the group name. That slider defaults to 100% and drives
+  // whichever variant is currently active.
   function buildOpacityList(container, layerGroups, map, overlays, config, defaultOpacity) {
     container.innerHTML = "";
-    var byName = {};
 
     layerGroups.forEach(function (group) {
-      group.layers.forEach(function (lDef) {
-        var el = buildOpacitySlider(lDef.name, initialOpacityFor(lDef, defaultOpacity), overlays);
-        byName[lDef.name] = el;
-        container.appendChild(el);
-      });
+      if (group.mode === "radio") {
+        container.appendChild(buildRadioGroupOpacitySlider(group, map, overlays));
+      } else {
+        group.layers.forEach(function (lDef) {
+          container.appendChild(
+            buildOpacitySlider(lDef.name, initialOpacityFor(lDef, defaultOpacity), overlays)
+          );
+        });
+      }
     });
 
     return {};

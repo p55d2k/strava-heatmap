@@ -232,15 +232,15 @@ function toggle(layerName, checked) {
   // independent Coverage concept is hidden, and metrics start hidden.
   ok(rowVisible("GPS Density (Time Spent)") === "block",
      "initial: Time Spent density row visible");
-  ok(rowVisible("Coverage (% of Activities)") === "none",
+  ok(rowVisible("Coverage (Places Visited)") === "none",
      "initial: Coverage density row hidden");
   ok(rowVisible("Pace (average)") === "none", "initial: pace metric row hidden");
 
   // Scenario A - the two GPS density concepts are mutually-exclusive radio
   // layers: toggling Coverage on removes Time Spent from the map and hides its
   // legend row (stacked heatmaps must never overlap).
-  toggle("Coverage (% of Activities)", true);
-  ok(rowVisible("Coverage (% of Activities)") === "block",
+  toggle("Coverage (Places Visited)", true);
+  ok(rowVisible("Coverage (Places Visited)") === "block",
      "coverage row shown after radio on");
   ok(rowVisible("GPS Density (Time Spent)") === "none",
      "Time Spent hidden — density concepts are mutually exclusive");
@@ -248,7 +248,7 @@ function toggle(layerName, checked) {
   toggle("GPS Density (Time Spent)", true);
   ok(rowVisible("GPS Density (Time Spent)") === "block",
      "Time Spent shown again after radio re-selected");
-  ok(rowVisible("Coverage (% of Activities)") === "none",
+  ok(rowVisible("Coverage (Places Visited)") === "none",
      "Coverage hidden when Time Spent is re-selected");
 
   // Scenario B - an independent metric checkbox shows/hides only its own row.
@@ -302,29 +302,33 @@ function toggle(layerName, checked) {
   ok(hrLayer.sub.opts[hrLayer.sub.opts.length - 1] === 0.85,
      "heatmap image-overlay opacity unaffected by the tracks slider");
 
-  // Scenario F2 - density concepts are a mutually-exclusive radio pair, but each
-  // still keeps its own always-visible opacity slider (sliders are per-layer,
-  // independent of which heatmap variant is currently shown).
-  const allLayerNames = config.__layerNames;
-  const hiddenSliders = allLayerNames.filter((n) => {
-    const s = panel.querySelector('[data-layer-opacity="' + n + '"]');
-    return !s || s.style.display === "none";
-  });
-  ok(hiddenSliders.length === 0,
-     "every layer has a visible opacity slider, hidden/missing: " + hiddenSliders.join(","));
-  // Both density sliders are present and independent.
-  const tsSlider = panel.querySelector('input[data-layer-opacity="GPS Density (Time Spent)"]');
-  const covSlider = panel.querySelector('[data-layer-opacity="Coverage (% of Activities)"]');
-  ok(tsSlider && covSlider,
-     "both Time Spent and Coverage get their own opacity sliders");
-  tsSlider.value = "40";
-  tsSlider.dispatch("input");
+  // Scenario F2 - the Heatmap density concepts are a mutually-exclusive radio
+  // pair, so instead of two per-layer sliders they share a single combined
+  // "Heatmap" slider that drives whichever variant is currently active. It
+  // defaults to 100% and carries its value across radio switches.
+  const heatmapSlider = panel.querySelector('input[data-layer-opacity="Heatmap"]');
+  assert.ok(heatmapSlider, "a single combined Heatmap opacity slider exists");
+  // The individual density variants must no longer have their own sliders.
+  ok(!panel.querySelector('input[data-layer-opacity="GPS Density (Time Spent)"]') &&
+     !panel.querySelector('input[data-layer-opacity="Coverage (Places Visited)"]'),
+     "Time Spent / Coverage share one Heatmap slider (no per-variant sliders)");
+  ok(heatmapSlider.value === "100", "Heatmap slider defaults to 100%");
   const tsLayer = overlays["GPS Density (Time Spent)"];
+  ok(tsLayer.sub.opts[tsLayer.sub.opts.length - 1] === 1.0,
+     "active Time Spent layer initialised to Heatmap 100% opacity");
+
+  // Moving the shared slider drives the currently active heatmap layer only.
+  heatmapSlider.value = "40";
+  heatmapSlider.dispatch("input");
   ok(tsLayer.sub.opts[tsLayer.sub.opts.length - 1] === 0.4,
-     "Time Spent slider drives only its own layer to 0.4");
-  const covLayer = overlays["Coverage (% of Activities)"];
-  ok(covLayer.sub.opts[covLayer.sub.opts.length - 1] === 0.85,
-     "Coverage opacity unaffected by the Time Spent slider");
+     "Heatmap slider drives the active Time Spent layer to 0.4");
+
+  // Switching the radio to Coverage carries the shared 40% value over to it.
+  toggle("Coverage (Places Visited)", true);
+  const covLayer = overlays["Coverage (Places Visited)"];
+  ok(covLayer.sub.opts[covLayer.sub.opts.length - 1] === 0.4,
+     "Heatmap slider value carried over to Coverage when it becomes active");
+  ok(heatmapSlider.value === "40", "Heatmap slider retains its 40% across radio switch");
 
   const opToggle = byId.get("hcp-opacity-toggle");
   opToggle.dispatch("click");

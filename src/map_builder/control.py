@@ -138,7 +138,7 @@ def build_layer_group_config(
         )
 
     def _item(name: str, visible: bool) -> dict:
-        return {"name": name, "visible": visible, "opacity": map_opacity}
+        return {"name": name, "visible": visible, "opacity": map_opacity, "label": name}
 
     density_layers = [
         _item(name, visible) for name, _, visible in overlay_layers if name in density

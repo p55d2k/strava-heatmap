@@ -161,8 +161,8 @@ class TestBuildLegendHtml:
         assert 'class="hcp-legend"' in html
 
         # Check all legend rows present
-        assert "GPS Density (Time Spent)" in html
-        assert "Coverage (% of Activities)" in html
+        assert "GPS Density" in html
+        assert "Coverage %" in html
         assert "Pace (average)" in html
         assert "Heart rate (average)" in html
         assert "Gradient (absolute)" in html
@@ -229,7 +229,7 @@ class TestLegendBuilder:
         builder = LegendBuilder()
         assert builder.exclusive_layer_names == [
             "GPS Density (Time Spent)",
-            "Coverage (% of Activities)",
+            "Coverage (Places Visited)",
             "Pace (average)",
             "Heart rate (average)",
             "Gradient (absolute)",
@@ -237,7 +237,7 @@ class TestLegendBuilder:
         ]
         assert builder.legend_ids == {
             "GPS Density (Time Spent)": "legend-time-spent",
-            "Coverage (% of Activities)": "legend-coverage",
+            "Coverage (Places Visited)": "legend-coverage",
             "Pace (average)": "legend-pace-avg",
             "Heart rate (average)": "legend-heart-rate-avg",
             "Gradient (absolute)": "legend-gradient",
@@ -248,8 +248,8 @@ class TestLegendBuilder:
         """Default-builder output should include both density concepts and metrics."""
         builder = LegendBuilder()
         html = builder.build(self.normalized, self.colormaps, self.normalized["max_passes"])
-        assert "GPS Density (Time Spent)" in html
-        assert "Coverage (% of Activities)" in html
+        assert "GPS Density" in html
+        assert "Coverage %" in html
         assert "Heart rate (average)" in html
         assert "120 bpm" in html
         assert "180 bpm" in html
@@ -954,7 +954,7 @@ class TestLayerGroupConfig:
     def setup_method(self):
         self.layers = [
             ("GPS Density (Time Spent)", "data:image/png;base64,1", True),
-            ("Coverage (% of Activities)", "data:image/png;base64,1b", False),
+            ("Coverage (Places Visited)", "data:image/png;base64,1b", False),
             ("Pace (average)", "data:image/png;base64,2", False),
             ("Custom overlay", "data:image/png;base64,3", True),
         ]
@@ -974,7 +974,11 @@ class TestLayerGroupConfig:
         heatmap = next(g for g in groups if g["label"] == "Heatmap")
         assert heatmap["mode"] == "radio"
         names = [lay["name"] for lay in heatmap["layers"]]
-        assert names == ["GPS Density (Time Spent)", "Coverage (% of Activities)"]
+        assert names == ["GPS Density (Time Spent)", "Coverage (Places Visited)"]
+        # The panel toggle shows the full layer names, matching the overlay
+        # registry / legend-binding keys, so each heatmap concept is unambiguous.
+        labels = [lay["label"] for lay in heatmap["layers"]]
+        assert labels == ["GPS Density (Time Spent)", "Coverage (Places Visited)"]
         assert len(heatmap["layers"]) == 2
         assert "Custom overlay" not in names
         assert "Pace (average)" not in names  # metric layers stay independent checkboxes
@@ -1014,7 +1018,7 @@ class TestLayerGroupConfig:
         heatmap_names = by_label.get("Heatmap", [])
         metric_names = by_label.get("Metrics", [])
 
-        for density_name in ["GPS Density (Time Spent)", "Coverage (% of Activities)"]:
+        for density_name in ["GPS Density (Time Spent)", "Coverage (Places Visited)"]:
             assert heatmap_names.count(density_name) == 1
             assert density_name not in metric_names
 

@@ -697,9 +697,9 @@ class TestComputeNormalizedGrids:
             "count_log_norm",
             "count_raw_norm",
             "count_raw_log_norm",
-            "count_binary_norm",
-            "count_binary_log_norm",
-            "count_binary_pct_norm",
+            "unique_norm",
+            "unique_log_norm",
+            "unique_pct_norm",
             "speed_norm",
             "hr_norm",
             "grad_norm",
@@ -716,7 +716,7 @@ class TestComputeNormalizedGrids:
             "g_hi",
             "max_passes",
             "max_passes_raw",
-            "max_passes_binary",
+            "max_passes_unique",
             "max_passes_by_strategy",
             "n_activities",
             "coverage_normalization",
@@ -822,9 +822,9 @@ class TestComputeNormalizedGrids:
             "count_log_norm",
             "count_raw_norm",
             "count_raw_log_norm",
-            "count_binary_norm",
-            "count_binary_log_norm",
-            "count_binary_pct_norm",
+            "unique_norm",
+            "unique_log_norm",
+            "unique_pct_norm",
             "speed_norm",
             "hr_norm",
             "grad_norm",
@@ -841,7 +841,7 @@ class TestComputeNormalizedGrids:
             "g_hi",
             "max_passes",
             "max_passes_raw",
-            "max_passes_binary",
+            "max_passes_unique",
             "max_passes_by_strategy",
             "n_activities",
             "coverage_normalization",
@@ -876,7 +876,7 @@ class TestComputeNormalizedGrids:
         assert result["max_passes"] == 0
 
     def test_binary_pct_normalization(self):
-        """count_binary_pct_norm should equal (blurred binary) / n_activities,
+        """unique_pct_norm should equal (blurred binary) / n_activities,
         clamped to [0, 1]."""
         # Build a small grid with known binary coverage
         grids = (
@@ -892,7 +892,7 @@ class TestComputeNormalizedGrids:
             np.zeros((10, 10), dtype=np.float32),  # elev_sum
             np.zeros((10, 10), dtype=np.float32),  # elev_n
             np.zeros((10, 10), dtype=np.float32),  # count_raw_grid
-            np.zeros((10, 10), dtype=np.float32),  # count_binary_grid
+            np.zeros((10, 10), dtype=np.float32),  # unique_grid
         )
         # Put known binary values — 2 activities visited cell (5,5), 4 visited (6,6)
         grids[12][5, 5] = 2.0
@@ -911,14 +911,14 @@ class TestComputeNormalizedGrids:
 
         assert result["n_activities"] == 10
         assert result["coverage_normalization"] == "pct"
-        assert result["count_binary_pct_norm"].dtype == np.float32
+        assert result["unique_pct_norm"].dtype == np.float32
         # Cell (5,5) was visited by 2 out of 10 activities → pct = 0.2
-        assert abs(result["count_binary_pct_norm"][5, 5] - 0.2) < 1e-6
+        assert abs(result["unique_pct_norm"][5, 5] - 0.2) < 1e-6
         # Cell (6,6) was visited by 4 out of 10 → pct = 0.4
-        assert abs(result["count_binary_pct_norm"][6, 6] - 0.4) < 1e-6
+        assert abs(result["unique_pct_norm"][6, 6] - 0.4) < 1e-6
         # All other cells should be 0
-        assert abs(result["count_binary_pct_norm"][0, 0]) < 1e-6
-        assert result["count_binary_pct_norm"].max() <= 1.0
+        assert abs(result["unique_pct_norm"][0, 0]) < 1e-6
+        assert result["unique_pct_norm"].max() <= 1.0
 
     def test_binary_pct_normalization_clips_at_one(self):
         """Percentage should be clamped to 1.0 even if n_activities is very small."""
@@ -944,4 +944,4 @@ class TestComputeNormalizedGrids:
 
         result = compute_normalized_grids(grids, sigma=0.0, config=config, n_activities=3)
         # 15/3 = 5.0 but clipped to 1.0
-        assert result["count_binary_pct_norm"][2, 2] == 1.0
+        assert result["unique_pct_norm"][2, 2] == 1.0
