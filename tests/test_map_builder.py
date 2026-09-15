@@ -2,6 +2,7 @@
 Unit tests for src/map_builder.py - map building and HTML output functions.
 """
 
+import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -326,6 +327,7 @@ class TestBuildMap:
         ]
         self.bounds = [[44.9, -122.1], [45.1, -121.9]]
         self.centre = [45.0, -122.0]
+        self.home = [45.01, -122.01]
         self.legend_html = "<div>Legend</div>"
         self.output_path = Path("/tmp/test_map.html")
         self.map_opacity = 0.7
@@ -421,6 +423,80 @@ class TestBuildMap:
 
         # Verify save
         mock_map_instance.save.assert_called_once_with(self.output_path)
+
+    @patch("src.map_builder.map_builder.folium.Map")
+    @patch("src.map_builder.map_builder.folium.TileLayer")
+    @patch("src.map_builder.map_builder.folium.FeatureGroup")
+    @patch("src.map_builder.map_builder.folium.PolyLine")
+    @patch("src.map_builder.map_builder.folium.raster_layers.ImageOverlay")
+    @patch("src.map_builder.map_builder.folium.LayerControl")
+    def test_map_uses_home_for_initial_location(
+        self,
+        mock_layer_control,
+        mock_image_overlay,
+        mock_polyline,
+        mock_feature_group,
+        mock_tile_layer,
+        mock_map,
+    ):
+        """Map should centre on home (not bounding-box centre) when provided."""
+        mock_map.return_value = MagicMock()
+        mock_tile_layer.return_value = MagicMock()
+        mock_feature_group.return_value = MagicMock()
+        mock_polyline.return_value = MagicMock()
+        mock_image_overlay.return_value = MagicMock()
+        mock_layer_control.return_value = MagicMock()
+
+        build_map(
+            self.tracks,
+            self.layers,
+            self.bounds,
+            self.centre,
+            self.legend_html,
+            self.output_path,
+            self.map_opacity,
+            home=self.home,
+        )
+
+        call_kwargs = mock_map.call_args[1]
+        assert call_kwargs["location"] == self.home
+        assert call_kwargs["location"] != self.centre
+
+    @patch("src.map_builder.map_builder.folium.Map")
+    @patch("src.map_builder.map_builder.folium.TileLayer")
+    @patch("src.map_builder.map_builder.folium.FeatureGroup")
+    @patch("src.map_builder.map_builder.folium.PolyLine")
+    @patch("src.map_builder.map_builder.folium.raster_layers.ImageOverlay")
+    @patch("src.map_builder.map_builder.folium.LayerControl")
+    def test_map_falls_back_to_centre_without_home(
+        self,
+        mock_layer_control,
+        mock_image_overlay,
+        mock_polyline,
+        mock_feature_group,
+        mock_tile_layer,
+        mock_map,
+    ):
+        """Map should fall back to the bounding-box centre when home is omitted."""
+        mock_map.return_value = MagicMock()
+        mock_tile_layer.return_value = MagicMock()
+        mock_feature_group.return_value = MagicMock()
+        mock_polyline.return_value = MagicMock()
+        mock_image_overlay.return_value = MagicMock()
+        mock_layer_control.return_value = MagicMock()
+
+        build_map(
+            self.tracks,
+            self.layers,
+            self.bounds,
+            self.centre,
+            self.legend_html,
+            self.output_path,
+            self.map_opacity,
+        )
+
+        call_kwargs = mock_map.call_args[1]
+        assert call_kwargs["location"] == self.centre
 
     @patch("src.map_builder.map_builder.folium.Map")
     @patch("src.map_builder.map_builder.folium.TileLayer")
@@ -635,6 +711,19 @@ class TestControlPanel:
         assert panel is not None
         assert panel._name == "ControlPanel"
         assert f'"activeBasemap": "{DEFAULT_CARTO_STYLE}"' in panel.config_json
+
+    def test_home_forwards_to_config(self):
+        """ControlPanel should expose ``home`` for the Reset button."""
+        panel = ControlPanel(centre=[1.0, 2.0], home=[3.0, 4.0])
+        cfg = json.loads(panel.config_json)
+        assert cfg["home"] == [3.0, 4.0]
+        assert cfg["centre"] == [1.0, 2.0]
+
+    def test_home_defaults_to_centre(self):
+        """ControlPanel should fall back to centre when home is omitted."""
+        panel = ControlPanel(centre=[1.0, 2.0])
+        cfg = json.loads(panel.config_json)
+        assert cfg["home"] == [1.0, 2.0]
 
     def test_html_contains_panel_markup(self):
         """build_control_panel_html should contain the key controls."""

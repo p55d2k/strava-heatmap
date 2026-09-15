@@ -77,6 +77,7 @@ def build_map(
     exclusive_layer_names: list[str] | None = None,
     metric_layer_names: list[str] | None = None,
     legend_ids: dict[str, str] | None = None,
+    home: list[float] | None = None,
     control_panel: bool = True,
     progress_callback=None,
 ) -> None:
@@ -86,7 +87,7 @@ def build_map(
         tracks: List of (label, points) where points are [lat, lon] pairs.
         layers: List of (name, image_uri, visible) for each overlay layer.
         bounds: [[lat_sw, lon_sw], [lat_ne, lon_ne]] bounds for image overlays.
-        centre: [lat, lon] center point for initial map view.
+        centre: [lat, lon] center point for the bounding box of data.
         legend_html: HTML string for the legend (from LegendBuilder.build()).
         output_path: Path to save the output HTML file.
         map_opacity: Opacity value (0-1) for the heatmap image overlays.
@@ -100,11 +101,14 @@ def build_map(
             concepts plus the four metrics).
         legend_ids: Mapping from layer name to legend row DOM id for dynamic
             legend visibility. Defaults to the constants in ``LEGEND_IDS``.
+        home: [lat, lon] home location used for initial map view and Reset button.
+            Falls back to ``centre`` when ``None``.
         control_panel: When True, embed the in-HTML control panel (basemap
             style switcher, opacity slider, fit/reset, legend toggle).
         progress_callback: Optional callable invoked with a step count.
     """
-    m = folium.Map(location=centre, zoom_start=14, tiles=None, control_scale=True)
+    map_location = home if home is not None else centre
+    m = folium.Map(location=map_location, zoom_start=14, tiles=None, control_scale=True)
     folium.TileLayer(
         tiles=build_tile_url(carto_style),
         attr=CARTO_ATTRIBUTION,
@@ -164,6 +168,7 @@ def build_map(
             api_key=get_carto_api_key(),
             bounds=bounds,
             centre=centre,
+            home=home,
             layer_groups=build_layer_group_config(
                 overlay_layers=layers,
                 has_tracks=bool(tracks),

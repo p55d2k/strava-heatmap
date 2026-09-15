@@ -24,6 +24,7 @@
  *     opacity:        0.85,
  *     bounds:         [[lat, lon], [lat, lon]],
  *     centre:         [lat, lon],
+ *     home:           [lat, lon]  (fallback: centre),
  *     zoomStart:      14,
  *     legendId:       "heatmap-legend",
  *     layerGroups:    [{ label, mode, layers: [{ name, visible }, ...] }, ...],
@@ -474,7 +475,11 @@
     var resetBtn = panel.querySelector("#hcp-reset");
     if (resetBtn) {
       resetBtn.addEventListener("click", function () {
-        if (map.setView) map.setView(config.centre, config.zoomStart);
+        // Reset returns to home (or the bounding-box centre as a fallback).
+        var resetLocation = config.home || config.centre;
+        if (map.setView && resetLocation) {
+          map.setView(resetLocation, config.zoomStart);
+        }
       });
     }
 

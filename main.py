@@ -309,6 +309,7 @@ def run_generate(args: argparse.Namespace) -> None:
                 carto_style=config.carto_style,
                 metric_layer_names=INDEPENDENT_LAYER_NAMES,
                 legend_ids=legend_builder.legend_ids,
+                home=[home_lat, home_lon],
                 progress_callback=pbar.update,
             )
             pbar.update(1)

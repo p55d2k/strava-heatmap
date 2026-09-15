@@ -199,6 +199,7 @@ class ControlPanel(MacroElement):
         styles: list[str] | None = None,
         bounds: list[list[float]] | None = None,
         centre: list[float] | None = None,
+        home: list[float] | None = None,
         zoom_start: int = 14,
         panel_id: str = "heatmap-control-panel",
         legend_id: str = "heatmap-legend",
@@ -212,7 +213,9 @@ class ControlPanel(MacroElement):
             api_key: CARTO API key used by the basemap style switcher.
             styles: Available basemap style keys. Defaults to ``CARTO_STYLES``.
             bounds: Heatmap bounds ``[[lat, lon], [lat, lon]]`` for "Fit map".
-            centre: ``[lat, lon]`` used by "Reset".
+            centre: ``[lat, lon]`` center point of the data bounding box.
+            home: ``[lat, lon]`` home location used by "Reset"; falls back to
+                ``centre`` when ``None``.
             zoom_start: Zoom level used by "Reset".
             panel_id: DOM id of the control panel container.
             legend_id: DOM id of the legend container toggled by the panel.
@@ -231,6 +234,7 @@ class ControlPanel(MacroElement):
             "opacity": map_opacity,
             "bounds": bounds,
             "centre": centre,
+            "home": home if home is not None else centre,
             "zoomStart": zoom_start,
             "legendId": legend_id,
             "layerGroups": layer_groups or [],
