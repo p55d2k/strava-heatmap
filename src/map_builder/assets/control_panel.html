@@ -1,7 +1,9 @@
 <!-- Heatmap control panel markup.
      Layer opacity sliders are rendered client-side by assets/panel.js (one per
      independent layer, one shared slider per mutually-exclusive radio group)
-     and are collapsed by default ("Layer opacity" toggle). The "Advanced"
+     and are collapsed by default ("Layer opacity" toggle). A slider is greyed
+     out while its layer is not on the map, and re-enables via overlayadd /
+     overlayremove when the layer becomes visible. The "Advanced"
      section (rasterization-mode dropdown + Home marker toggle) sits below the
      Layer opacity section and is collapsed by default too — the Home marker
      toggle collapses together with it. -->

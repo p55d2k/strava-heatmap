@@ -292,6 +292,21 @@
   display: none;
 }
 
+/* A slider whose layer is not currently on the map is greyed out (disabled)
+   but keeps its position so the list never jumps when layers toggle on/off. */
+.heatmap-control-panel .hcp-layer-opacity.hcp-opacity-disabled {
+  opacity: 0.45;
+}
+
+.heatmap-control-panel .hcp-layer-opacity.hcp-opacity-disabled .hcp-layer-opacity-name,
+.heatmap-control-panel .hcp-layer-opacity.hcp-opacity-disabled .hcp-layer-opacity-value {
+  color: var(--hcp-text-muted);
+}
+
+.heatmap-control-panel .hcp-layer-opacity.hcp-opacity-disabled input[type="range"] {
+  pointer-events: none;
+}
+
 /* Fit / reset / legend buttons */
 .heatmap-control-panel .hcp-actions {
   display: flex;

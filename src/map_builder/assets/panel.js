@@ -9,7 +9,9 @@
  *   - Layer toggles            (radio for the density concepts — one virtual
  *                               "GPS Density" row plus Coverage — checkbox
  *                               for independent layers such as raw GPS tracks)
- *   - Per-layer opacity sliders (one per layer, collapsible via "Opacity")
+ *   - Per-layer opacity sliders (one per layer, collapsible via "Opacity";
+ *                               a slider is greyed out while its layer is not
+ *                               on the map)
  *   - Advanced section          (collapsible; rasterization-mode dropdown that
  *                               swaps which pre-baked GPS Density overlay is
  *                               bound to the "GPS Density" row)
@@ -512,12 +514,45 @@
     return item;
   }
 
+  // Grey a slider row out while its layer is not on the map (hidden rows
+  // keep their position, so the layout does not jump on every toggle).
+  function setSliderRowEnabled(item, enabled) {
+    item.classList.toggle("hcp-opacity-disabled", !enabled);
+    var input = item.querySelector('input[type="range"]');
+    if (input) input.disabled = !enabled;
+  }
+
+  // A layer is "in use" when it is on the map; for the shared Heatmap slider
+  // any raster-mode variant (the virtual "GPS Density" row's possible targets)
+  // or Coverage being visible counts as in use.
+  function updateSliderRowState(item, name, map, overlays, ctx) {
+    var inUse = false;
+    if (name === "Heatmap") {
+      var candidates = ctx && ctx.densityLayerNames ? ctx.densityLayerNames.slice() : [];
+      if (ctx && ctx.densityGroupLabel === "Heatmap" && ctx.groupLayerNames) {
+        ctx.groupLayerNames["Heatmap"].forEach(function (n) {
+          if (candidates.indexOf(n) === -1) candidates.push(n);
+        });
+      }
+      candidates.forEach(function (n) {
+        var layer = overlays ? overlays[n] : null;
+        if (layer && map.hasLayer(layer)) inUse = true;
+      });
+    } else {
+      var layer = overlays ? overlays[name] : null;
+      inUse = Boolean(layer && map.hasLayer(layer));
+    }
+    setSliderRowEnabled(item, inUse);
+  }
+
   // Render the opacity sliders for every layer group, into a prepared container.
   // Checkbox groups (metrics, raw tracks) expose one slider per layer. Radio
   // groups (e.g. the Heatmap density concepts) are mutually exclusive — only
   // one is on the map at a time — so they share a single combined slider
   // labelled by the group name. That slider defaults to 100% and drives
-  // whichever variant is currently active.
+  // whichever variant is currently active. Sliders whose layer is not currently
+  // on the map are greyed out (disabled) and re-enable automatically via the
+  // overlayadd / overlayremove listeners registered in ctx.opacityHandlers.
   function buildOpacityList(container, layerGroups, map, overlays, config, defaultOpacity, ctx) {
     container.innerHTML = "";
     // Drop the previous render's overlay listeners before re-registering.
@@ -527,7 +562,13 @@
     });
     if (ctx) ctx.opacityHandlers = [];
 
+    if (!ctx) ctx = {};
+    if (!ctx.groupLayerNames) ctx.groupLayerNames = {};
+
     layerGroups.forEach(function (group) {
+      ctx.groupLayerNames[group.label] = group.layers.map(function (lDef) {
+        return lDef.name;
+      });
       if (group.mode === "radio") {
         container.appendChild(buildRadioGroupOpacitySlider(group, map, overlays, ctx));
       } else {
@@ -538,6 +579,23 @@
         });
       }
     });
+
+    // Apply the initial greyed-out state, then keep it in sync with the map:
+    // these listeners fire on every overlayadd / overlayremove, covering both
+    // direct toggle clicks and the Advanced dropdown's mode swaps.
+    var rows = {};
+    Array.prototype.forEach.call(container.children, function (item) {
+      var name = item.getAttribute && item.getAttribute("data-layer-opacity");
+      if (name) rows[name] = item;
+    });
+    function syncSliderStates() {
+      Object.keys(rows).forEach(function (name) {
+        updateSliderRowState(rows[name], name, map, overlays, ctx);
+      });
+    }
+    syncSliderStates();
+    map.on("overlayadd", syncSliderStates);
+    map.on("overlayremove", syncSliderStates);
 
     return {};
   }

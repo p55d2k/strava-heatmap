@@ -73,7 +73,15 @@ function mkClassList() {
   return {
     add: (c) => s.add(c),
     remove: (c) => s.delete(c),
-    toggle(c) { const had = s.has(c); if (had) s.delete(c); else s.add(c); return !had; },
+    // Support the DOM's optional `force` argument: toggle(c, force) adds when
+    // force is truthy and removes when force is falsy, regardless of state.
+    toggle(c, force) {
+      const had = s.has(c);
+      const want = force === undefined ? !had : Boolean(force);
+      if (want && !had) s.add(c);
+      if (!want && had) s.delete(c);
+      return want;
+    },
     contains: (c) => s.has(c),
   };
 }
@@ -117,6 +125,14 @@ function makeEl(tag, id) {
   Object.defineProperty(el, "innerHTML", {
     get() { return el._html; },
     set(v) { el._html = String(v); if (String(v) === "") el.children.length = 0; },
+  });
+  // Reflect the `type` property into the attributes map (as real inputs do) so
+  // attribute selectors like input[type="range"] resolve against this stub.
+  let typeVal = el.type;
+  Object.defineProperty(el, "type", {
+    get() { return typeVal; },
+    set(x) { typeVal = String(x); if (typeVal) el.attributes.type = typeVal; },
+    configurable: true,
   });
   return el;
 }
@@ -490,6 +506,39 @@ function toggle(layerName, checked) {
      "Heatmap slider drives the dropdown-selected density layer");
   ok(rawLayer.sub.opts[rawLayer.sub.opts.length - 1] === 0.4,
      "the off raw-count layer keeps the value it had when it was swapped out");
+
+  // Scenario F3 - a slider whose layer is not on the map is greyed out
+  // (disabled): the row keeps its position but the range input no longer
+  // accepts input, and it re-enables as soon as the layer becomes visible.
+  const paceRowEl = panel.querySelector('div[data-layer-opacity="Pace (average)"]');
+  const heatRowEl = panel.querySelector('div[data-layer-opacity="Heatmap"]');
+  assert.ok(paceRowEl && heatRowEl, "slider row wrappers exist for pace and heatmap");
+  ok(paceRowEl.classList.contains("hcp-opacity-disabled") === true,
+     "pace slider row is greyed out while the pace layer is off");
+  ok(paceSlider.disabled === true,
+     "pace range input is disabled while the pace layer is off");
+  ok(heatRowEl.classList.contains("hcp-opacity-disabled") === false,
+     "Heatmap slider row stays enabled while a density layer is on");
+
+  toggle("Pace (average)", true);
+  ok(paceRowEl.classList.contains("hcp-opacity-disabled") === false,
+     "pace slider row enables when the pace layer is toggled on");
+  ok(paceSlider.disabled === false,
+     "pace range input is enabled after the layer is toggled on");
+  toggle("Pace (average)", false);
+  ok(paceRowEl.classList.contains("hcp-opacity-disabled") === true,
+     "pace slider row greys out again when the pace layer is toggled off");
+
+  // The shared Heatmap slider follows the radio concept: turning the virtual
+  // GPS Density row off greys it out; turning it back on re-enables it.
+  toggle("GPS Density", false);
+  ok(heatRowEl.classList.contains("hcp-opacity-disabled") === true,
+     "Heatmap slider row greys out when the density concept is turned off");
+  ok(heatmapSlider.disabled === true,
+     "Heatmap range input is disabled while no density layer is on the map");
+  toggle("GPS Density", true);
+  ok(heatRowEl.classList.contains("hcp-opacity-disabled") === false,
+     "Heatmap slider row re-enables when the density concept is back on");
 
   console.log("ALL_PASS");
   process.exit(0);
