@@ -6,6 +6,7 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import folium
 import pytest
 
 from src.map_builder import (
@@ -18,6 +19,7 @@ from src.map_builder import (
     LegendBuilder,
     LegendContext,
     LegendRow,
+    ScalableHomeMarker,
     build_control_panel_html,
     build_layer_group_config,
     build_legend_html,
@@ -336,6 +338,24 @@ class TestHomeMarkerRadius:
         """At very high zoom the radius should not exceed the maximum."""
         r = home_marker_radius(25)
         assert r <= 18
+
+
+class TestScalableHomeMarker:
+    """Tests for the ScalableHomeMarker MacroElement."""
+
+    def test_renders_home_marker_option_for_panel_lookup(self):
+        """The rendered script must tag the marker with options.homeMarker —
+        assets/panel.js locates the marker by that option to power the toggle."""
+        m = folium.Map(location=[45.0, -122.0], zoom_start=14, tiles=None)
+        marker = ScalableHomeMarker(location=[45.0, -122.0])
+        marker.add_to(m)
+
+        script = marker._template.module.script(marker, {})
+
+        assert "homeMarker: true" in script
+        assert 'bindTooltip("Home")' in script
+        # The marker is positioned at the home coordinates.
+        assert "45.0" in script
 
 
 @pytest.mark.usefixtures("carto_api_key")
@@ -804,12 +824,22 @@ class TestControlPanel:
         cfg = json.loads(panel.config_json)
         assert cfg["home"] == [3.0, 4.0]
         assert cfg["centre"] == [1.0, 2.0]
+        # A home position implies a home marker, so the toggle must be offered.
+        assert cfg["hasHomeMarker"] is True
 
     def test_home_defaults_to_centre(self):
         """ControlPanel should fall back to centre when home is omitted."""
         panel = ControlPanel(centre=[1.0, 2.0])
         cfg = json.loads(panel.config_json)
         assert cfg["home"] == [1.0, 2.0]
+        # No home position => no home marker, so the toggle is suppressed.
+        assert cfg["hasHomeMarker"] is False
+
+    def test_has_home_marker_false_without_home(self):
+        """ControlPanel should not advertise a home marker when home is absent."""
+        panel = ControlPanel(centre=[1.0, 2.0])
+        cfg = json.loads(panel.config_json)
+        assert cfg["hasHomeMarker"] is False
 
     def test_html_contains_panel_markup(self):
         """build_control_panel_html should contain the key controls."""
@@ -821,6 +851,9 @@ class TestControlPanel:
         assert "hcp-fit" in html
         assert "hcp-reset" in html
         assert "hcp-legend" in html
+        # The home-marker toggle is in the static markup (checked by default; the
+        # section is shown/hidden client-side based on the presence of a marker).
+        assert "hcp-home-marker" in html
         # The sidebar always stays open; no collapse/re-open controls exist.
         assert "hcp-toggle" not in html
         assert "hcp-reopen" not in html
@@ -849,6 +882,9 @@ class TestControlPanel:
         assert "basemaps.cartocdn.com" in script
         assert "redrawVisibleOverlays" in script
         assert '"zoomend"' in script
+        # The home marker toggle logic must be inlined in the panel script.
+        assert "findHomeMarker" in script
+        assert "hcp-home-marker" in script
 
     def test_carto_basemap_choices_default(self):
         """carto_basemap_choices should return default styles with labels."""
@@ -990,6 +1026,49 @@ class TestBuildMapControlPanel:
             and any(lay["name"] in ("Layer 1", "Layer 2") for lay in g["layers"])
             for g in layer_groups
         )
+
+    @patch("src.map_builder.map_builder.folium.Map")
+    @patch("src.map_builder.map_builder.folium.TileLayer")
+    @patch("src.map_builder.map_builder.folium.FeatureGroup")
+    @patch("src.map_builder.map_builder.folium.PolyLine")
+    @patch("src.map_builder.map_builder.folium.raster_layers.ImageOverlay")
+    @patch("src.map_builder.map_builder.folium.LayerControl")
+    @patch("src.map_builder.map_builder.ExclusiveLayerControl")
+    @patch("src.map_builder.map_builder.ControlPanel")
+    def test_forwards_home_to_control_panel(
+        self,
+        mock_panel,
+        mock_exclusive_control,
+        mock_layer_control,
+        mock_image_overlay,
+        mock_polyline,
+        mock_feature_group,
+        mock_tile_layer,
+        mock_map,
+    ):
+        """build_map should pass home through so the panel can offer the toggle."""
+        mock_map.return_value = MagicMock()
+        mock_tile_layer.return_value = MagicMock()
+        mock_feature_group.return_value = MagicMock()
+        mock_polyline.return_value = MagicMock()
+        mock_image_overlay.return_value = MagicMock()
+        mock_layer_control.return_value = MagicMock()
+        mock_exclusive_control.return_value = MagicMock()
+        mock_panel.return_value = MagicMock()
+
+        build_map(
+            self.tracks,
+            self.layers,
+            self.bounds,
+            self.centre,
+            self.legend_html,
+            self.output_path,
+            self.map_opacity,
+            home=[45.01, -122.01],
+        )
+
+        mock_panel.assert_called_once()
+        assert mock_panel.call_args[1]["home"] == [45.01, -122.01]
 
     @patch("src.map_builder.map_builder.folium.Map")
     @patch("src.map_builder.map_builder.folium.TileLayer")

@@ -107,7 +107,8 @@ class ScalableHomeMarker(MacroElement):
                     opacity: 1,
                     fillColor: "#fc4c02",
                     fillOpacity: 1,
-                    interactive: true
+                    interactive: true,
+                    homeMarker: true
                 }
             ).addTo({{ this._parent.get_name() }});
             {{ this.get_name() }}.bindTooltip("Home");

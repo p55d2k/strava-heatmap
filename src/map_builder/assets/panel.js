@@ -62,6 +62,19 @@
     return overlays;
   }
 
+  // Locate the home marker on the map. The marker is a plain circleMarker added
+  // directly to the map (not an overlay FeatureGroup), so we walk the layers and
+  // match on the custom `homeMarker` option set by ScalableHomeMarker.
+  function findHomeMarker(map) {
+    var found = null;
+    map.eachLayer(function (layer) {
+      if (found === null && layer && layer.options && layer.options.homeMarker) {
+        found = layer;
+      }
+    });
+    return found;
+  }
+
   function isBasemapLayer(layer) {
     return Boolean(
       layer &&
@@ -519,6 +532,29 @@
           setTimeout(retryLayers, 100);
         })();
       }
+    }
+
+    /* --- Home marker toggle --------------------------------------------- */
+    // The home marker is on by default. Expose a checkbox so it can be hidden or
+    // re-shown without regenerating the map. The section is `hidden` in the static
+    // markup and only revealed when a home location was provided (config.home is
+    // set and a marker was rendered).
+    var homeMarkerBtn = panel.querySelector("#hcp-home-marker");
+    var homeSection = panel.querySelector("#hcp-home-section");
+    if (config.hasHomeMarker && homeMarkerBtn && homeSection) {
+      homeSection.hidden = false;
+      var homeMarker = findHomeMarker(map);
+      homeMarkerBtn.checked = homeMarker ? map.hasLayer(homeMarker) : true;
+      homeMarkerBtn.addEventListener("change", function () {
+        if (!homeMarker) return;
+        if (homeMarkerBtn.checked && !map.hasLayer(homeMarker)) {
+          homeMarker.addTo(map);
+        } else if (!homeMarkerBtn.checked && map.hasLayer(homeMarker)) {
+          map.removeLayer(homeMarker);
+        }
+      });
+    } else if (homeSection) {
+      homeSection.hidden = true;
     }
 
     /* --- Layer opacity sliders (collapsible) --------------------------- */

@@ -77,6 +77,12 @@ function matchSelector(el, sel) {
   const t = sel.trim();
   let m = /^([a-z0-9-]*)#([-_a-zA-Z0-9]+)$/i.exec(t);
   if (m) return (!m[1] || el.tagName === m[1].toUpperCase()) && el.id === m[2];
+  m = /^([a-z0-9-]*)\.([-_a-zA-Z0-9]+)$/i.exec(t);
+  if (m) {
+    const tagOk = !m[1] || el.tagName === m[1].toUpperCase();
+    const clsOk = typeof el.className === "string" && el.className.split(/\s+/).indexOf(m[2]) !== -1;
+    return tagOk && clsOk;
+  }
   m = /^([a-z0-9-]*)\[([a-zA-Z0-9-]+)="([^"]*)"\]$/i.exec(t);
   if (m) return (!m[1] || el.tagName === m[1].toUpperCase()) && el.getAttribute(m[2]) === m[3];
   return false;
@@ -94,7 +100,7 @@ function makeEl(tag, id) {
   const el = {
     tagName: (tag || "div").toUpperCase(), id: id || "",
     type: "", name: "", value: "", textContent: "",
-    className: "", checked: false, style: { display: "" },
+    className: "", checked: false, style: { display: "" }, hidden: false,
     children: [], attributes: {}, _listeners: {}, _html: "", classList: mkClassList(),
     setAttribute(k, v) { this.attributes[k] = String(v); },
     getAttribute(k) { return k in this.attributes ? this.attributes[k] : null; },
@@ -199,6 +205,19 @@ global[mapVar] = map; // the exclusive script's `var map = <name>;`
 // Mirror Folium's first paint: the default-on Time Spent layer is on the map.
 map.addLayer(overlays["GPS Density (Time Spent)"]);
 
+// The home marker is rendered server-side by ScalableHomeMarker and added
+// directly to the map (not the overlay registry), tagged with options.homeMarker.
+// It is only rendered when the build had a home location (hasHomeMarker).
+let homeMarker = null;
+if (config.hasHomeMarker) {
+  homeMarker = {
+    options: { homeMarker: true },
+    setRadius() {},
+    addTo(m) { m.addLayer(this); return this; },
+  };
+  map.addLayer(homeMarker);
+}
+
 // ---- Run the REAL production scripts ------------------------------------
 eval(fs.readFileSync(path.join(DIR, "exclusive.js"), "utf8"));
 eval(fs.readFileSync(path.join(DIR, "panel.js"), "utf8"));
@@ -268,6 +287,34 @@ function toggle(layerName, checked) {
   toggle("Raw GPS tracks", true);
   ok(rowVisible("GPS Density (Time Spent)") === before,
      "density row unchanged when toggling an unbound layer");
+
+  // Scenario E - the home marker is on by default and its checkbox hides /
+  // re-shows it without touching overlay events or legend rows. Without a home
+  // location the section stays hidden and toggling it is a no-op.
+  const homeSection = byId.get("hcp-home-section");
+  const homeCheckbox = byId.get("hcp-home-marker");
+  const tsBeforeHomeToggle = rowVisible("GPS Density (Time Spent)");
+  if (config.hasHomeMarker) {
+    ok(homeSection && homeSection.hidden === false,
+       "home marker section is revealed when a home marker exists");
+    ok(homeCheckbox && homeCheckbox.checked === true,
+       "home marker checkbox is checked by default");
+    homeCheckbox.checked = false;
+    homeCheckbox.dispatch("change");
+    ok(map.hasLayer(homeMarker) === false, "unchecking removes the home marker");
+    homeCheckbox.checked = true;
+    homeCheckbox.dispatch("change");
+    ok(map.hasLayer(homeMarker) === true, "re-checking re-adds the home marker");
+  } else {
+    ok(homeSection && homeSection.hidden === true,
+       "home marker section stays hidden without a home location");
+    homeCheckbox.checked = false;
+    homeCheckbox.dispatch("change");
+    ok(map.hasLayer(homeMarker) === false,
+       "toggling is a no-op when no home marker was rendered");
+  }
+  ok(rowVisible("GPS Density (Time Spent)") === tsBeforeHomeToggle,
+     "home marker toggle does not disturb legend rows");
 
 // Scenario F - per-layer opacity sliders affect only their own layer, and the
   // "Opacity" toggle collapses every slider at once.
@@ -378,9 +425,18 @@ def node_available():
     return node
 
 
-def test_control_panel_toggles_update_legend_via_overlay_events(node_available):
-    """Toggling a control-panel layer must update legend rows via overlay events."""
-    panel = ControlPanel(layer_groups=build_layer_group_config(_overlay_layers(), has_tracks=True))
+@pytest.mark.parametrize("home", [[37.0, -122.0], None], ids=["with-home", "without-home"])
+def test_control_panel_toggles_update_legend_via_overlay_events(node_available, home):
+    """Toggling a control-panel layer must update legend rows via overlay events.
+
+    Runs twice — with and without a home location — so both the home-marker
+    toggle wiring and its no-marker fallback are exercised end to end.
+    """
+    panel = ControlPanel(
+        centre=[37.0, -122.0],
+        home=home,
+        layer_groups=build_layer_group_config(_overlay_layers(), has_tracks=True),
+    )
     panel_cfg = json.loads(panel.config_json)
 
     # Parent the ExclusiveLayerControl to a real folium map so its output uses

@@ -28,7 +28,9 @@ radio pair (only one can be shown at a time — stacking them produces no meanin
 result), labelled **Time Spent** / **Places Visited** in the toggle. The four
 metric layers (**Pace**, **Heart rate**, **Gradient absolute**,
 **Gradient change**) can each be toggled on and overlaid on the density heatmap.
-Raw GPS tracks are a separate checkbox.
+Raw GPS tracks are a separate checkbox. The home location is marked with a
+google-maps-style pin that scales with zoom — it is on by default and can be
+hidden via the **Home marker** checkbox in the panel.
 
 ## Setup
 

@@ -235,6 +235,7 @@ class ControlPanel(MacroElement):
             "bounds": bounds,
             "centre": centre,
             "home": home if home is not None else centre,
+            "hasHomeMarker": home is not None,
             "zoomStart": zoom_start,
             "legendId": legend_id,
             "layerGroups": layer_groups or [],
