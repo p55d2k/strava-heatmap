@@ -39,8 +39,11 @@ hidden via the **Home marker** checkbox in the panel.
 ## Setup
 
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
+
+This creates (or updates) the project virtual environment in `.venv` and installs
+the runtime and development dependencies from `pyproject.toml` and `uv.lock`.
 
 ### Environment: CARTO basemap API key (required)
 
@@ -113,7 +116,7 @@ The three GPS Density layers and the Coverage layer are shown as mutually-exclus
 
 4. Run:
 ```bash
-python main.py
+uv run python main.py
 ```
 Map is saved to `outputs/heatmap.html`.
 
@@ -123,20 +126,20 @@ The CLI supports subcommands. If no subcommand is given, it defaults to `generat
 
 - `generate` (default) — build the heatmap:
   ```bash
-  python main.py generate --config config.json --dry-run
+  uv run python main.py generate --config config.json --dry-run
   ```
   Use `--dry-run` to validate the config and show the activity count without generating the map.
 
 - `validate` — load and validate `config.json`, check that the activities directory and
   `activities.csv` exist, and print a summary of the resolved settings:
   ```bash
-  python main.py validate --config config.json
+uv run python main.py validate --config config.json
   ```
 
 Common options (`--config`, `--dev`) can be passed at the top level or on a subcommand:
 ```bash
-python main.py --config config.json --dry-run
-python main.py validate --config config.json --dev
+uv run python main.py --config config.json --dry-run
+uv run python main.py validate --config config.json --dev
 ```
 
 ### JSON Schema for config.json
@@ -146,7 +149,7 @@ A JSON Schema (`config.schema.json`) is auto-generated from the Pydantic model i
 To regenerate the schema after changing `ConfigModel`:
 
 ```bash
-python scripts/generate_schema.py
+uv run python scripts/generate_schema.py
 ```
 
 The schema validates required fields (`ACTIVITIES_DIR`, `ACTIVITY_TYPES`), value constraints (e.g. `METERS_PER_PIXEL > 0`, `MAP_OPACITY` between 0 and 1), and types.
