@@ -37,9 +37,12 @@ from src.map_builder import (
     pace_str,
 )
 from src.map_builder.constants import (
+    COVERAGE_LAYER,
     DEFAULT_RASTER_MODE,
     DENSITY_LAYER_NAMES,
+    DENSITY_VIRTUAL_LAYER,
     LEGEND_IDS,
+    RASTER_MODE_LABELS,
     TRACK_OPACITY,
 )
 
@@ -858,8 +861,6 @@ class TestControlPanel:
         html = build_control_panel_html()
         assert "heatmap-control-panel" in html
         assert "hcp-basemap" in html
-        assert "hcp-density-section" not in html
-        assert "hcp-density-mode" not in html
         assert "hcp-layers" in html
         assert "hcp-opacity-toggle" in html
         assert "hcp-fit" in html
@@ -881,6 +882,35 @@ class TestControlPanel:
         assert "heatmap-control-panel hcp-opacity-collapsed" in html
         assert 'aria-expanded="false"' in html
 
+    def test_html_contains_advanced_section(self):
+        """The Advanced section is its own collapsible menu (like Layer opacity)
+        holding the rasterization-mode dropdown; collapsed on first paint."""
+        html = build_control_panel_html()
+        assert "hcp-advanced-toggle" in html
+        assert "hcp-advanced-body" in html
+        assert "hcp-density-mode" in html
+        assert "hcp-select" in html
+        assert 'aria-expanded="false"' in html
+        assert "Advanced" in html
+
+    def test_advanced_section_layout(self):
+        """The Advanced section sits BELOW the Layer opacity section, and the
+        Home marker toggle lives INSIDE the Advanced body so it collapses
+        together with the rasterization-mode dropdown."""
+        html = build_control_panel_html()
+        opacity_pos = html.index('id="hcp-opacity-toggle"')
+        advanced_pos = html.index('id="hcp-advanced-toggle"')
+        advanced_body_pos = html.index('id="hcp-advanced-body"')
+        home_pos = html.index('id="hcp-home-section"')
+        actions_pos = html.index("hcp-actions")
+        # Advanced comes after Layer opacity (and before the action buttons).
+        assert opacity_pos < advanced_pos < actions_pos
+        # The Home marker section is nested inside the Advanced body.
+        assert advanced_body_pos < home_pos
+        adv_body = html[advanced_body_pos:actions_pos]
+        assert 'id="hcp-home-section"' in adv_body
+        assert 'id="hcp-density-mode"' in adv_body
+
     def test_html_has_no_inline_opacity(self):
         """build_control_panel_html no longer hard-codes an opacity percentage."""
         html = build_control_panel_html()
@@ -900,13 +930,29 @@ class TestControlPanel:
         assert "findHomeMarker" in script
         assert "hcp-home-marker" in script
 
-    def test_script_has_no_density_mode_dropdown_logic(self):
-        """control_panel_script must not reference the removed dropdown machinery."""
+    def test_script_contains_advanced_dropdown_logic(self):
+        """control_panel_script must wire the Advanced dropdown and the virtual
+        GPS Density row binding."""
         script = control_panel_script()
-        assert "hcp-density-mode" not in script
-        assert "applyDensityMode" not in script
-        assert '"densitymodechange"' not in script
-        assert "densityLegendIds" not in script
+        assert "hcp-advanced-toggle" in script
+        assert "hcp-advanced-body" in script
+        assert "hcp-density-mode" in script
+        assert "resolveDensityLayer" in script
+        assert "syncAdvancedFromMap" in script
+
+    def test_control_panel_carries_advanced_config(self):
+        """ControlPanel should embed the advanced raster-mode config for panel.js."""
+        from src.map_builder.control import build_advanced_config
+
+        panel = ControlPanel(centre=[1.0, 2.0], advanced=build_advanced_config("raw-count"))
+        cfg = json.loads(panel.config_json)
+        assert cfg["advanced"]["active"] == "raw-count"
+        assert [m["key"] for m in cfg["advanced"]["modes"]] == list(RASTER_MODES)
+        assert [m["label"] for m in cfg["advanced"]["modes"]] == [
+            RASTER_MODE_LABELS[m] for m in RASTER_MODES
+        ]
+        # Without an advanced section the config key stays present but empty.
+        assert json.loads(ControlPanel(centre=[1.0, 2.0]).config_json)["advanced"] == {}
 
     def test_carto_basemap_choices_default(self):
         """carto_basemap_choices should return default styles with labels."""
@@ -1198,30 +1244,34 @@ class TestLayerGroupConfig:
         assert tracks_group["mode"] == "check"
         assert tracks_group["layers"][0]["visible"] is False
 
-    def test_density_layers_in_radio_group(self):
-        """All density concept layers (one GPS Density layer per raster mode plus
-        Coverage) form a mutually-exclusive radio group."""
+    def test_heatmap_group_shows_two_concepts(self):
+        """The Heatmap radio group presents only the two density CONCEPTS — a
+        virtual "GPS Density" row (bound client-side to the raster mode picked
+        in the Advanced dropdown) plus Coverage. The per-mode layers never
+        appear as their own toggles."""
         groups = build_layer_group_config(self.layers, has_tracks=False)
         heatmap = next(g for g in groups if g["label"] == "Heatmap")
         assert heatmap["mode"] == "radio"
         names = [lay["name"] for lay in heatmap["layers"]]
-        assert names == [
-            "GPS Density (Time Spent)",
-            "GPS Density (Raw Passes)",
-            "GPS Density (Unique Visits)",
-            "Coverage (Places Visited)",
-        ]
-        # Only the default mode's layer is marked visible.
-        assert [lay["visible"] for lay in heatmap["layers"]] == [True, False, False, False]
+        assert names == [DENSITY_VIRTUAL_LAYER, COVERAGE_LAYER]
+        # The virtual GPS Density row inherits the visibility of whichever mode
+        # layer is on at first paint (Time Spent in this fixture).
+        assert [lay["visible"] for lay in heatmap["layers"]] == [True, False]
         assert "Custom overlay" not in names
         assert "Pace (average)" not in names  # metric layers stay independent checkboxes
 
     def test_density_layers_match_raster_modes(self):
-        """Every raster mode has exactly one density layer entry."""
+        """Every raster mode keeps exactly one density overlay; none of them is
+        offered as an individual panel toggle any more (the Advanced dropdown
+        swaps between them client-side)."""
         groups = build_layer_group_config(self.layers, has_tracks=False)
         heatmap = next(g for g in groups if g["label"] == "Heatmap")
-        names = {lay["name"] for lay in heatmap["layers"]}
-        assert names == set(DENSITY_LAYER_NAMES)
+        group_names = {lay["name"] for lay in heatmap["layers"]}
+        mode_layer_names = set(DENSITY_MODE_LAYERS.values())
+        # The per-mode layers are NOT individual rows; Coverage is.
+        assert COVERAGE_LAYER in group_names
+        assert not (mode_layer_names & group_names)
+        assert mode_layer_names <= set(DENSITY_LAYER_NAMES)
 
     def test_metric_layers_in_independent_check_group(self):
         """Distinct metrics should be independent checkboxes, not exclusive."""
@@ -1235,8 +1285,11 @@ class TestLayerGroupConfig:
         """Regression: passing the all-inclusive INDEPENDENT_LAYER_NAMES as
         ``metric_layer_names`` (as the production ``build_map`` call does) must
         NOT bucket the density concept layers into both the Heatmap and Metrics
-        groups. Each layer must appear exactly once across all groups so the
-        panel renders one toggle and one opacity slider per layer."""
+        groups. Every layer appears at most once across all groups, and each
+        layer lives in exactly the group the panel expects: the Heatmap group
+        shows the two density concepts (virtual "GPS Density" + Coverage), the
+        per-mode layers appear in no toggle group (the Advanced dropdown swaps
+        them), and the four pure metrics stay in "Metrics"."""
         overlay_layers = [
             (name, "data:image/png;base64,x", False) for name in INDEPENDENT_LAYER_NAMES
         ]
@@ -1252,14 +1305,18 @@ class TestLayerGroupConfig:
                 seen.append(lay["name"])
         assert len(seen) == len(set(seen)), f"unexpected duplicate layer(s): {sorted(set(seen))}"
 
-        # Density layers live only under "Heatmap"; the four pure metrics under "Metrics".
         by_label = {g["label"]: [lay["name"] for lay in g["layers"]] for g in groups}
         heatmap_names = by_label.get("Heatmap", [])
         metric_names = by_label.get("Metrics", [])
 
-        for density_name in DENSITY_LAYER_NAMES:
-            assert density_name in heatmap_names
-            assert density_name not in metric_names
+        assert DENSITY_VIRTUAL_LAYER in heatmap_names
+        assert COVERAGE_LAYER in heatmap_names
+        assert COVERAGE_LAYER not in metric_names
+
+        # None of the per-mode density layers is offered as an individual toggle.
+        for mode_layer in DENSITY_MODE_LAYERS.values():
+            assert mode_layer not in heatmap_names
+            assert mode_layer not in metric_names
 
         for metric_name in METRIC_LAYER_NAMES:
             assert metric_names.count(metric_name) == 1

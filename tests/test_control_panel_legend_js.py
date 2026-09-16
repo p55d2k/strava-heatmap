@@ -5,8 +5,9 @@ JavaScript that are only loosely coupled: the control panel
 (``assets/panel.js``) toggles overlay layers on/off by calling
 ``map.addLayer`` / ``map.removeLayer``, and ``ExclusiveLayerControl`` listens
 to Leaflet's ``overlayadd`` / ``overlayremove`` events to show/hide the matching
-legend rows (the GPS density concept layers — one per raster mode plus
-Coverage — are mutually-exclusive radio layers; the remaining metric layers are
+legend rows (the Heatmap group shows two density *concepts* — a virtual "GPS
+Density" row bound to the raster mode picked in the Advanced dropdown, plus
+Coverage — as mutually-exclusive radio rows; the remaining metric layers are
 independent checkboxes whose legend rows follow their on/off state).
 
 This module runs the *real* production scripts (rendered exactly as they are
@@ -40,6 +41,7 @@ from src.map_builder.constants import (
 from src.map_builder.control import (
     ControlPanel,
     ExclusiveLayerControl,
+    build_advanced_config,
     build_control_panel_html,
     build_layer_group_config,
     control_panel_script,
@@ -136,6 +138,12 @@ for (const pid of config.__panelIds) {
   const el = makeEl(null, pid);
   panel.appendChild(el);
   byId.set(pid, el);
+}
+// Mirror the static markup's initial state: elements rendered with the hidden
+// attribute (e.g. #hcp-advanced-body, #hcp-home-section) start out hidden.
+for (const hid of config.__hiddenIds || []) {
+  const el = byId.get(hid);
+  if (el) el.hidden = true;
 }
 // ---- Minimal fake Leaflet map + overlay registry ------------------------
 function makeOverlay(name) {
@@ -262,9 +270,15 @@ function toggle(layerName, checked) {
      "initial: Coverage density row hidden");
   ok(rowVisible("Pace (average)") === "none", "initial: pace metric row hidden");
 
-  // Scenario A - the GPS density concepts are mutually-exclusive radio
-  // layers: toggling Coverage on removes the default density layer from the
-  // map and hides its legend row (stacked heatmaps must never overlap).
+  // Scenario A - the two density concepts (GPS Density / Coverage) are
+  // mutually-exclusive radio rows: toggling Coverage on removes the default
+  // density layer from the map and hides its legend row (stacked heatmaps must
+  // never overlap). The virtual "GPS Density" row drives the raster-mode layer
+  // selected in the Advanced dropdown (Time Spent by default).
+  const densityRow = 'input[data-layer-name="GPS Density"]';
+  assert.ok(panel.querySelector(densityRow), "virtual GPS Density row exists");
+  ok(panel.querySelector(densityRow).checked === true,
+     "virtual GPS Density row reflects the default mode layer being on");
   toggle("Coverage (Places Visited)", true);
   ok(rowVisible("Coverage (Places Visited)") === "block",
      "coverage row shown after radio on");
@@ -272,8 +286,10 @@ function toggle(layerName, checked) {
      "default density row hidden — density concepts are mutually exclusive");
   ok(map.hasLayer(overlays[config.__defaultDensityLayer]) === false,
      "default density layer removed from the map when Coverage is selected");
-  // Selecting the default density layer again restores it and hides Coverage.
-  toggle(config.__defaultDensityLayer, true);
+  // Selecting the GPS Density concept again restores the default mode layer.
+  toggle("GPS Density", true);
+  ok(map.hasLayer(overlays[config.__defaultDensityLayer]) === true,
+     "GPS Density row re-adds the active raster-mode layer");
   ok(rowVisible(config.__defaultDensityLayer) === "block",
      "default density row shown again after radio re-selected");
   ok(rowVisible("Coverage (Places Visited)") === "none",
@@ -373,8 +389,9 @@ function toggle(layerName, checked) {
 
   // Scenario F2 - the Heatmap density concepts are a mutually-exclusive radio
   // group, so instead of one slider per layer they share a single combined
-  // "Heatmap" slider that drives whichever variant is currently active. It
-  // defaults to 100% and carries its value across radio switches.
+  // "Heatmap" slider that drives whichever concept is currently active. It
+  // defaults to 100% and carries its value across radio switches and Advanced
+  // dropdown mode changes.
   const heatmapSlider = panel.querySelector('input[data-layer-opacity="Heatmap"]');
   assert.ok(heatmapSlider, "a single combined Heatmap opacity slider exists");
   // None of the density variants may have their own slider.
@@ -404,14 +421,49 @@ function toggle(layerName, checked) {
   ok(panel.classList.contains("hcp-opacity-collapsed"),
      "opacity toggle collapses the per-layer sliders");
 
-  // Scenario M - the three raster-mode density layers are real, distinct
-  // overlays. Switching between them swaps both the map image and the legend
-  // row, and no two density layers are ever on the map at the same time.
-  // Coverage was left selected above; step through each raster mode.
-  const modeLayers = config.__modeLayers; // [{ mode, layer }]
-  for (const { mode, layer } of modeLayers) {
-    toggle(layer, true);
-    ok(map.hasLayer(overlays[layer]), "mode layer on the map: " + mode);
+  // Scenario N - the Advanced section is its own collapsible menu (like Layer
+  // opacity) and holds the rasterization-mode dropdown. The dropdown swaps the
+  // pre-baked GPS Density layers on the map without re-rasterizing.
+  const advToggle = byId.get("hcp-advanced-toggle");
+  const advBody = byId.get("hcp-advanced-body");
+  const modeSelect = byId.get("hcp-density-mode");
+  assert.ok(advToggle && advBody && modeSelect, "advanced section elements exist");
+  ok(advBody.hidden === true, "advanced section starts collapsed");
+  advToggle.dispatch("click");
+  ok(advBody.hidden === false, "advanced toggle expands the section");
+  ok(advToggle.getAttribute("aria-expanded") === "true", "advanced toggle aria-expanded");
+  advToggle.dispatch("click");
+  ok(advBody.hidden === true, "advanced toggle collapses the section again");
+
+  // The dropdown lists one option per raster mode, with the build's mode active.
+  const optionKeys = modeSelect.children.map((o) => o.value);
+  ok(JSON.stringify(optionKeys) === JSON.stringify(config.__modeLayers.map((m) => m.mode)),
+     "advanced dropdown lists every raster mode in order");
+  ok(modeSelect.value === config.__activeMode,
+     "advanced dropdown preselects the configured raster mode");
+
+  // Coverage is still selected from Scenario F2; switching the mode to
+  // "raw-count" must swap the density layer back on (radio exclusivity) and
+  // hide Coverage, with the GPS Density row still bound to the new layer.
+  modeSelect.value = "raw-count";
+  modeSelect.dispatch("change");
+  ok(map.hasLayer(overlays["GPS Density (Raw Passes)"]) === true,
+     "advanced dropdown puts the raw-count layer on the map");
+  ok(map.hasLayer(overlays["Coverage (Places Visited)"]) === false,
+     "advanced dropdown removes Coverage (radio exclusivity)");
+  ok(rowVisible("GPS Density (Raw Passes)") === "block",
+     "raw-count legend row becomes visible via the dropdown");
+  ok(rowVisible("Coverage (Places Visited)") === "none",
+     "coverage legend row hidden after dropdown switch");
+  ok(panel.querySelector(densityRow).checked === true,
+     "virtual GPS Density row re-binds to the new mode layer");
+
+  // Stepping through every remaining mode keeps exclusivity at all times.
+  for (const { mode, layer } of config.__modeLayers) {
+    if (mode === "raw-count") continue;
+    modeSelect.value = mode;
+    modeSelect.dispatch("change");
+    ok(map.hasLayer(overlays[layer]) === true, "mode layer on the map: " + mode);
     ok(rowVisible(layer) === "block", "mode legend row shown: " + mode);
     for (const other of config.__densityLayers) {
       if (other === layer) continue;
@@ -422,9 +474,22 @@ function toggle(layerName, checked) {
     }
   }
   // Restoring the default mode leaves the map in its initial visual state.
-  toggle(config.__defaultDensityLayer, true);
+  modeSelect.value = config.__activeMode;
+  modeSelect.dispatch("change");
+  ok(map.hasLayer(overlays[config.__defaultDensityLayer]) === true,
+     "default density layer restored via the advanced dropdown");
   ok(rowVisible(config.__defaultDensityLayer) === "block",
      "default density row restored after stepping through all modes");
+
+  // The Heatmap slider still drives whichever mode layer the dropdown swapped
+  // in — here the restored default (decay) layer, at its new 60% value.
+  heatmapSlider.value = "60";
+  heatmapSlider.dispatch("input");
+  const rawLayer = overlays["GPS Density (Raw Passes)"];
+  ok(tsLayer.sub.opts[tsLayer.sub.opts.length - 1] === 0.6,
+     "Heatmap slider drives the dropdown-selected density layer");
+  ok(rawLayer.sub.opts[rawLayer.sub.opts.length - 1] === 0.4,
+     "the off raw-count layer keeps the value it had when it was swapped out");
 
   console.log("ALL_PASS");
   process.exit(0);
@@ -439,6 +504,12 @@ def _panel_ids() -> list[str]:
     """Return the element ids present in the real control-panel template."""
     html = build_control_panel_html()
     return re.findall(r'id="([^"]+)"', html)
+
+
+def _panel_hidden_ids() -> list[str]:
+    """Return the template element ids rendered with the ``hidden`` attribute."""
+    html = build_control_panel_html()
+    return re.findall(r'id="([^"]+)"[^>]*\bhidden\b', html)
 
 
 def _overlay_layers() -> list[tuple[str, str, bool]]:
@@ -461,8 +532,10 @@ def _write_harness(tmp: Path, panel_cfg: dict) -> None:
     config["__legendIdByLayer"] = LEGEND_IDS
     config["__layerNames"] = list(LEGEND_IDS.keys()) + [_RAW_TRACKS]
     config["__panelIds"] = [pid for pid in _panel_ids() if pid != config["panelId"]]
+    config["__hiddenIds"] = _panel_hidden_ids()
     config["__densityLayers"] = list(DENSITY_LAYER_NAMES)
     config["__defaultDensityLayer"] = DENSITY_MODE_LAYERS[DEFAULT_RASTER_MODE]
+    config["__activeMode"] = DEFAULT_RASTER_MODE
     config["__modeLayers"] = [
         {"mode": mode, "layer": layer} for mode, layer in DENSITY_MODE_LAYERS.items()
     ]
@@ -492,6 +565,11 @@ def test_control_panel_toggles_update_legend_via_overlay_events(node_available, 
         centre=[37.0, -122.0],
         home=home,
         layer_groups=build_layer_group_config(_overlay_layers(), has_tracks=True),
+        advanced=build_advanced_config(
+            DEFAULT_RASTER_MODE,
+            overlay_layers=_overlay_layers(),
+            default_opacity=0.85,
+        ),
     )
     panel_cfg = json.loads(panel.config_json)
 

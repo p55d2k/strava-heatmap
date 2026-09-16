@@ -19,21 +19,28 @@ CARTO_STYLE_LABELS = {
 # Density concept layers. They render alternative views of the same GPS data
 # on different scales, so they form a mutually-exclusive (radio) group in the
 # panel — only one is shown at a time:
-#   * "GPS Density (Time Spent)"      — decay-weighted pass counts (log scale;
-#     DECAY_FACTOR), so brightness reflects time spent on each path.
-#   * "GPS Density (Raw Passes)"      — every GPS point increments its cell.
-#   * "GPS Density (Unique Visits)"   — each activity contributes max 1 per
-#     cell (pure coverage per activity).
+#   * "GPS Density"                   — the panel's single density toggle. It
+#     binds to whichever raster-mode layer is currently selected in the
+#     Advanced section's dropdown (Time Spent by default).
 #   * "Coverage (Places Visited)"     — fraction of all activities that
 #     visited each cell (percentage-of-activities normalization).
-# The three "GPS Density (...)" layers are the SAME raster data viewed through
-# the three rasterization modes (see src/rasterizer.py::RASTER_MODES); all are
-# pre-computed at build time and selectable in the panel without re-rasterizing.
+# The three per-mode "GPS Density (...)" layers (TIME_SPENT_LAYER, "GPS Density
+# (Raw Passes)", "GPS Density (Unique Visits)") are the SAME data viewed
+# through the three rasterization modes (see src/rasterizer.py::RASTER_MODES);
+# all are pre-computed at build time and swapped client-side by the panel's
+# Advanced dropdown without re-rasterizing.
 TIME_SPENT_LAYER = "GPS Density (Time Spent)"
 COVERAGE_LAYER = "Coverage (Places Visited)"
+# The single "GPS Density" concept shown in the panel's Heatmap radio group.
+# It is a virtual layer name: no overlay is registered under it; panel.js
+# resolves it to the raster-mode layer selected in the Advanced dropdown.
+DENSITY_VIRTUAL_LAYER = "GPS Density"
 
 # One layer name per rasterization mode (keys mirror RASTER_MODES in
 # src/rasterizer.py; the default "decay" keeps the historical layer name).
+# These are the overlay names baked at build time; the panel presents them
+# through ONE "GPS Density" toggle (DENSITY_VIRTUAL_LAYER) plus the Advanced
+# dropdown, never as separate toggles.
 DENSITY_MODE_LAYERS = {
     "decay": TIME_SPENT_LAYER,
     "raw-count": "GPS Density (Raw Passes)",

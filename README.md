@@ -4,7 +4,7 @@ A custom fork of the original Strava Activity Heatmap project by [Sam Wilson](ht
 
 Turns a Strava data export into an interactive heatmap. No API needed just for the data - just the zip file Strava lets you download. (A free CARTO maps key is required for the basemap tiles.)
 
-The output is a single HTML file with eight layers — three GPS-density views (one per raster mode), a coverage layer, and four metrics:
+The output is a single HTML file with eight layers — three GPS-density views (one per raster mode, swapped by the panel's **Advanced** dropdown), a coverage layer, and four metrics:
 
 | Layer                      | Colour         | Shows                                              |
 | -------------------------- | -------------- | -------------------------------------------------- |
@@ -22,11 +22,15 @@ The three **GPS Density (…)** layers are the same data rasterized three ways (
 them in the panel is instant. **Coverage (Places Visited)** always counts each
 cell once per activity, regardless of `DECAY_FACTOR`.
 
-In the on-map control panel, the density concept layers form a mutually-exclusive
-radio group (only one can be shown at a time — stacking them produces no
-meaningful result). The four metric layers (**Pace**, **Heart rate**,
-**Gradient absolute**, **Gradient change**) can each be toggled on and overlaid
-on the density heatmap.
+In the on-map control panel, the **Heatmap** group shows just two density
+concepts as a mutually-exclusive radio pair (only one can be shown at a time —
+stacking them produces no meaningful result): **GPS Density** and **Coverage
+(Places Visited)**. The single **GPS Density** row is bound to whichever
+rasterization mode is picked in the collapsible **Advanced** section's dropdown
+(**Time Spent** / **Raw Passes** / **Unique Visits**), so switching modes is an
+instant swap of the pre-baked layer. The four metric layers (**Pace**, **Heart
+rate**, **Gradient absolute**, **Gradient change**) can each be toggled on and
+overlaid on the density heatmap.
 
 Raw GPS tracks are a separate checkbox. The home location is marked with a
 google-maps-style pin that scales with zoom — it is on by default and can be

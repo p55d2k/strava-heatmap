@@ -26,11 +26,17 @@ from jinja2 import Template as JinjaTemplate
 from src.map_builder.constants import (
     CARTO_STYLE_LABELS,
     CARTO_STYLES,
+    COVERAGE_LAYER,
     DEFAULT_CARTO_STYLE,
+    DEFAULT_RASTER_MODE,
     DENSITY_LAYER_NAMES,
+    DENSITY_MODE_LAYERS,
+    DENSITY_VIRTUAL_LAYER,
     INDEPENDENT_LAYER_NAMES,
     LEGEND_IDS,
     METRIC_LAYER_NAMES,
+    RASTER_MODE_LABELS,
+    RASTER_MODES,
     TRACK_OPACITY,
 )
 
@@ -90,9 +96,12 @@ def build_layer_group_config(
     """Build the ``layerGroups`` config consumed by ``assets/panel.js``.
 
     The layer ``mode`` controls how the panel presents toggles for each group:
-    * ``Heatmap`` (radio) — the two GPS density concept layers (Time Spent /
-      Coverage) are mutually exclusive (only one can be visible at a time)
-      because stacking them produces no meaningful result.
+    * ``Heatmap`` (radio) — the two density *concepts* — "GPS Density" and
+      "Coverage (Places Visited)" — are mutually exclusive (only one can be
+      visible at a time) because stacking them produces no meaningful result.
+      "GPS Density" is a virtual row: it binds to whichever raster-mode layer
+      (Time Spent / Raw Passes / Unique Visits) is selected in the Advanced
+      section's dropdown (see :func:`build_advanced_config`).
     * ``Metrics`` (check) — the distinct analysis metrics (pace, HR, gradients)
       that may each be toggled independently.
     * ``Raw GPS tracks`` (check) — independent checkbox overlay.
@@ -114,11 +123,12 @@ def build_layer_group_config(
     """
     density = set(DENSITY_LAYER_NAMES)
     metrics = set(metric_layer_names or METRIC_LAYER_NAMES)
-    # The two GPS density concept layers (Time Spent / Coverage) belong in the
-    # "Heatmap" group only, never in "Metrics". A caller may pass an all-inclusive
-    # list (e.g. INDEPENDENT_LAYER_NAMES) as ``metric_layer_names`` for another
-    # purpose; without this guard those layers would be bucketed into BOTH groups
-    # and the panel would render duplicate toggles and duplicate opacity sliders.
+    # The density concept layers (one GPS Density layer per raster mode plus
+    # Coverage) belong in the "Heatmap" group only, never in "Metrics". A caller
+    # may pass an all-inclusive list (e.g. INDEPENDENT_LAYER_NAMES) as
+    # ``metric_layer_names`` for another purpose; without this guard those layers
+    # would be bucketed into BOTH groups and the panel would render duplicate
+    # toggles and duplicate opacity sliders.
     metrics -= density
     groups: list[dict] = []
 
@@ -140,8 +150,20 @@ def build_layer_group_config(
     def _item(name: str, visible: bool) -> dict:
         return {"name": name, "visible": visible, "opacity": map_opacity, "label": name}
 
-    density_layers = [
-        _item(name, visible) for name, _, visible in overlay_layers if name in density
+    # The Heatmap group presents the two density CONCEPTS, not the per-mode
+    # layers: one virtual "GPS Density" row (panel.js binds it to whichever
+    # raster-mode layer the Advanced dropdown selects) plus "Coverage". The
+    # per-mode overlays never appear as their own toggles. The row's visibility
+    # is inherited from whichever mode layer is currently visible, so first
+    # paint matches the configured raster mode.
+    mode_visibility = {name: visible for name, _, visible in overlay_layers if name in density}
+    concept_layers = [
+        {
+            "name": DENSITY_VIRTUAL_LAYER,
+            "visible": any(mode_visibility.values()),
+            "opacity": map_opacity,
+        },
+        _item(COVERAGE_LAYER, bool(mode_visibility.get(COVERAGE_LAYER, False))),
     ]
     metric_layers = [_item(name, visible) for name, _, visible in overlay_layers if name in metrics]
     known = density | metrics
@@ -149,14 +171,82 @@ def build_layer_group_config(
         _item(name, visible) for name, _, visible in overlay_layers if name not in known
     ]
 
-    if density_layers:
-        groups.append({"label": "Heatmap", "mode": "radio", "layers": density_layers})
+    if mode_visibility:
+        groups.append({"label": "Heatmap", "mode": "radio", "layers": concept_layers})
     if metric_layers:
         groups.append({"label": "Metrics", "mode": "check", "layers": metric_layers})
     if other_layers:
         groups.append({"label": "Overlays", "mode": "check", "layers": other_layers})
 
     return groups
+
+
+def build_advanced_config(
+    raster_mode: str = DEFAULT_RASTER_MODE,
+    *,
+    modes: list[str] | None = None,
+    density_layers: dict[str, str] | None = None,
+    density_layer_names: list[str] | None = None,
+    default_opacity: float = 0.85,
+    overlay_layers: list[tuple[str, str, bool]] | None = None,
+) -> dict:
+    """Build the ``advanced`` config consumed by ``assets/panel.js``.
+
+    Drives the collapsible "Advanced" section of the control panel, which
+    exposes a dropdown for switching the rasterization mode of the GPS Density
+    heatmap. The modes all map to overlay layers that are pre-baked at build
+    time (see ``generate_layer_uris``), so switching is instant — panel.js just
+    swaps which FeatureGroup is on the map.
+
+    Args:
+        raster_mode: Rasterization mode selected at first paint.
+        modes: Mode keys offered in the dropdown. Defaults to ``RASTER_MODES``.
+        density_layers: Mapping from mode key to the overlay layer name it
+            displays. Defaults to ``DENSITY_MODE_LAYERS``.
+        density_layer_names: The per-mode layer names (exposed to the panel so
+            the virtual "GPS Density" row and its shared slider can drive all
+            of them). Defaults to the values of ``density_layers``.
+        default_opacity: Fallback opacity (0.0-1.0) for layers absent from
+            ``overlay_layers``.
+        overlay_layers: The ``(name, image_uri, visible)`` tuples handed to
+            ``build_map``; used to sync each mode layer's initial visibility.
+
+    Returns:
+        ``{"modes", "densityLayerNames", "active"}`` for the panel config.
+    """
+    layer_map = dict(density_layers if density_layers is not None else DENSITY_MODE_LAYERS)
+    mode_keys = list(modes if modes is not None else RASTER_MODES)
+    layer_names = list(
+        density_layer_names
+        if density_layer_names is not None
+        else [layer_map[mode] for mode in mode_keys]
+    )
+    visibility = {name: visible for name, _, visible in (overlay_layers or [])}
+    _validate_raster_mode_choice(raster_mode, mode_keys)
+
+    return {
+        "modes": [
+            {
+                "key": mode,
+                "label": RASTER_MODE_LABELS.get(mode, mode),
+                "layer": layer_map[mode],
+                "visible": bool(visibility.get(layer_map[mode], False)),
+                "opacity": default_opacity,
+            }
+            for mode in mode_keys
+            if mode in layer_map
+        ],
+        "densityLayerNames": layer_names,
+        "active": raster_mode,
+    }
+
+
+def _validate_raster_mode_choice(raster_mode: str, mode_keys: list[str]) -> None:
+    """Raise ``ValueError`` when ``raster_mode`` is not one of ``mode_keys``."""
+    if raster_mode not in mode_keys:
+        raise ValueError(
+            f"Unknown raster_mode: {raster_mode!r}. Expected one of: {', '.join(mode_keys)}"
+        )
 
 
 class ControlPanel(MacroElement):
@@ -204,6 +294,7 @@ class ControlPanel(MacroElement):
         panel_id: str = "heatmap-control-panel",
         legend_id: str = "heatmap-legend",
         layer_groups: list[dict] | None = None,
+        advanced: dict | None = None,
     ):
         """Initialize the ControlPanel.
 
@@ -221,6 +312,8 @@ class ControlPanel(MacroElement):
             legend_id: DOM id of the legend container toggled by the panel.
             layer_groups: ``layerGroups`` config for the panel's layer toggles;
                 see :func:`build_layer_group_config`.
+            advanced: ``advanced`` config for the collapsible Advanced section
+                (rasterization-mode dropdown); see :func:`build_advanced_config`.
         """
         super().__init__()
         self._name = "ControlPanel"
@@ -239,6 +332,7 @@ class ControlPanel(MacroElement):
             "zoomStart": zoom_start,
             "legendId": legend_id,
             "layerGroups": layer_groups or [],
+            "advanced": advanced or {},
         }
         self.config_json = json.dumps(config)
 

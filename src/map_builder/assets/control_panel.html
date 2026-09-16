@@ -1,7 +1,10 @@
 <!-- Heatmap control panel markup.
      Layer opacity sliders are rendered client-side by assets/panel.js (one per
      independent layer, one shared slider per mutually-exclusive radio group)
-     and are collapsed by default ("Layer opacity" toggle). -->
+     and are collapsed by default ("Layer opacity" toggle). The "Advanced"
+     section (rasterization-mode dropdown + Home marker toggle) sits below the
+     Layer opacity section and is collapsed by default too — the Home marker
+     toggle collapses together with it. -->
 <div id="heatmap-control-panel" class="heatmap-control-panel hcp-opacity-collapsed" aria-label="Map controls">
   <div class="hcp-header">
     <span>Map Controls</span>
@@ -14,18 +17,31 @@
     <div class="hcp-section hcp-section-layers">
       <div id="hcp-layers"></div>
     </div>
-    <div class="hcp-section hcp-section-home" id="hcp-home-section" hidden>
-      <label class="hcp-layer-row">
-        <input type="checkbox" id="hcp-home-marker" checked />
-        <span>Home marker</span>
-      </label>
-    </div>
     <div class="hcp-section hcp-section-opacity">
       <button type="button" id="hcp-opacity-toggle" class="hcp-opacity-toggle"
               aria-expanded="false" title="Show / hide layer opacity sliders">
         <span>Layer opacity</span> <span class="hcp-caret">&#9656;</span>
       </button>
       <div id="hcp-opacity-list"></div>
+    </div>
+    <div class="hcp-section hcp-section-advanced">
+      <button type="button" id="hcp-advanced-toggle" class="hcp-advanced-toggle"
+              aria-expanded="false" title="Show / hide rasterization options and the home marker toggle">
+        <span>Advanced</span> <span class="hcp-caret">&#9656;</span>
+      </button>
+      <div id="hcp-advanced-body" hidden>
+        <div class="hcp-advanced-row">
+          <label class="hcp-advanced-label" for="hcp-density-mode">Heatmap raster mode</label>
+          <select id="hcp-density-mode" class="hcp-select" title="How GPS Density is rasterized"></select>
+        </div>
+        <!-- The Home marker toggle collapses together with the Advanced section. -->
+        <div class="hcp-section hcp-section-home" id="hcp-home-section" hidden>
+          <label class="hcp-layer-row">
+            <input type="checkbox" id="hcp-home-marker" checked />
+            <span>Home marker</span>
+          </label>
+        </div>
+      </div>
     </div>
     <div class="hcp-section hcp-actions">
       <button type="button" id="hcp-fit">Fit map</button>

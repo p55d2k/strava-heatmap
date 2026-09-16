@@ -21,6 +21,7 @@ from src.map_builder.constants import (
     DEFAULT_RASTER_MODE,
     DENSITY_LAYER_NAMES,
     DENSITY_MODE_LAYERS,
+    DENSITY_VIRTUAL_LAYER,
     EXCLUSIVE_LAYER_NAMES,
     INDEPENDENT_LAYER_NAMES,
     LEGEND_IDS,
@@ -32,6 +33,7 @@ from src.map_builder.constants import (
 from src.map_builder.control import (
     ControlPanel,
     ExclusiveLayerControl,
+    build_advanced_config,
     build_control_panel_html,
     build_layer_group_config,
     carto_basemap_choices,
@@ -65,6 +67,7 @@ __all__ = [
     "INDEPENDENT_LAYER_NAMES",
     "TIME_SPENT_LAYER",
     "COVERAGE_LAYER",
+    "DENSITY_VIRTUAL_LAYER",
     "DENSITY_MODE_LAYERS",
     "LEGEND_IDS",
     "DEFAULT_LEGEND_STYLES",
@@ -87,6 +90,7 @@ __all__ = [
     "controls_css",
     "build_control_panel_html",
     "build_layer_group_config",
+    "build_advanced_config",
     "control_panel_script",
     "carto_basemap_choices",
     # Map builder

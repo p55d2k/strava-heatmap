@@ -15,6 +15,7 @@ from jinja2 import Template
 
 from src.map_builder.constants import (
     DEFAULT_CARTO_STYLE,
+    DEFAULT_RASTER_MODE,
     INDEPENDENT_LAYER_NAMES,
     METRIC_LAYER_NAMES,
     TRACK_OPACITY,
@@ -22,6 +23,7 @@ from src.map_builder.constants import (
 from src.map_builder.control import (
     ControlPanel,
     ExclusiveLayerControl,
+    build_advanced_config,
     build_layer_group_config,
     controls_css,
 )
@@ -162,6 +164,7 @@ def build_map(
     legend_ids: dict[str, str] | None = None,
     home: list[float] | None = None,
     control_panel: bool = True,
+    raster_mode: str = DEFAULT_RASTER_MODE,
     progress_callback=None,
 ) -> None:
     """Build and save the Folium map.
@@ -190,6 +193,9 @@ def build_map(
         control_panel: When True, embed the in-HTML control panel (basemap
             style switcher, layer toggles, opacity sliders, fit/reset, legend
             toggle).
+        raster_mode: Rasterization mode pre-selected in the control panel's
+            Advanced dropdown (decides which GPS Density layer is visible at
+            first paint).
         progress_callback: Optional callable invoked with a step count.
     """
     map_location = home if home is not None else centre
@@ -265,6 +271,11 @@ def build_map(
                 has_tracks=bool(tracks),
                 metric_layer_names=METRIC_LAYER_NAMES,
                 map_opacity=map_opacity,
+            ),
+            advanced=build_advanced_config(
+                raster_mode=raster_mode,
+                overlay_layers=layers,
+                default_opacity=map_opacity,
             ),
         ).add_to(m)
 

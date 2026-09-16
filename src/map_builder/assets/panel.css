@@ -112,17 +112,7 @@
   gap: 4px;
 }
 
-/* Density-mode dropdown */
-.heatmap-control-panel .hcp-select {
-  display: block;
-  width: 100%;
-  background: var(--hcp-control-bg);
-  color: var(--hcp-text);
-  border: 1px solid var(--hcp-control-border);
-  border-radius: 6px;
-  padding: 5px 6px;
-  font-size: 12px;
-}
+/* Density-mode dropdown select styling lives with the Advanced section below. */
 
 .heatmap-control-panel .hcp-segment {
   flex: 1;
@@ -152,30 +142,8 @@
   flex-direction: column;
 }
 
-.heatmap-control-panel .hcp-opacity-toggle {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  width: 100%;
-  background: none;
-  border: 1px solid var(--hcp-control-border);
-  border-radius: 6px;
-  color: var(--hcp-text);
-  cursor: pointer;
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.3px;
-  padding: 6px 8px;
-  margin-bottom: 6px;
-}
-
-.heatmap-control-panel .hcp-opacity-toggle:hover {
-  color: var(--hcp-text-strong);
-  border-color: var(--hcp-accent);
-}
-
-.heatmap-control-panel .hcp-section-opacity:last-child {
+.heatmap-control-panel .hcp-section-opacity:last-child,
+.heatmap-control-panel .hcp-section-advanced:last-child {
   margin-bottom: 0;
 }
 
@@ -204,6 +172,85 @@
 .heatmap-control-panel .hcp-layer-row input[type="radio"] {
   accent-color: var(--hcp-accent);
   flex: none;
+}
+
+/* Collapsible section toggles — "Layer opacity" and "Advanced" share the same
+   look: a full-width header button with a caret that rotates when expanded. */
+.heatmap-control-panel .hcp-opacity-toggle,
+.heatmap-control-panel .hcp-advanced-toggle {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  background: none;
+  border: 1px solid var(--hcp-control-border);
+  border-radius: 6px;
+  color: var(--hcp-text);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  padding: 6px 8px;
+  margin-bottom: 6px;
+}
+
+.heatmap-control-panel .hcp-opacity-toggle:hover,
+.heatmap-control-panel .hcp-advanced-toggle:hover {
+  color: var(--hcp-text-strong);
+  border-color: var(--hcp-accent);
+}
+
+.heatmap-control-panel .hcp-caret {
+  transition: transform 0.15s ease;
+}
+
+.heatmap-control-panel .hcp-advanced-toggle[aria-expanded="true"] .hcp-caret {
+  transform: rotate(90deg);
+}
+
+/* Advanced section: rasterization-mode dropdown + Home marker toggle. */
+.heatmap-control-panel .hcp-advanced-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 2px 0 4px;
+}
+
+.heatmap-control-panel .hcp-section-home {
+  padding-top: 4px;
+  margin-bottom: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.heatmap-control-panel .hcp-advanced-label {
+  color: var(--hcp-text);
+  font-size: 10.5px;
+  line-height: 1.2;
+}
+
+.heatmap-control-panel .hcp-select {
+  display: block;
+  width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+  background-color: var(--hcp-control-bg);
+  background-image: linear-gradient(45deg, transparent 50%, var(--hcp-text-muted) 50%),
+    linear-gradient(135deg, var(--hcp-text-muted) 50%, transparent 50%);
+  background-position: calc(100% - 14px) 55%, calc(100% - 9px) 55%;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  color: var(--hcp-text);
+  border: 1px solid var(--hcp-control-border);
+  border-radius: 6px;
+  padding: 5px 24px 5px 8px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.heatmap-control-panel .hcp-select option {
+  background: #161616;
+  color: var(--hcp-text);
 }
 
 /* Per-layer opacity sliders, grouped in the collapsible opacity section. */
