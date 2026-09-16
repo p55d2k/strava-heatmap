@@ -1277,6 +1277,33 @@ class TestConstants:
         assert "<style>" in css
         assert "leaflet-control-layers" in css
 
+    def test_folium_map_sizing_beats_folium_id_rule(self):
+        """The sidebar map-offset sizing must survive Folium's #map_<hash> rule.
+
+        Folium emits ``#map_<hash> { width: 100%; height: 100% }`` for the map
+        container. An ID selector outspecifies the panel's ``.folium-map`` class
+        rule, so the sizing properties need ``!important`` — without it the
+        margin-left applies but the width silently does not, the container ends
+        up sidebar-width too wide, and Leaflet centres the home location inside
+        the hidden off-screen overflow (marker right of the visible centre).
+        """
+        css = controls_css()
+        # Extract the .folium-map rule block and check each sizing declaration
+        # carries !important (so it wins over Folium's ID rule regardless of
+        # the hash suffix in the id).
+        import re
+
+        match = re.search(r"\.folium-map\s*\{([^}]*)\}", css)
+        assert match, ".folium-map rule missing from panel.css"
+        body = match.group(1)
+        for prop in ("margin-left", "width", "height"):
+            decl = re.search(rf"{prop}\s*:\s*([^;]+);", body)
+            assert decl, f"{prop} declaration missing from .folium-map rule"
+            assert decl.group(1).rstrip().endswith("!important"), (
+                f"{prop} must be !important to beat Folium's #map_<hash> ID rule; "
+                f"got: {decl.group(1).strip()}"
+            )
+
     def test_exclusive_layer_control_class_exists(self):
         """ExclusiveLayerControl class should exist and be instantiable."""
         assert ExclusiveLayerControl is not None

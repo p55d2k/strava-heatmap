@@ -53,11 +53,18 @@
 }
 
 /* Push the Leaflet map (Folium's .folium-map container) out from under the
-   sidebar so it occupies the rest of the viewport rather than being covered. */
+   sidebar so it occupies the rest of the viewport rather than being covered.
+   The !important flags are required: Folium also emits an ID rule for the map
+   container (#map_<hash> { width: 100%; height: 100% }), and an ID selector
+   outspecifies this class rule. Without !important the margin-left survives
+   but the width does not, so the container ends up 300px too wide — its right
+   edge hangs off-screen and Leaflet centres the map (and the home location)
+   inside the hidden overflow, pushing the home marker to the right of the
+   visible viewport. */
 .folium-map {
-  margin-left: var(--hcp-sidebar-width, 300px);
-  width: calc(100% - var(--hcp-sidebar-width, 300px));
-  height: 100vh;
+  margin-left: var(--hcp-sidebar-width, 300px) !important;
+  width: calc(100% - var(--hcp-sidebar-width, 300px)) !important;
+  height: 100vh !important;
 }
 
 .heatmap-control-panel .hcp-header {

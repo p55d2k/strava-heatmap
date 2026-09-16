@@ -183,7 +183,11 @@ function makeMap() {
     eachLayer(fn) { onMap.forEach((l) => fn(l)); },
     on(evt, fn) { (handlers[evt] = handlers[evt] || []).push(fn); },
     fire(evt, data) { (handlers[evt] || []).forEach((f) => f(data || {})); },
-    fitBounds() {}, setView() {},
+    fitBounds() {},
+    // Record setView calls so the Reset-button scenario can assert the view
+    // re-centres on the home location.
+    views: [],
+    setView(centre, zoom) { map.views.push([centre, zoom]); },
   };
   return map;
 }
@@ -315,6 +319,19 @@ function toggle(layerName, checked) {
   }
   ok(rowVisible("GPS Density (Time Spent)") === tsBeforeHomeToggle,
      "home marker toggle does not disturb legend rows");
+
+  // Scenario H - Reset re-centres the home location (falling back to the data
+  // bounding-box centre when no home was configured) and restores zoomStart.
+  const resetBtn = byId.get("hcp-reset");
+  assert.ok(resetBtn, "reset button exists");
+  resetBtn.dispatch("click");
+  const expectedReset = config.home || config.centre;
+  const lastView = map.views[map.views.length - 1];
+  ok(Array.isArray(lastView) && lastView[0][0] === expectedReset[0] &&
+     lastView[0][1] === expectedReset[1],
+     "Reset centres the home location (or the centre fallback)");
+  ok(Array.isArray(lastView) && lastView[1] === config.zoomStart,
+     "Reset restores the initial zoom level");
 
 // Scenario F - per-layer opacity sliders affect only their own layer, and the
   // "Opacity" toggle collapses every slider at once.
