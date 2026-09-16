@@ -247,9 +247,10 @@ class ExclusiveLayerControl(MacroElement):
     """Injects JavaScript to show only the legend rows for the layers currently
     visible on the map.
 
-    The two GPS density concepts (Heatmap group) are mutually exclusive radio
-    layers; ``exclusive_names`` drives that density legend row behaviour. The
-    remaining concept/metric layers (``metric_names``) are independent
+    The density concept layers (Heatmap group) are mutually exclusive radio
+    layers; ``exclusive_names`` drives that density legend row behaviour — one
+    legend row per raster-mode layer, each showing/hiding with its own layer.
+    The remaining concept/metric layers (``metric_names``) are independent
     checkboxes — adding/removing one shows/hides its own legend row without
     affecting any other row. Defaults for both arguments are the empty list and
     ``INDEPENDENT_LAYER_NAMES`` respectively.
@@ -368,8 +369,8 @@ class ExclusiveLayerControl(MacroElement):
             legend_ids: Mapping from layer name to legend DOM element ID.
                 Defaults to LEGEND_IDS.
             metric_names: Layer names whose legend rows follow their on/off
-                state. Defaults to INDEPENDENT_LAYER_NAMES (the two density
-                concepts plus the four metrics).
+                state. Defaults to INDEPENDENT_LAYER_NAMES (the density concept
+                layers plus the four metrics).
         """
         super().__init__()
         self._name = "ExclusiveLayerControl"

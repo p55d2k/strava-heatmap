@@ -12,7 +12,9 @@ from PIL import Image
 
 from src.map_builder.constants import (
     COVERAGE_LAYER,
-    TIME_SPENT_LAYER,
+    DEFAULT_RASTER_MODE,
+    DENSITY_MODE_LAYERS,
+    RASTER_MODES,
 )
 
 
@@ -117,32 +119,38 @@ def generate_layer_uris(
     colormaps: dict,
     progress_callback=None,
     coverage_normalization: str = "max",
+    raster_mode: str = DEFAULT_RASTER_MODE,
 ) -> list[tuple[str, str, bool]]:
     """Generate data URIs for all map layers.
 
-    Two GPS density concept layers are produced — "GPS Density (Time Spent)"
-    (decay-weighted pass counts on a log scale, shown by default) and "Coverage
-    (Places Visited)" (percentage of activities visiting each cell, hidden by
-    default) — plus the four metric layers. Every layer is an independent
-    (checkbox) overlay the control panel can toggle at runtime.
+    One GPS Density layer per rasterization mode is produced ("Time Spent" =
+    decay-weighted pass counts, "Raw Passes" = every GPS point counted, "Unique
+    Visits" = each activity contributes max 1 per cell) — each baked from its
+    own normalized grid so switching between them in the panel shows a genuinely
+    different image. The mode matching ``raster_mode`` is shown by default; the
+    others stay hidden until selected. "Coverage (Places Visited)" (percentage
+    of activities visiting each cell) and the four metric layers follow.
 
     Args:
         coverage_normalization: Basis for the "Coverage (Places Visited)" grid
             — ``"pct"`` shows the percentage of activities that visited each
             cell, ``"max"`` scales relative to the most-visited cell (legacy).
+        raster_mode: Rasterization mode whose GPS Density layer is visible at
+            first paint (the panel's radio group handles switching).
     """
     layers: list[tuple[str, str, bool]] = []
 
-    # GPS Density (Time Spent) — decay-weighted pass counts (log scale).
-    layers.append(
-        (
-            TIME_SPENT_LAYER,
-            _count_uri(normalized["count_log_norm"], colormaps["cmap_count"]),
-            True,
+    # One GPS Density layer per raster mode, each from its own grid.
+    for mode in RASTER_MODES:
+        layers.append(
+            (
+                DENSITY_MODE_LAYERS[mode],
+                _count_uri(normalized["count_log_norms"][mode], colormaps["cmap_count"]),
+                mode == raster_mode,
+            )
         )
-    )
     if progress_callback:
-        progress_callback(1)  # GPS Density (Time Spent)
+        progress_callback(1)  # GPS Density layers (one per raster mode)
 
     # Coverage (Places Visited) — fraction of activities visiting each cell.
     _coverage_grid = (

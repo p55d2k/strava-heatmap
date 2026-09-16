@@ -16,16 +16,48 @@ CARTO_STYLE_LABELS = {
     "dark_all": "Dark",
 }
 
-# The two primary heatmap concept layers. They render alternative views of the
-# same GPS data on different scales, so they form a mutually-exclusive (radio)
-# pair in the panel — only one is shown at a time:
-#   * "GPS Density (Time Spent)"  — decay-weighted pass counts (log scale), so
-#     the brightness reflects how much time you've spent on each path.
-#   * "Coverage (Places Visited)" — fraction of all activities that visited
-#     each cell, showing how widely you've covered the area.
+# Density concept layers. They render alternative views of the same GPS data
+# on different scales, so they form a mutually-exclusive (radio) group in the
+# panel — only one is shown at a time:
+#   * "GPS Density (Time Spent)"      — decay-weighted pass counts (log scale;
+#     DECAY_FACTOR), so brightness reflects time spent on each path.
+#   * "GPS Density (Raw Passes)"      — every GPS point increments its cell.
+#   * "GPS Density (Unique Visits)"   — each activity contributes max 1 per
+#     cell (pure coverage per activity).
+#   * "Coverage (Places Visited)"     — fraction of all activities that
+#     visited each cell (percentage-of-activities normalization).
+# The three "GPS Density (...)" layers are the SAME raster data viewed through
+# the three rasterization modes (see src/rasterizer.py::RASTER_MODES); all are
+# pre-computed at build time and selectable in the panel without re-rasterizing.
 TIME_SPENT_LAYER = "GPS Density (Time Spent)"
 COVERAGE_LAYER = "Coverage (Places Visited)"
-DENSITY_LAYER_NAMES = [TIME_SPENT_LAYER, COVERAGE_LAYER]
+
+# One layer name per rasterization mode (keys mirror RASTER_MODES in
+# src/rasterizer.py; the default "decay" keeps the historical layer name).
+DENSITY_MODE_LAYERS = {
+    "decay": TIME_SPENT_LAYER,
+    "raw-count": "GPS Density (Raw Passes)",
+    "binary-per-activity": "GPS Density (Unique Visits)",
+}
+
+DENSITY_LAYER_NAMES = [
+    DENSITY_MODE_LAYERS["decay"],
+    DENSITY_MODE_LAYERS["raw-count"],
+    DENSITY_MODE_LAYERS["binary-per-activity"],
+    COVERAGE_LAYER,
+]
+
+# Rasterization modes accepted by the pipeline and offered in the panel; the
+# default ("decay") comes first.
+RASTER_MODES = ("decay", "raw-count", "binary-per-activity")
+DEFAULT_RASTER_MODE = "decay"
+
+# Human-friendly labels for the raster modes (used in legend titles).
+RASTER_MODE_LABELS = {
+    "decay": "Time Spent",
+    "raw-count": "Raw Passes",
+    "binary-per-activity": "Unique Visits",
+}
 
 # Distinct analysis metrics that may each be overlaid independently; these are
 # rendered as independent checkboxes in the layer control.
@@ -54,11 +86,11 @@ TRACK_OPACITY = 0.4
 
 
 # Maps each layer name to its corresponding legend DIV id. The ids mirror the
-# ones produced by ``LegendBuilder.default_rows`` so the dynamic layer control
+# ones produced by ``LegendBuilder.default_rows`` (one GPS Density row per
+# raster-mode layer, id ``legend-density-<mode>``) so the dynamic layer control
 # can show/hide the right legend row.
 def _build_legend_ids() -> dict[str, str]:
-    return {
-        TIME_SPENT_LAYER: "legend-time-spent",
+    return {layer: f"legend-density-{mode}" for mode, layer in DENSITY_MODE_LAYERS.items()} | {
         COVERAGE_LAYER: "legend-coverage",
         "Pace (average)": "legend-pace-avg",
         "Heart rate (average)": "legend-heart-rate-avg",

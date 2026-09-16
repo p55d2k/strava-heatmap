@@ -253,6 +253,7 @@ def run_generate(args: argparse.Namespace) -> None:
             config.max_consecutive_same_cell,
             grids,
             config.decay_factor,
+            raster_mode=config.raster_mode,
         )
 
         # Stage 4: Computing Normalized Grids (6 steps: count, speed, hr, gradient, elevation, alpha)
@@ -264,10 +265,11 @@ def run_generate(args: argparse.Namespace) -> None:
                 config,
                 n_activities=n_activities,
                 progress_callback=pbar.update,
+                raster_mode=config.raster_mode,
             )
         print_success("Grid normalization complete")
 
-        # Stage 5: Generating Map Layers (1 colormap step + 7 layer steps: two GPS density concept layers + four metrics)
+        # Stage 5: Generating Map Layers (1 colormap step + 8 layer steps: one GPS density layer per raster mode + Coverage + four metrics)
         print_stage("Stage 5: Generating Map Layers")
         with tqdm(total=8, desc="Generating layers", unit="layer", disable=not args.dev) as pbar:
             colormaps = create_colormaps()
@@ -276,6 +278,7 @@ def run_generate(args: argparse.Namespace) -> None:
                 normalized,
                 colormaps,
                 coverage_normalization=config.coverage_normalization,
+                raster_mode=config.raster_mode,
                 progress_callback=pbar.update,
             )
         print_success(f"Created {len(layers)} map layers")

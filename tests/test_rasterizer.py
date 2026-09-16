@@ -636,6 +636,127 @@ class TestRasterizeTracks:
         assert count == 2
 
 
+class TestRasterModes:
+    """Tests for raster_mode selection (raw-count / decay / binary-per-activity)."""
+
+    def setup_method(self):
+        """Set up transformers/grids: 6 points of one activity all in the same cell."""
+        self.to_wm = MagicMock()
+        self.to_utm = MagicMock()
+        self.x_min_wm = -13500000.0
+        self.y_max_wm = 5700000.0
+
+        n_points = 6
+        self.to_utm.transform.return_value = (
+            np.full(n_points, 500100.0),
+            np.full(n_points, 5000100.0),
+        )
+        self.to_wm.transform.return_value = (
+            np.full(n_points, -13499950.0),
+            np.full(n_points, 5699950.0),
+        )
+        self.tracks = [("track_laps", [[45.0, -122.0, None, None, 100.0]] * n_points)]
+
+        self.grids = self._fresh_grids()
+
+        self.config = MagicMock()
+        self.config.coverage_normalization = "max"
+
+    def _fresh_grids(self):
+        result = create_grids(
+            self.x_min_wm, self.x_min_wm + 1000, self.y_max_wm - 1000, self.y_max_wm, 10.0
+        )
+        return result
+
+    def _rasterize(self, raster_mode, tracks=None):
+        return rasterize_tracks(
+            tracks if tracks is not None else self.tracks,
+            self.to_wm,
+            self.to_utm,
+            500000.0,
+            5000000.0,
+            clip_m=None,
+            x_min_wm=self.x_min_wm,
+            y_max_wm=self.y_max_wm,
+            meters_per_pixel=10.0,
+            max_consecutive_same_cell=100,
+            decay_factor=0.9,
+            grids=self.grids,
+            raster_mode=raster_mode,
+        )
+
+    @pytest.mark.parametrize(
+        ("raster_mode", "expected_max_passes", "source_key"),
+        [
+            ("decay", 4, "count_norm"),  # 1+0.9+...+0.9^5 = 4.68559 -> int 4
+            ("raw-count", 6, "count_raw_norm"),  # every GPS point counted
+            ("binary-per-activity", 1, "unique_norm"),  # one activity -> max 1 per cell
+        ],
+    )
+    def test_mode_selects_primary_grid(self, raster_mode, expected_max_passes, source_key):
+        """The primary density output must come from the grid chosen by the mode."""
+        self._rasterize(raster_mode)
+        normalized = compute_normalized_grids(
+            self.grids, sigma=0.0, config=self.config, raster_mode=raster_mode
+        )
+
+        assert normalized["raster_mode"] == raster_mode
+        assert normalized["max_passes"] == expected_max_passes
+        # Primary normalized grids saturate at 1.0 for the visited cell.
+        assert normalized["count_norm"].max() == 1.0
+        assert normalized["count_log_norm"].max() == 1.0
+        # The primary grid is exactly the strategy grid the mode selects.
+        assert np.allclose(normalized["count_norm"], normalized[source_key])
+
+    def test_by_strategy_counts_independent_of_mode(self):
+        """max_passes_by_strategy reflects all strategies no matter the mode."""
+        self._rasterize("binary-per-activity")
+        normalized = compute_normalized_grids(
+            self.grids, sigma=0.0, config=self.config, raster_mode="binary-per-activity"
+        )
+        assert normalized["max_passes_by_strategy"] == {
+            "decay": 4,
+            "raw-count": 6,
+            "binary-per-activity": 1,
+        }
+
+    def test_modes_differ_across_activities(self):
+        """Three activities x 6 passes: raw=18, decay=14, binary=3 (per-cell max)."""
+        tracks = [
+            ("run_1", [[45.0, -122.0, None, None, 100.0]] * 6),
+            ("run_2", [[45.0, -122.0, None, None, 100.0]] * 6),
+            ("run_3", [[45.0, -122.0, None, None, 100.0]] * 6),
+        ]
+        expected = {"decay": 14, "raw-count": 18, "binary-per-activity": 3}
+        for mode, expected_max in expected.items():
+            self._rasterize(mode, tracks=tracks)
+            normalized = compute_normalized_grids(
+                self.grids, sigma=0.0, config=self.config, raster_mode=mode
+            )
+            assert normalized["raster_mode"] == mode
+            assert normalized["max_passes"] == expected_max
+            # Fresh grids for the next mode (normalization deletes its copies,
+            # but the tuple still references the painted arrays).
+            self.grids = self._fresh_grids()
+
+    def test_default_mode_is_decay(self):
+        """compute_normalized_grids defaults to the decay mode (current behavior)."""
+        self._rasterize("decay")
+        normalized = compute_normalized_grids(self.grids, sigma=0.0, config=self.config)
+        assert normalized["raster_mode"] == "decay"
+        assert normalized["max_passes"] == 4
+
+    def test_invalid_mode_rejected_by_rasterize_tracks(self):
+        """rasterize_tracks should fail fast on an unknown mode."""
+        with pytest.raises(ValueError, match="Unknown raster_mode"):
+            self._rasterize("bogus")
+
+    def test_invalid_mode_rejected_by_compute_normalized_grids(self):
+        """compute_normalized_grids should fail fast on an unknown mode."""
+        with pytest.raises(ValueError, match="Unknown raster_mode"):
+            compute_normalized_grids(self.grids, sigma=0.0, config=self.config, raster_mode="bogus")
+
+
 class TestComputeNormalizedGrids:
     """Tests for compute_normalized_grids function."""
 

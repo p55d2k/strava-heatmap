@@ -4,30 +4,30 @@ A custom fork of the original Strava Activity Heatmap project by [Sam Wilson](ht
 
 Turns a Strava data export into an interactive heatmap. No API needed just for the data - just the zip file Strava lets you download. (A free CARTO maps key is required for the basemap tiles.)
 
-The output is a single HTML file with six layers — two GPS-density concepts plus four metrics:
+The output is a single HTML file with eight layers — three GPS-density views (one per raster mode), a coverage layer, and four metrics:
 
-| Layer                     | Colour         | Shows                                              |
-| ------------------------- | -------------- | -------------------------------------------------- |
-| GPS Density (Time Spent)  | Orange         | Decay-weighted pass counts (log scale), so brightness reflects time spent on each path |
-| Coverage (Places Visited) | Orange         | Share of activities that visited each cell (a clean 1x–Nx gradient, no sqrt flattening) |
-| Pace (average)            | Blue           | Average pace - brighter = faster                   |
-| Heart rate (average)      | Red            | Average HR - brighter = higher                     |
-| Gradient (absolute)       | White          | Steepness - brighter = steeper                     |
-| Gradient (change)         | Green / purple | Direction - green = descending, purple = ascending |
+| Layer                      | Colour         | Shows                                              |
+| -------------------------- | -------------- | -------------------------------------------------- |
+| GPS Density (Time Spent)   | Orange         | Decay-weighted pass counts (log scale), so brightness reflects time spent per cell |
+| GPS Density (Raw Passes)   | Orange         | Every GPS point increments its cell (raw sample density) |
+| GPS Density (Unique Visits) | Orange        | Each activity contributes max 1 per cell (pure per-activity coverage) |
+| Coverage (Places Visited)  | Orange         | Share of activities that visited each cell (a clean 1x–Nx gradient, no sqrt flattening) |
+| Pace (average)             | Blue           | Average pace - brighter = faster                   |
+| Heart rate (average)       | Red            | Average HR - brighter = higher                     |
+| Gradient (absolute)        | White          | Steepness - brighter = steeper                     |
+| Gradient (change)          | Green / purple | Direction - green = descending, purple = ascending |
 
-The two density concepts are independent layers:
+The three **GPS Density (…)** layers are the same data rasterized three ways (see
+`RASTER_MODE` below); all three are baked at build time, so switching between
+them in the panel is instant. **Coverage (Places Visited)** always counts each
+cell once per activity, regardless of `DECAY_FACTOR`.
 
-- **GPS Density (Time Spent)** is shown by default and weights how often you
-  revisit a cell within a single activity using `DECAY_FACTOR` (0.0 counts each
-  cell once per activity for maximal spread; 1.0 counts every pass).
-- **Coverage (Places Visited)** always counts each cell once per activity,
-  regardless of `DECAY_FACTOR`.
+In the on-map control panel, the density concept layers form a mutually-exclusive
+radio group (only one can be shown at a time — stacking them produces no
+meaningful result). The four metric layers (**Pace**, **Heart rate**,
+**Gradient absolute**, **Gradient change**) can each be toggled on and overlaid
+on the density heatmap.
 
-In the on-map control panel, the two density concepts are a mutually-exclusive
-radio pair (only one can be shown at a time — stacking them produces no meaningful
-result), labelled **Time Spent** / **Places Visited** in the toggle. The four
-metric layers (**Pace**, **Heart rate**, **Gradient absolute**,
-**Gradient change**) can each be toggled on and overlaid on the density heatmap.
 Raw GPS tracks are a separate checkbox. The home location is marked with a
 google-maps-style pin that scales with zoom — it is on by default and can be
 hidden via the **Home marker** checkbox in the panel.
@@ -95,11 +95,17 @@ Key settings:
 - `RADIUS_KM` / `TRACK_CLIP_RADIUS_KM`: Filter radius around home
 - `CARTO_STYLE`: Basemap style — one of `"dark_all"` (default), `"light_all"`, or `"voyager"`
 - `MAX_CONSECUTIVE_SAME_CELL`: Maximum consecutive GPS points binned into the same grid cell before they are skipped (1–10, default `3`). Prevents a stationary stretch (e.g. a forgotten stop) from dominating the frequency layer.
-- `DECAY_FACTOR`: Geometric decay (0.0–1.0) applied to repeated passes of the same cell *within a single activity*. `DECAY_FACTOR = 0` counts each cell once per activity (maximal spread); `DECAY_FACTOR = 1` counts every pass (inflates intensity for loops / out-and-backs). Controls the **GPS Density (Time Spent)** layer only; **Coverage (Places Visited)** always counts each cell once per activity regardless of this value. Default: `0.5`.
+- `DECAY_FACTOR`: Geometric decay (0.0–1.0) applied to repeated passes of the same cell *within a single activity*. `DECAY_FACTOR = 0` counts each cell once per activity (maximal spread); `DECAY_FACTOR = 1` counts every pass (inflates intensity for loops / out-and-backs). Only used by the `"decay"` raster mode. Default: `0.5`.
+- `RASTER_MODE`: Which rasterization drives the **primary** density statistics (`max_passes` in the legend, log normalization). One of:
+  - `"raw-count"` — every GPS point increments its cell (raw sample density).
+  - `"decay"` (default) — exponential decay (`DECAY_FACTOR`) on repeated passes of the same cell within a single activity.
+  - `"binary-per-activity"` — each activity contributes max 1 per cell (pure coverage).
+
+  Regardless of the configured mode, **all three** GPS Density layers are always
+  generated and selectable in the panel; `RASTER_MODE` only decides which one is
+  visible at first paint.
 - `COVERAGE_NORMALIZATION`: How the **Coverage (Places Visited)** layer is scaled. `"pct"` (default) = each cell shows the percentage of all activities that visited it; `"max"` = each cell is scaled relative to the most-visited cell (legacy behavior). Default: `"pct"`.
-Two GPS density concept layers are always shown as independent toggles in the control panel:
-  - **GPS Density (Time Spent)** (default-on): decay-weighted pass counts on a log scale, driven by `DECAY_FACTOR`.
-  - **Coverage (Places Visited)**: each cell counted once per activity (pure coverage, no intensity from re-visits), on a linear scale by percentage of activities (or relative to max visits when `COVERAGE_NORMALIZATION: "max"`).
+The three GPS Density layers and the Coverage layer are shown as mutually-exclusive radio toggles in the control panel (only one density view at a time).
 
 4. Run:
 ```bash

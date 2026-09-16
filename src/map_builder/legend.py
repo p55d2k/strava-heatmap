@@ -23,7 +23,9 @@ from string import Template
 
 from src.map_builder.constants import (
     COVERAGE_LAYER,
-    TIME_SPENT_LAYER,
+    DENSITY_MODE_LAYERS,
+    RASTER_MODE_LABELS,
+    RASTER_MODES,
 )
 from src.map_builder.utils import build_style_string, cmap_to_css
 
@@ -125,20 +127,23 @@ class LegendBuilder:
     def default_rows(self) -> list[LegendRow]:
         """Return the default legend row definitions (configurable starting point)."""
         rows: list[LegendRow] = []
-        # GPS Density (Time Spent) — decay-weighted pass counts (log scale).
-        rows.append(
-            LegendRow(
-                row_id="legend-time-spent",
-                title="GPS Density",
-                gradient=lambda ctx: cmap_to_css(ctx.colormaps["cmap_count"]),
-                label_lo="1 pass",
-                label_hi=lambda ctx: f"{_max_passes(ctx, 'decay')} passes (log scale)",
-                layer_name=TIME_SPENT_LAYER,
-                # This layer is shown on the map by default, so its legend row
-                # should be visible on first paint (before the JS re-syncs it).
-                visible=True,
+        # GPS Density — one row per raster-mode layer. Each row is bound to its
+        # OWN layer name, so the standard layer-control sync shows/hides it
+        # with the layer; each reports its own mode's max-pass count. Only the
+        # default mode's row is visible on first paint (its layer is on).
+        for mode in RASTER_MODES:
+            mode_label = RASTER_MODE_LABELS.get(mode, mode)
+            rows.append(
+                LegendRow(
+                    row_id=f"legend-density-{mode}",
+                    title=f"GPS Density — {mode_label}",
+                    gradient=lambda ctx: cmap_to_css(ctx.colormaps["cmap_count"]),
+                    label_lo="1 pass",
+                    label_hi=lambda ctx, m=mode: f"{_max_passes(ctx, m)} passes (log scale)",
+                    layer_name=DENSITY_MODE_LAYERS[mode],
+                    visible=mode == RASTER_MODES[0],
+                )
             )
-        )
         # Coverage (Places Visited) — fraction of all activities that visited
         # each cell. When normalized by percentage of activities ("pct", the
         # default), the legend reads as an activity count; in the legacy "max"
@@ -211,8 +216,12 @@ class LegendBuilder:
 
     @property
     def exclusive_layer_names(self) -> list[str]:
-        """Layer names that drive dynamic legend visibility."""
-        return [row.layer_name for row in self.rows if row.layer_name]
+        """Names of all layers bound to a legend row, in row order (duplicates removed)."""
+        names: list[str] = []
+        for row in self.rows:
+            if row.layer_name and row.layer_name not in names:
+                names.append(row.layer_name)
+        return names
 
     def container_style(self) -> str:
         """Return the inline style string for the legend container."""

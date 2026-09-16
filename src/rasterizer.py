@@ -11,6 +11,57 @@ from pyproj import Transformer
 from scipy.ndimage import gaussian_filter
 from tqdm import tqdm
 
+# Available rasterization modes. The mode decides which of the three strategy
+# grids (all painted in a single pass per track) drives the primary "GPS
+# Density (Time Spent)" layer:
+#
+# * "raw-count": every counted GPS point increments its cell (sample density).
+# * "decay": exponential decay (DECAY_FACTOR) applied to repeated passes of the
+#   same cell within a single activity (time-spent weighting; default).
+# * "binary-per-activity": each activity contributes at most 1 per cell
+#   (pure coverage).
+RASTER_MODES = ("raw-count", "decay", "binary-per-activity")
+DEFAULT_RASTER_MODE = "decay"
+
+
+def _validate_raster_mode(raster_mode: str) -> str:
+    """Validate a rasterization mode name, returning it unchanged.
+
+    Raises:
+        ValueError: If ``raster_mode`` is not one of :data:`RASTER_MODES`.
+    """
+    if raster_mode not in RASTER_MODES:
+        raise ValueError(
+            f"Unknown raster_mode: {raster_mode!r}. Expected one of: {', '.join(RASTER_MODES)}"
+        )
+    return raster_mode
+
+
+def _select_primary_count_grid(
+    count_grid: np.ndarray,
+    count_raw_grid: np.ndarray,
+    unique_grid: np.ndarray,
+    raster_mode: str,
+) -> np.ndarray:
+    """Return the count grid that drives the primary density layer.
+
+    Args:
+        count_grid: Decay-weighted pass-count grid ("decay" mode).
+        count_raw_grid: Raw GPS sample count grid ("raw-count" mode).
+        unique_grid: Binary-per-activity coverage grid
+            ("binary-per-activity" mode).
+        raster_mode: One of :data:`RASTER_MODES`.
+
+    Returns:
+        The strategy grid selected by ``raster_mode``.
+    """
+    _validate_raster_mode(raster_mode)
+    if raster_mode == "raw-count":
+        return count_raw_grid
+    if raster_mode == "binary-per-activity":
+        return unique_grid
+    return count_grid
+
 
 def setup_transformers(home_lat: float, home_lon: float, track_clip_radius_km: float | None):
     """Set up coordinate transformers for Web Mercator and UTM."""
@@ -226,6 +277,7 @@ def rasterize_tracks(
     max_consecutive_same_cell: int,
     grids: tuple,
     decay_factor: float = 0.5,
+    raster_mode: str = DEFAULT_RASTER_MODE,
 ) -> int:
     """Rasterize all tracks onto the grids.
 
@@ -237,10 +289,22 @@ def rasterize_tracks(
     leaves the cell (a later return to the cell resets the counter, so genuine
     re-visits are still counted).
 
-    Repeated visits to the same cell *within a single activity* are weighted by
-    a geometric decay (`decay_factor`**n) so that loop/out-and-back routes
-    (e.g. running-track laps) don't inflate the pass count. The decay resets per
-    activity, so genuine coverage across different days is preserved.
+    All three count strategies are painted in the same single pass per track:
+
+    * ``count_grid``       — "decay": geometric decay (``decay_factor``**n)
+      applied to repeated passes of the same cell within one activity, so
+      loop/out-and-back routes (e.g. running-track laps) don't inflate the pass
+      count. The decay resets per activity, so genuine coverage across
+      different days is preserved.
+    * ``count_raw_grid``   — "raw-count": every counted GPS point increments
+      its cell.
+    * ``unique_grid``      — "binary-per-activity": each activity contributes
+      at most 1 per cell.
+
+    ``raster_mode`` only selects which of the three grids drives the primary
+    density layer downstream (see :func:`compute_normalized_grids`); the
+    painting itself is identical for every mode. It is validated here so an
+    invalid mode fails fast before any rasterization work is done.
 
     Returns:
         The number of activities that contributed at least one counted cell.
@@ -263,6 +327,8 @@ def rasterize_tracks(
         count_raw_grid,
         unique_grid,
     ) = grids
+
+    _validate_raster_mode(raster_mode)
 
     rasterized_count = 0
 
@@ -475,9 +541,27 @@ def _compute_alpha_masks(
 
 
 def compute_normalized_grids(
-    grids: tuple, sigma: float, config, n_activities: int = 0, progress_callback=None
+    grids: tuple,
+    sigma: float,
+    config,
+    n_activities: int = 0,
+    progress_callback=None,
+    raster_mode: str = DEFAULT_RASTER_MODE,
 ) -> dict:
-    """Apply Gaussian blur and compute normalized grids for all metrics."""
+    """Apply Gaussian blur and compute normalized grids for all metrics.
+
+    ``raster_mode`` selects which strategy grid (all painted by
+    :func:`rasterize_tracks`) drives the primary "GPS Density (Time Spent)"
+    layer:
+
+    * ``"raw-count"`` — every GPS point increments its cell.
+    * ``"decay"`` (default) — exponential decay (``DECAY_FACTOR``) on repeated
+      passes of the same cell within one activity.
+    * ``"binary-per-activity"`` — each activity contributes max 1 per cell.
+
+    All strategy grids are still normalized and exposed in the result dict, so
+    downstream consumers can switch views without re-rasterizing.
+    """
     (
         grid_w,
         grid_h,
@@ -493,23 +577,25 @@ def compute_normalized_grids(
         count_raw_grid,
         unique_grid,
     ) = grids
-
     if progress_callback:
         progress_callback(1)  # Count grid done
 
-    count_norm, count_log_norm, b_count, max_count = _compute_count_grid(count_grid, sigma)
-    (
-        count_raw_norm,
-        count_raw_log_norm,
-        _b_raw,
-        max_count_raw,
-    ) = _compute_count_grid(count_raw_grid, sigma)
-    (
-        unique_norm,
-        unique_log_norm,
-        _b_bin,
-        max_count_unique,
-    ) = _compute_count_grid(unique_grid, sigma)
+    # Normalize EVERY strategy grid so the map builder can bake one GPS Density
+    # layer per raster mode; ``count_log_norm`` / ``max_passes`` keep reflecting
+    # the mode the pipeline was run with (``raster_mode``).
+    count_norm, count_log_norm, b_count, max_count = _compute_count_grid(
+        _select_primary_count_grid(count_grid, count_raw_grid, unique_grid, raster_mode),
+        sigma,
+    )
+    count_raw_norm, count_raw_log_norm, _b_raw, max_count_raw = _compute_count_grid(
+        count_raw_grid, sigma
+    )
+    unique_norm, unique_log_norm, _b_bin, max_count_unique = _compute_count_grid(unique_grid, sigma)
+    count_log_norms = {
+        "decay": count_log_norm,
+        "raw-count": count_raw_log_norm,
+        "binary-per-activity": unique_log_norm,
+    }
 
     # Percentage-of-activities coverage normalization: each cell = (number of
     # distinct activities that visited it) / (total activities). 1.0 means every
@@ -546,8 +632,14 @@ def compute_normalized_grids(
         speed_n, hr_n, grad_n, elev_n, grad_norm, n_grad_px, n_elev_px, sigma
     )
 
-    # Save max_passes before cleanup
+    # Save max_passes before cleanup. ``max_count`` belongs to the *primary*
+    # grid; the per-strategy breakdown must always report the decay grid's own
+    # max, so blur it separately when another mode is primary.
     max_passes = int(max_count)
+    if raster_mode == "decay":
+        max_passes_decay = max_passes
+    else:
+        max_passes_decay = int(gaussian_filter(count_grid, sigma=sigma).max())
 
     # Clean up intermediate arrays
     del count_grid, count_raw_grid, unique_grid, speed_sum, speed_n, hr_sum, hr_n
@@ -563,6 +655,8 @@ def compute_normalized_grids(
         "unique_norm": unique_norm,
         "unique_log_norm": unique_log_norm,
         "unique_pct_norm": unique_pct_norm,
+        "raster_mode": raster_mode,
+        "count_log_norms": count_log_norms,
         "speed_norm": speed_norm,
         "hr_norm": hr_norm,
         "grad_norm": grad_norm,
@@ -581,7 +675,7 @@ def compute_normalized_grids(
         "max_passes_raw": int(max_count_raw),
         "max_passes_unique": int(max_count_unique),
         "max_passes_by_strategy": {
-            "decay": max_passes,
+            "decay": max_passes_decay,
             "raw-count": int(max_count_raw),
             "binary-per-activity": int(max_count_unique),
         },

@@ -5,9 +5,9 @@ JavaScript that are only loosely coupled: the control panel
 (``assets/panel.js``) toggles overlay layers on/off by calling
 ``map.addLayer`` / ``map.removeLayer``, and ``ExclusiveLayerControl`` listens
 to Leaflet's ``overlayadd`` / ``overlayremove`` events to show/hide the matching
-legend rows (the two GPS density concepts are mutually-exclusive radio layers;
-the remaining metric layers are independent checkboxes whose legend rows
-follow their on/off state).
+legend rows (the GPS density concept layers — one per raster mode plus
+Coverage — are mutually-exclusive radio layers; the remaining metric layers are
+independent checkboxes whose legend rows follow their on/off state).
 
 This module runs the *real* production scripts (rendered exactly as they are
 embedded into the HTML) through Node with a lightweight fake DOM / Leaflet map, so
@@ -31,7 +31,9 @@ import folium
 import pytest
 
 from src.map_builder.constants import (
+    DEFAULT_RASTER_MODE,
     DENSITY_LAYER_NAMES,
+    DENSITY_MODE_LAYERS,
     LEGEND_IDS,
     METRIC_LAYER_NAMES,
 )
@@ -206,8 +208,8 @@ global.window = windowObj;
 global.document = documentObj;
 global[mapVar] = map; // the exclusive script's `var map = <name>;`
 
-// Mirror Folium's first paint: the default-on Time Spent layer is on the map.
-map.addLayer(overlays["GPS Density (Time Spent)"]);
+// Mirror Folium's first paint: the default mode's density layer is on the map.
+map.addLayer(overlays[config.__defaultDensityLayer]);
 
 // The home marker is rendered server-side by ScalableHomeMarker and added
 // directly to the map (not the overlay registry), tagged with options.homeMarker.
@@ -229,6 +231,7 @@ eval(fs.readFileSync(path.join(DIR, "panel.js"), "utf8"));
 const cfg = Object.assign({}, config);
 delete cfg.__legendIdByLayer; delete cfg.__layerNames;
 delete cfg.__panelIds; delete cfg.__mapVar; delete cfg.__registryKey;
+delete cfg.__defaultDensityLayer;
 cfg.map = map;
 windowObj.initHeatmapControlPanel(cfg);
 
@@ -251,28 +254,30 @@ function toggle(layerName, checked) {
 
   const ok = (cond, msg) => { assert.ok(cond, msg); console.log("PASS: " + msg); };
 
-  // Initial paint: the default-on Time Spent density row is visible, the
-  // independent Coverage concept is hidden, and metrics start hidden.
-  ok(rowVisible("GPS Density (Time Spent)") === "block",
-     "initial: Time Spent density row visible");
+  // Initial paint: the default mode's density row is visible, the other
+  // density rows are hidden, and metrics start hidden.
+  ok(rowVisible(config.__defaultDensityLayer) === "block",
+     "initial: default density row visible");
   ok(rowVisible("Coverage (Places Visited)") === "none",
      "initial: Coverage density row hidden");
   ok(rowVisible("Pace (average)") === "none", "initial: pace metric row hidden");
 
-  // Scenario A - the two GPS density concepts are mutually-exclusive radio
-  // layers: toggling Coverage on removes Time Spent from the map and hides its
-  // legend row (stacked heatmaps must never overlap).
+  // Scenario A - the GPS density concepts are mutually-exclusive radio
+  // layers: toggling Coverage on removes the default density layer from the
+  // map and hides its legend row (stacked heatmaps must never overlap).
   toggle("Coverage (Places Visited)", true);
   ok(rowVisible("Coverage (Places Visited)") === "block",
      "coverage row shown after radio on");
-  ok(rowVisible("GPS Density (Time Spent)") === "none",
-     "Time Spent hidden — density concepts are mutually exclusive");
-  // Selecting Time Spent again restores it and hides Coverage.
-  toggle("GPS Density (Time Spent)", true);
-  ok(rowVisible("GPS Density (Time Spent)") === "block",
-     "Time Spent shown again after radio re-selected");
+  ok(rowVisible(config.__defaultDensityLayer) === "none",
+     "default density row hidden — density concepts are mutually exclusive");
+  ok(map.hasLayer(overlays[config.__defaultDensityLayer]) === false,
+     "default density layer removed from the map when Coverage is selected");
+  // Selecting the default density layer again restores it and hides Coverage.
+  toggle(config.__defaultDensityLayer, true);
+  ok(rowVisible(config.__defaultDensityLayer) === "block",
+     "default density row shown again after radio re-selected");
   ok(rowVisible("Coverage (Places Visited)") === "none",
-     "Coverage hidden when Time Spent is re-selected");
+     "Coverage hidden when the default density layer is re-selected");
 
   // Scenario B - an independent metric checkbox shows/hides only its own row.
   toggle("Pace (average)", true);
@@ -283,13 +288,13 @@ function toggle(layerName, checked) {
   // Scenario C - a metric toggle must not disturb density / other metrics.
   toggle("Heart rate (average)", true);
   ok(rowVisible("Heart rate (average)") === "block", "HR row shown after toggle on");
-  ok(rowVisible("GPS Density (Time Spent)") === "block",
+  ok(rowVisible(config.__defaultDensityLayer) === "block",
      "density row unaffected by a metric toggle");
 
   // Scenario D - toggling an unbound layer (Raw GPS tracks) changes no legend row.
-  const before = rowVisible("GPS Density (Time Spent)");
+  const before = rowVisible(config.__defaultDensityLayer);
   toggle("Raw GPS tracks", true);
-  ok(rowVisible("GPS Density (Time Spent)") === before,
+  ok(rowVisible(config.__defaultDensityLayer) === before,
      "density row unchanged when toggling an unbound layer");
 
   // Scenario E - the home marker is on by default and its checkbox hides /
@@ -297,7 +302,7 @@ function toggle(layerName, checked) {
   // location the section stays hidden and toggling it is a no-op.
   const homeSection = byId.get("hcp-home-section");
   const homeCheckbox = byId.get("hcp-home-marker");
-  const tsBeforeHomeToggle = rowVisible("GPS Density (Time Spent)");
+  const tsBeforeHomeToggle = rowVisible(config.__defaultDensityLayer);
   if (config.hasHomeMarker) {
     ok(homeSection && homeSection.hidden === false,
        "home marker section is revealed when a home marker exists");
@@ -317,7 +322,7 @@ function toggle(layerName, checked) {
     ok(map.hasLayer(homeMarker) === false,
        "toggling is a no-op when no home marker was rendered");
   }
-  ok(rowVisible("GPS Density (Time Spent)") === tsBeforeHomeToggle,
+  ok(rowVisible(config.__defaultDensityLayer) === tsBeforeHomeToggle,
      "home marker toggle does not disturb legend rows");
 
   // Scenario H - Reset re-centres the home location (falling back to the data
@@ -367,25 +372,25 @@ function toggle(layerName, checked) {
      "heatmap image-overlay opacity unaffected by the tracks slider");
 
   // Scenario F2 - the Heatmap density concepts are a mutually-exclusive radio
-  // pair, so instead of two per-layer sliders they share a single combined
+  // group, so instead of one slider per layer they share a single combined
   // "Heatmap" slider that drives whichever variant is currently active. It
   // defaults to 100% and carries its value across radio switches.
   const heatmapSlider = panel.querySelector('input[data-layer-opacity="Heatmap"]');
   assert.ok(heatmapSlider, "a single combined Heatmap opacity slider exists");
-  // The individual density variants must no longer have their own sliders.
-  ok(!panel.querySelector('input[data-layer-opacity="GPS Density (Time Spent)"]') &&
-     !panel.querySelector('input[data-layer-opacity="Coverage (Places Visited)"]'),
-     "Time Spent / Coverage share one Heatmap slider (no per-variant sliders)");
+  // None of the density variants may have their own slider.
+  ok(config.__densityLayers.every(
+       (n) => !panel.querySelector('input[data-layer-opacity="' + n + '"]')),
+     "density variants share one Heatmap slider (no per-variant sliders)");
   ok(heatmapSlider.value === "100", "Heatmap slider defaults to 100%");
-  const tsLayer = overlays["GPS Density (Time Spent)"];
+  const tsLayer = overlays[config.__defaultDensityLayer];
   ok(tsLayer.sub.opts[tsLayer.sub.opts.length - 1] === 1.0,
-     "active Time Spent layer initialised to Heatmap 100% opacity");
+     "active density layer initialised to Heatmap 100% opacity");
 
   // Moving the shared slider drives the currently active heatmap layer only.
   heatmapSlider.value = "40";
   heatmapSlider.dispatch("input");
   ok(tsLayer.sub.opts[tsLayer.sub.opts.length - 1] === 0.4,
-     "Heatmap slider drives the active Time Spent layer to 0.4");
+     "Heatmap slider drives the active density layer to 0.4");
 
   // Switching the radio to Coverage carries the shared 40% value over to it.
   toggle("Coverage (Places Visited)", true);
@@ -398,6 +403,28 @@ function toggle(layerName, checked) {
   opToggle.dispatch("click");
   ok(panel.classList.contains("hcp-opacity-collapsed"),
      "opacity toggle collapses the per-layer sliders");
+
+  // Scenario M - the three raster-mode density layers are real, distinct
+  // overlays. Switching between them swaps both the map image and the legend
+  // row, and no two density layers are ever on the map at the same time.
+  // Coverage was left selected above; step through each raster mode.
+  const modeLayers = config.__modeLayers; // [{ mode, layer }]
+  for (const { mode, layer } of modeLayers) {
+    toggle(layer, true);
+    ok(map.hasLayer(overlays[layer]), "mode layer on the map: " + mode);
+    ok(rowVisible(layer) === "block", "mode legend row shown: " + mode);
+    for (const other of config.__densityLayers) {
+      if (other === layer) continue;
+      ok(map.hasLayer(overlays[other]) === false,
+         "no stacking: " + other + " is off while " + layer + " is on");
+      ok(rowVisible(other) === "none",
+         "no stacked legend: " + other + " row hidden while " + layer + " is on");
+    }
+  }
+  // Restoring the default mode leaves the map in its initial visual state.
+  toggle(config.__defaultDensityLayer, true);
+  ok(rowVisible(config.__defaultDensityLayer) === "block",
+     "default density row restored after stepping through all modes");
 
   console.log("ALL_PASS");
   process.exit(0);
@@ -414,9 +441,16 @@ def _panel_ids() -> list[str]:
     return re.findall(r'id="([^"]+)"', html)
 
 
-def _overlay_layers():
-    """Build a production-shaped overlay layer list for the panel config."""
-    layers = [(n, "data:image/png;base64,x", False) for n in DENSITY_LAYER_NAMES]
+def _overlay_layers() -> list[tuple[str, str, bool]]:
+    """Build a production-shaped overlay layer list for the panel config.
+
+    Mirrors ``generate_layer_uris``: one GPS Density layer per raster mode with
+    only the default mode's layer visible, then Coverage and the metrics.
+    """
+    layers = [
+        (name, "data:image/png;base64,x", name == DENSITY_MODE_LAYERS[DEFAULT_RASTER_MODE])
+        for name in DENSITY_LAYER_NAMES
+    ]
     layers += [(n, "data:image/png;base64,x", False) for n in METRIC_LAYER_NAMES]
     return layers
 
@@ -427,6 +461,11 @@ def _write_harness(tmp: Path, panel_cfg: dict) -> None:
     config["__legendIdByLayer"] = LEGEND_IDS
     config["__layerNames"] = list(LEGEND_IDS.keys()) + [_RAW_TRACKS]
     config["__panelIds"] = [pid for pid in _panel_ids() if pid != config["panelId"]]
+    config["__densityLayers"] = list(DENSITY_LAYER_NAMES)
+    config["__defaultDensityLayer"] = DENSITY_MODE_LAYERS[DEFAULT_RASTER_MODE]
+    config["__modeLayers"] = [
+        {"mode": mode, "layer": layer} for mode, layer in DENSITY_MODE_LAYERS.items()
+    ]
 
     (tmp / "harness.js").write_text(_HARNESS, encoding="utf-8")
     (tmp / "config.json").write_text(json.dumps(config), encoding="utf-8")
@@ -459,7 +498,7 @@ def test_control_panel_toggles_update_legend_via_overlay_events(node_available, 
     # Parent the ExclusiveLayerControl to a real folium map so its output uses
     # production values (map variable name, embedded legend ids), not stand-ins.
     m = folium.Map(location=[45.0, -122.0], zoom_start=14, tiles=None)
-    excl = ExclusiveLayerControl()
+    excl = ExclusiveLayerControl(legend_ids=LEGEND_IDS)
     excl.add_to(m)
     exclusive_script = excl._template.module.script(excl, {})
     map_var = m.get_name()

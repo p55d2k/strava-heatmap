@@ -188,7 +188,8 @@ def build_map(
             button, and a visible home marker. Falls back to ``centre`` when
             ``None``.
         control_panel: When True, embed the in-HTML control panel (basemap
-            style switcher, opacity slider, fit/reset, legend toggle).
+            style switcher, layer toggles, opacity sliders, fit/reset, legend
+            toggle).
         progress_callback: Optional callable invoked with a step count.
     """
     map_location = home if home is not None else centre

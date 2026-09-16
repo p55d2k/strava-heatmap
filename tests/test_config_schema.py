@@ -51,6 +51,7 @@ class TestConfigSchema:
             "AUTO_RANGE_PCT",
             "MAX_CONSECUTIVE_SAME_CELL",
             "DECAY_FACTOR",
+            "RASTER_MODE",
             "COVERAGE_NORMALIZATION",
             "CACHE_DIR",
             "OUTPUT_DIR",
@@ -171,6 +172,50 @@ class TestConfigSchema:
                     ACTIVITY_TYPES=["Run"],
                     CARTO_STYLE="rainbow",
                 )
+
+    def test_config_model_rejects_invalid_raster_mode(self):
+        """ConfigModel should reject RASTER_MODE values outside the allowed set."""
+        from pydantic import ValidationError
+
+        from src.config_schema import ConfigModel
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            activities_dir = Path(tmpdir) / "strava_export"
+            activities_dir.mkdir()
+            with pytest.raises(ValidationError):
+                ConfigModel(
+                    ACTIVITIES_DIR=str(activities_dir),
+                    ACTIVITY_TYPES=["Run"],
+                    RASTER_MODE="bogus",
+                )
+
+    def test_raster_mode_defaults_to_decay(self):
+        """ConfigModel should default RASTER_MODE to 'decay' (current behavior)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            activities_dir = Path(tmpdir) / "strava_export"
+            activities_dir.mkdir()
+            model = ConfigModel(
+                ACTIVITIES_DIR=str(activities_dir),
+                ACTIVITY_TYPES=["Run"],
+            )
+        assert model.raster_mode == "decay"
+
+    def test_config_model_accepts_all_raster_modes(self):
+        """ConfigModel should accept all three raster modes."""
+        from src.config_schema import ConfigModel
+
+        def build_config(mode):
+            with tempfile.TemporaryDirectory() as tmpdir:
+                activities_dir = Path(tmpdir) / "strava_export"
+                activities_dir.mkdir()
+                return ConfigModel(
+                    ACTIVITIES_DIR=str(activities_dir),
+                    ACTIVITY_TYPES=["Run"],
+                    RASTER_MODE=mode,
+                ).raster_mode
+
+        for mode in ("raw-count", "decay", "binary-per-activity"):
+            assert build_config(mode) == mode
 
     def test_carto_style_defaults_to_dark_all(self):
         """ConfigModel should default CARTO_STYLE to dark_all."""

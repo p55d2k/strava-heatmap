@@ -68,6 +68,7 @@ class Config:
         self.auto_range_pct = model.auto_range_pct
         self.max_consecutive_same_cell = model.max_consecutive_same_cell
         self.decay_factor = model.decay_factor
+        self.raster_mode = model.raster_mode
         self.coverage_normalization = model.coverage_normalization
 
         # Paths are already resolved by ConfigModel

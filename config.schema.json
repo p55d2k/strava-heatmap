@@ -289,7 +289,7 @@
     },
     "DECAY_FACTOR": {
       "default": 0.5,
-      "description": "Geometric decay (0.0-1.0) applied to repeated passes of the same cell within a single activity. Drives the \"GPS Density (Time Spent)\" layer: 0.0 counts each cell once per activity (maximal spread); 1.0 counts every pass (inflates intensity for loops / out-and-backs). \"Coverage (Places Visited)\" always counts each cell once per activity regardless of this value.",
+      "description": "Geometric decay (0.0-1.0) applied to repeated passes of the same cell within a single activity. Only used by the \"decay\" raster mode: 0.0 counts each cell once per activity (maximal spread); 1.0 counts every pass (inflates intensity for loops / out-and-backs).",
       "examples": [
         0.5,
         0.3
@@ -298,6 +298,22 @@
       "minimum": 0,
       "title": "Decay Factor",
       "type": "number"
+    },
+    "RASTER_MODE": {
+      "default": "decay",
+      "description": "How each cell's pass count is computed for the \"GPS Density (Time Spent)\" layer. \"raw-count\" = every GPS point increments the cell; \"decay\" = exponential decay (DECAY_FACTOR) on repeated passes of the same cell within a single activity; \"binary-per-activity\" = each activity contributes max 1 per cell (pure coverage).",
+      "enum": [
+        "raw-count",
+        "decay",
+        "binary-per-activity"
+      ],
+      "examples": [
+        "decay",
+        "raw-count",
+        "binary-per-activity"
+      ],
+      "title": "Raster Mode",
+      "type": "string"
     },
     "COVERAGE_NORMALIZATION": {
       "default": "pct",

@@ -351,13 +351,25 @@ class ConfigModel(BaseModel):
         le=1,
         description=(
             "Geometric decay (0.0-1.0) applied to repeated passes of the same "
-            'cell within a single activity. Drives the "GPS Density (Time '
-            'Spent)" layer: 0.0 counts each cell once per activity (maximal '
-            "spread); 1.0 counts every pass (inflates intensity for loops / "
-            'out-and-backs). "Coverage (Places Visited)" always counts each '
-            "cell once per activity regardless of this value."
+            'cell within a single activity. Only used by the "decay" raster '
+            "mode: 0.0 counts each cell once per activity (maximal spread); "
+            "1.0 counts every pass (inflates intensity for loops / "
+            "out-and-backs)."
         ),
         examples=[0.5, 0.3],
+    )
+    raster_mode: Literal["raw-count", "decay", "binary-per-activity"] = Field(
+        default="decay",
+        alias="RASTER_MODE",
+        description=(
+            "How each cell's pass count is computed for the \"GPS Density "
+            '(Time Spent)" layer. "raw-count" = every GPS point increments '
+            'the cell; "decay" = exponential decay (DECAY_FACTOR) on repeated '
+            "passes of the same cell within a single activity; "
+            '"binary-per-activity" = each activity contributes max 1 per cell '
+            "(pure coverage)."
+        ),
+        examples=["decay", "raw-count", "binary-per-activity"],
     )
     coverage_normalization: Literal["pct", "max"] = Field(
         default="pct",
@@ -471,7 +483,8 @@ def generate_json_schema(output_path: Path | None = None) -> dict[str, Any]:
     if output_path:
         import json
 
-        output_path.write_text(json.dumps(schema, indent=2))
+        # Trailing newline keeps the end-of-file-fixer pre-commit hook happy.
+        output_path.write_text(json.dumps(schema, indent=2) + "\n")
 
     return schema
 

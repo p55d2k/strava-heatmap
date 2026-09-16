@@ -8,6 +8,7 @@ from io import BytesIO
 import numpy as np
 from PIL import Image
 
+import src.colormaps as src_colormaps
 from src.colormaps import (
     _count_uri,
     _rgba_uri,
@@ -19,7 +20,9 @@ from src.colormaps import (
 )
 from src.map_builder.constants import (
     DENSITY_LAYER_NAMES,
+    DENSITY_MODE_LAYERS,
     METRIC_LAYER_NAMES,
+    RASTER_MODES,
     TIME_SPENT_LAYER,
 )
 
@@ -217,14 +220,28 @@ class TestGenerateLayerUris:
 
     def setup_method(self):
         """Set up test fixtures."""
+
+        # Give each raster mode its own distinct grid so the tests can verify
+        # every mode layer is baked from ITS OWN grid (not one shared image).
+        def grid(v):
+            g = np.zeros((10, 10), dtype=np.float32)
+            g[5, 5] = v
+            return g
+
+        self.grids = {
+            "decay": grid(0.25),
+            "raw-count": grid(0.5),
+            "binary-per-activity": grid(0.75),
+        }
         self.normalized = {
-            "count_norm": np.zeros((10, 10), dtype=np.float32),
-            "count_log_norm": np.zeros((10, 10), dtype=np.float32),
-            "count_raw_norm": np.zeros((10, 10), dtype=np.float32),
-            "count_raw_log_norm": np.zeros((10, 10), dtype=np.float32),
-            "unique_norm": np.zeros((10, 10), dtype=np.float32),
-            "unique_log_norm": np.zeros((10, 10), dtype=np.float32),
+            "count_norm": self.grids["decay"],
+            "count_log_norm": self.grids["decay"],
+            "count_raw_norm": self.grids["raw-count"],
+            "count_raw_log_norm": self.grids["raw-count"],
+            "unique_norm": self.grids["binary-per-activity"],
+            "unique_log_norm": self.grids["binary-per-activity"],
             "unique_pct_norm": np.zeros((10, 10), dtype=np.float32),
+            "count_log_norms": self.grids,
             "speed_norm": np.zeros((10, 10), dtype=np.float32),
             "hr_norm": np.zeros((10, 10), dtype=np.float32),
             "grad_norm": np.zeros((10, 10), dtype=np.float32),
@@ -236,11 +253,11 @@ class TestGenerateLayerUris:
         }
         self.colormaps = create_colormaps()
 
-    def test_returns_six_layers(self):
-        """Should return list of 6 layer tuples (2 density + 4 metrics)."""
+    def test_returns_eight_layers(self):
+        """Should return 8 layer tuples (3 density modes + Coverage + 4 metrics)."""
         layers = generate_layer_uris(self.normalized, self.colormaps)
 
-        assert len(layers) == 6
+        assert len(layers) == 8
         for layer in layers:
             assert len(layer) == 3  # (name, uri, visible)
             name, uri, visible = layer
@@ -249,7 +266,7 @@ class TestGenerateLayerUris:
             assert isinstance(visible, bool)
 
     def test_time_spent_default_visible(self):
-        """Time Spent (default-on density layer) is visible; the rest hidden."""
+        """Time Spent (default raster mode's density layer) is visible; the rest hidden."""
         layers = generate_layer_uris(self.normalized, self.colormaps)
 
         expected_names = DENSITY_LAYER_NAMES + METRIC_LAYER_NAMES
@@ -258,11 +275,38 @@ class TestGenerateLayerUris:
             assert layer[2] is (expected_names[i] == TIME_SPENT_LAYER), layer[0]
 
     def test_layer_names_match_expected(self):
-        """Layer names should match expected values (2 density + 4 metrics)."""
+        """Layer names should match expected values (3 density + Coverage + 4 metrics)."""
         layers = generate_layer_uris(self.normalized, self.colormaps)
 
         expected_names = DENSITY_LAYER_NAMES + METRIC_LAYER_NAMES
         assert [layer[0] for layer in layers] == expected_names
+
+    def test_each_mode_layer_baked_from_its_own_grid(self):
+        """Regression: each raster mode's GPS Density layer must be a genuinely
+        distinct image baked from that mode's normalized grid — switching layers
+        in the panel must change the map, not show the same pixels again."""
+        captured = []
+
+        def _spy_count_uri(norm, cmap):
+            captured.append(norm)
+            return "data:image/png;base64,stub"
+
+        orig = src_colormaps._count_uri
+        src_colormaps._count_uri = _spy_count_uri
+        try:
+            layers = generate_layer_uris(self.normalized, self.colormaps)
+        finally:
+            src_colormaps._count_uri = orig
+
+        by_name = {layer[0]: layer for layer in layers}
+        for mode in RASTER_MODES:
+            layer_name = DENSITY_MODE_LAYERS[mode]
+            assert layer_name in by_name, f"missing density layer for mode {mode}"
+        # The first three _count_uri calls are the three mode layers, in
+        # RASTER_MODES order, each fed by its own grid object.
+        assert captured[0] is self.grids["decay"]
+        assert captured[1] is self.grids["raw-count"]
+        assert captured[2] is self.grids["binary-per-activity"]
 
     def test_coverage_layer_selects_normalization_grid(self, monkeypatch):
         """The coverage layer URI should be produced from the grid selected by
@@ -285,12 +329,13 @@ class TestGenerateLayerUris:
 
         # coverage_normalization="pct" → coverage layer uses pct grid
         layers = generate_layer_uris(self.normalized, self.colormaps, coverage_normalization="pct")
-        assert len(captured) >= 2
-        assert captured[1] is pct_sentinel
+        # Calls 0-2 are the three raster-mode density layers; call 3 is Coverage.
+        assert len(captured) >= 4
+        assert captured[3] is pct_sentinel
         coverage_layer = [layer for layer in layers if layer[0] == COVERAGE_LAYER][0]
         assert coverage_layer[0] == COVERAGE_LAYER
 
         captured.clear()
         # coverage_normalization="max" → coverage layer uses max grid
         layers = generate_layer_uris(self.normalized, self.colormaps, coverage_normalization="max")
-        assert captured[1] is max_sentinel
+        assert captured[3] is max_sentinel
