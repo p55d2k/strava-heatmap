@@ -12,6 +12,7 @@ import gpxpy
 import pytest
 
 from src.gpx_export import DEFAULT_TITLE, GPX_CREATOR, build_gpx, write_gpx
+from src.helpers import parse_gpx_file
 
 GPX_NS = "http://www.topografix.com/GPX/1/1"
 TPX_NS = "http://www.garmin.com/xmlschemas/TrackPointExtension/v2"
@@ -185,3 +186,22 @@ def test_write_gpx_accepts_a_string_path(tmp_path):
 
     assert write_gpx(TRACKS, str(path))[0] == 2
     assert path.exists()
+
+
+def test_exported_file_reimports_with_hr_and_speed(tmp_path):
+    """An export read back by this project's loader keeps heart rate and speed.
+
+    The two ends of the round trip live in different modules, so this is the test
+    that pins the TrackPointExtension contract between them.
+    """
+    path = tmp_path / "tracks.gpx"
+    write_gpx(TRACKS, path)
+
+    # The loader concatenates every track in the file into one point list.
+    points = parse_gpx_file(path)
+
+    assert len(points) == 4  # both activities, in file order
+    assert [p[3] for p in points] == [150, None, 151, 140]  # hr
+    assert [p[2] for p in points] == [5.0, None, 8.25, 8.0]  # speed
+    assert [p[4] for p in points] == [100.0, 101.0, None, 105.0]  # elevation
+    assert points[0][0] == pytest.approx(45.0, abs=1e-7)

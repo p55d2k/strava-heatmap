@@ -73,12 +73,47 @@ def parse_fit_file(filepath: Path) -> list:
     return points
 
 
+def _local_name(tag) -> str:
+    """Return an XML tag's local name (``{ns}hr`` -> ``hr``), lowercased."""
+    return tag.rsplit("}", 1)[-1].lower() if isinstance(tag, str) else ""
+
+
+def _extension_number(text) -> float | None:
+    """Convert extension text to a float, or None when it isn't a number."""
+    try:
+        return float(text)
+    except (TypeError, ValueError):
+        return None
+
+
+def parse_gpx_extensions(point) -> tuple:
+    """
+    Read (speed, hr) from one GPX track point's ``<extensions>``.
+    GPX 1.1 has no elements for heart rate or speed, so anything that records
+    them hides them in extensions: Garmin devices (and our own gpx_export) under
+    ``<gpxtpx:TrackPointExtension>``, other writers as bare elements. Matching on
+    the local name covers both, and the namespace version (v1/v2) does not
+    matter. Values that aren't numbers are ignored rather than failing the file.
+    Returns (None, None) when the point carries neither.
+    """
+    speed = hr = None
+    for extension in getattr(point, "extensions", None) or []:
+        for elem in extension.iter():
+            name = _local_name(elem.tag)
+            if name == "hr" and hr is None:
+                hr = _extension_number(elem.text)
+            elif name == "speed" and speed is None:
+                speed = _extension_number(elem.text)
+    return speed, hr
+
+
 def parse_gpx_file(filepath: Path) -> list:
     """
     Parse .gpx file and return full track points.
     Returns list of [lat, lon, speed, hr, alt] or empty list on failure.
-    GPX files from Strava contain track points with lat/lon, elevation, and time.
-    Speed and heart rate may not be available in GPX format.
+    GPS and elevation come from the track points themselves; heart rate and
+    speed are read from the point extensions when a device recorded them (see
+    parse_gpx_extensions), so a GPX we exported can be read back in full.
     """
     points = []
     try:
@@ -94,10 +129,11 @@ def parse_gpx_file(filepath: Path) -> list:
                         continue
 
                     alt = point.elevation
-                    # GPX from Strava typically doesn't have speed/HR in track points
-                    # They might be in extensions, but we'll leave as None for now
-                    speed = None
-                    hr = None
+                    speed, hr = parse_gpx_extensions(point)
+                    if hr is not None:
+                        # Beats are whole numbers; keep the same type the FIT
+                        # parser yields so downstream grids don't mix int/float.
+                        hr = int(round(hr))
 
                     points.append([lat, lon, speed, hr, alt])
     except Exception as e:

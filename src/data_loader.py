@@ -16,6 +16,12 @@ from src.helpers import detect_home, get_gps_start, haversine_km, parse_track_fi
 
 log = logging.getLogger(__name__)
 
+# Version of the cached track points. Bump it whenever parsing starts yielding
+# something entries cached earlier do not have, so one run refills them instead
+# of silently serving the thinner data.
+# v2: GPX points gained heart rate / speed from the track point extensions.
+TRACK_CACHE_VERSION = 2
+
 
 def _load_cache(config) -> dict:
     """Load unified cache (gps + tracks) from pickle file."""
@@ -156,6 +162,16 @@ def load_tracks(config, runs: pd.DataFrame) -> list[tuple[str, list]]:
     """Load full GPS tracks from .fit.gz / .gpx files with caching."""
     cache = _load_cache(config)
     track_cache = cache.get("tracks", {})
+
+    # Reparse tracks written by an older parser. Only GPX parsing changed in v2,
+    # so a FIT-only cache is kept rather than re-reading the whole export for nothing.
+    if cache.get("tracks_version") != TRACK_CACHE_VERSION:
+        outdated = [k for k in track_cache if str(k).lower().endswith(".gpx")]
+        if outdated:
+            log.info(f"Reparsing {len(outdated)} cached GPX tracks recorded by an older parser...")
+            for k in outdated:
+                del track_cache[k]
+        cache["tracks_version"] = TRACK_CACHE_VERSION
 
     # Purge cache missing altitude schema
     stale = [k for k, v in track_cache.items() if v and len(v[0]) < 5]

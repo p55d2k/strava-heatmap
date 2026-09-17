@@ -12,6 +12,7 @@ import pytest
 
 from src.config import Config
 from src.data_loader import (
+    TRACK_CACHE_VERSION,
     determine_home_location,
     filter_by_home_radius,
     load_and_filter_activities,
@@ -384,3 +385,63 @@ class TestLoadTracks:
             cache = pickle.load(f)
         assert "stale.fit.gz" not in cache["tracks"]
         assert "fresh.fit.gz" in cache["tracks"]
+
+    @patch("src.data_loader.parse_track_file")
+    def test_reparses_gpx_cache_from_an_older_parser(self, mock_parse):
+        """GPX cached before HR/speed were read must be reparsed, FIT must not."""
+        # No tracks_version key: the cache predates extension parsing, so the
+        # cached GPX points have no heart rate even though the file does.
+        cache_data = {
+            "gps": {},
+            "tracks": {
+                "old.gpx": [[45.0, -122.0, None, None, 100.0]],
+                "already.fit.gz": [[45.1, -122.1, 5.0, 150, 100.0]],
+            },
+        }
+        with open(self.cache_path, "wb") as f:
+            pickle.dump(cache_data, f)
+
+        mock_parse.return_value = [[45.0, -122.0, 3.0, 142, 100.0]]
+
+        runs = pd.DataFrame(
+            {
+                "Filename": ["old.gpx", "already.fit.gz"],
+                "Activity Date": [pd.Timestamp("2024-01-01")] * 2,
+                "Activity Name": ["Morning Run", "Evening Ride"],
+            }
+        )
+
+        tracks = load_tracks(self.config, runs)
+
+        # Only the GPX file is re-read; the FIT points come straight from cache.
+        assert mock_parse.call_count == 1
+        assert mock_parse.call_args[0][0].name == "old.gpx"
+        assert tracks[0][1][0][3] == 142  # hr, freshly parsed
+        assert tracks[1][1] == [[45.1, -122.1, 5.0, 150, 100.0]]
+
+        with open(self.cache_path, "rb") as f:
+            assert pickle.load(f)["tracks_version"] == TRACK_CACHE_VERSION
+
+    @patch("src.data_loader.parse_track_file")
+    def test_keeps_gpx_cache_written_by_the_current_parser(self, mock_parse):
+        """A cache stamped with the current version is used as-is."""
+        cache_data = {
+            "gps": {},
+            "tracks_version": TRACK_CACHE_VERSION,
+            "tracks": {"cached.gpx": [[45.0, -122.0, 3.0, 142, 100.0]]},
+        }
+        with open(self.cache_path, "wb") as f:
+            pickle.dump(cache_data, f)
+
+        runs = pd.DataFrame(
+            {
+                "Filename": ["cached.gpx"],
+                "Activity Date": [pd.Timestamp("2024-01-01")],
+                "Activity Name": ["Morning Run"],
+            }
+        )
+
+        tracks = load_tracks(self.config, runs)
+
+        mock_parse.assert_not_called()
+        assert tracks[0][1][0][3] == 142

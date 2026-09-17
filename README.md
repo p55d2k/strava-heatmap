@@ -109,8 +109,9 @@ elevation; Strava's export files keep no per-point timestamps, so there are no
 `<time>` elements, and heart rate and speed ride in Garmin's
 `TrackPointExtension` — the de-facto place for them, since GPX 1.1 has no element
 for either — so tools that understand the extension show them and the rest
-ignore it. (Re-importing this file *into this project* loses HR and speed,
-because the GPX loader here reads geometry and elevation only.)
+ignore it. The GPX loader reads that extension back, so feeding this file (or a
+Garmin/Strava one) back into the project keeps HR and speed instead of dropping
+them; tracks cached by an older version are reparsed once on the next run.
 
 ## Setup
 

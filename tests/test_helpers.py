@@ -277,6 +277,35 @@ class TestDetectHome:
         assert n_starts == 4
 
 
+# A Garmin TrackPointExtension as devices, Strava's own GPX export and this
+# project's gpx_export.py write it: GPX 1.1 has no <hr>/<speed> elements, so they
+# live here instead. The header is swapped per test to exercise other spellings.
+_GPX_HEADER = (
+    '<?xml version="1.0" encoding="UTF-8"?>\n'
+    '<gpx version="1.1" creator="test" xmlns="http://www.topografix.com/GPX/1/1"\n'
+    '     xmlns:gpxtpx="{ns}">'
+)
+_TPX_V2 = "http://www.garmin.com/xmlschemas/TrackPointExtension/v2"
+_TPX_V1 = "http://www.garmin.com/xmlschemas/TrackPointExtension/v1"
+
+
+def _gpx_with_body(body: str, ns: str = _TPX_V2) -> str:
+    """Wrap track point markup in a valid GPX 1.1 document declaring ``ns``."""
+    return f"{_GPX_HEADER.format(ns=ns)}\n  <trk><trkseg>{body}</trkseg></trk>\n</gpx>\n"
+
+
+def _point(lat: str, lon: str, extensions: str = "", ele: str = "31.4") -> str:
+    """One <trkpt> with an optional elevation and extension block."""
+    return f'\n    <trkpt lat="{lat}" lon="{lon}"><ele>{ele}</ele>{extensions}</trkpt>'
+
+
+def _tpx(inner: str) -> str:
+    """Wrap extension elements in Garmin's ``<gpxtpx:TrackPointExtension>``."""
+    return (
+        f"<extensions><gpxtpx:TrackPointExtension>{inner}</gpxtpx:TrackPointExtension></extensions>"
+    )
+
+
 class TestParseGpxFile:
     """Tests for parse_gpx_file function."""
 
@@ -344,6 +373,85 @@ class TestParseGpxFile:
             assert result[0][3] is None  # hr
         finally:
             temp_path.unlink()
+
+    def test_reads_hr_and_speed_from_trackpoint_extension(self, temp_dir):
+        """HR/speed in a Garmin TrackPointExtension should reach the point tuple."""
+        content = _gpx_with_body(
+            _point(
+                "1.4006",
+                "103.8064",
+                _tpx("<gpxtpx:hr>142</gpxtpx:hr><gpxtpx:speed>3.25</gpxtpx:speed>"),
+            )
+            + _point("1.4005", "103.8063", _tpx("<gpxtpx:hr>143</gpxtpx:hr>"))
+            + _point("1.4004", "103.8062"),
+        )
+        path = temp_dir / "run.gpx"
+        path.write_text(content)
+
+        result = parse_gpx_file(path)
+
+        assert [p[2] for p in result] == [3.25, None, None]  # speed
+        assert [p[3] for p in result] == [142, 143, None]  # hr
+        assert [p[4] for p in result] == [31.4, 31.4, 31.4]  # elevation untouched
+
+    def test_reads_extensions_in_v1_namespace(self, temp_dir):
+        """Older devices write the same elements in the v1 namespace."""
+        content = _gpx_with_body(
+            _point("1.4006", "103.8064", _tpx("<gpxtpx:hr>98</gpxtpx:hr>")), ns=_TPX_V1
+        )
+        path = temp_dir / "run.gpx"
+        path.write_text(content)
+
+        _, _, speed, hr, _ = parse_gpx_file(path)[0]
+
+        assert hr == 98
+        assert speed is None  # v1 has no speed element
+
+    def test_reads_bare_extension_elements(self, temp_dir):
+        """Some writers skip the TrackPointExtension wrapper entirely."""
+        content = _gpx_with_body(
+            _point("1.4006", "103.8064", "<extensions><hr>155</hr><speed>4.5</speed></extensions>")
+        )
+        path = temp_dir / "run.gpx"
+        path.write_text(content)
+
+        _, _, speed, hr, _ = parse_gpx_file(path)[0]
+
+        assert (speed, hr) == (4.5, 155)
+
+    def test_ignores_other_extension_elements(self, temp_dir):
+        """Cadence/temperature extensions are not speed or heart rate."""
+        content = _gpx_with_body(
+            _point(
+                "1.4006",
+                "103.8064",
+                _tpx("<gpxtpx:cad>85</gpxtpx:cad><gpxtpx:atemp>24.0</gpxtpx:atemp>"),
+            )
+        )
+        path = temp_dir / "run.gpx"
+        path.write_text(content)
+
+        _, _, speed, hr, _ = parse_gpx_file(path)[0]
+
+        assert speed is None
+        assert hr is None
+
+    def test_ignores_non_numeric_extension_values(self, temp_dir):
+        """Empty or unparseable extension text should not fail the file."""
+        content = _gpx_with_body(
+            _point(
+                "1.4006", "103.8064", _tpx("<gpxtpx:hr>--</gpxtpx:hr><gpxtpx:speed></gpxtpx:speed>")
+            )
+            + _point("1.4005", "103.8063", _tpx("<gpxtpx:hr>142.6</gpxtpx:hr>"))
+        )
+        path = temp_dir / "run.gpx"
+        path.write_text(content)
+
+        result = parse_gpx_file(path)
+
+        assert result[0][2] is None
+        assert result[0][3] is None
+        assert result[1][3] == 143  # beats are rounded to whole numbers
 
 
 class TestParseTrackFile:
