@@ -42,11 +42,12 @@ activities that recorded that metric.
 ## Setup
 
 ```bash
-uv sync
+uv tool install .
 ```
 
-This creates or updates `.venv` and installs the dependencies from
-`pyproject.toml` and `uv.lock`.
+This installs the `strava-heatmap` command and its dependencies in an isolated
+tool environment. If the command is not found afterward, run `uv tool update-shell`
+and restart your shell.
 
 ### Optional CARTO basemap key
 
@@ -73,7 +74,7 @@ Get a free key at <https://carto.com/developers/tiles>.
 3. Generate the map:
 
 ```bash
-uv run python main.py
+strava-heatmap generate
 ```
 
 The map is saved to `outputs/heatmap.html`; the filtered tracks are also
@@ -105,7 +106,7 @@ you want to override a setting; unspecified values keep the automatic defaults.
 ```
 
 Pass a different file with `--config path/to/config.json`. Use
-`uv run python main.py validate` to check the export and effective settings.
+`strava-heatmap validate` to check the export and effective settings.
 
 ## Configuration
 
@@ -173,17 +174,17 @@ The CLI defaults to `generate` when no subcommand is supplied. `--config` and
 
 ```bash
 # Generate (default); --dry-run validates and prints the activity count
-uv run python main.py generate --config config.json --dry-run
+strava-heatmap generate --config config.json --dry-run
 
 # Validate config.json, the activities directory, and activities.csv
-uv run python main.py validate --config config.json
+strava-heatmap validate --config config.json
 
 # Re-export filtered tracks without rebuilding the map
-uv run python main.py export-gpx --config config.json --output runs.gpx
+strava-heatmap export-gpx --config config.json --output runs.gpx
 
 # Equivalent global-option forms
-uv run python main.py --config config.json --dry-run
-uv run python main.py validate --config config.json --dev
+strava-heatmap --config config.json --dry-run
+strava-heatmap validate --config config.json --dev
 ```
 
 `--no-open` prevents generated maps from opening automatically in a browser.
@@ -233,7 +234,7 @@ self-contained without slowing initial page load.
 command is useful when only filters changed:
 
 ```bash
-uv run python main.py export-gpx --output runs.gpx
+strava-heatmap export-gpx --output runs.gpx
 ```
 
 The export applies the same `ACTIVITY_TYPES`, `DATE_FROM` / `DATE_TO`,
@@ -276,7 +277,7 @@ base64 PNG, so keep the list short. The demo is named from `EMBED_HTML` with a
 `_demo` suffix.
 
 ```bash
-uv run python main.py --embed
+strava-heatmap --embed
 ```
 
 This leaves `outputs/heatmap.html` unchanged and adds
