@@ -6,8 +6,9 @@ for validation and IDE support while maintaining backward compatibility.
 """
 
 import json
-import os
 from pathlib import Path
+
+import pandas as pd
 
 from src.config_schema import ConfigModel, normalize_activity_type
 
@@ -15,32 +16,37 @@ __all__ = ["Config", "normalize_activity_type"]
 
 
 class Config:
-    """Configuration container loaded from config.json.
+    """Configuration container loaded from an optional config.json.
 
     This class wraps ConfigModel (Pydantic) to provide validation,
     IDE support, and path handling while maintaining the same interface
     as the original Config class.
     """
 
-    def __init__(self, config_path: Path):
-        if not config_path.exists():
+    def __init__(self, config_path: Path | None = None):
+        """Load optional configuration and infer safe values from the export."""
+        requested_path = config_path
+        config_path = config_path or Path("config.json")
+        if config_path.exists():
+            with open(config_path) as f:
+                cfg = json.load(f)
+            base_dir = config_path.parent.resolve()
+        elif requested_path is not None:
             raise FileNotFoundError(
                 f"Config file not found: {config_path}\n"
-                f"  -> Create a config.json file (see example_configs/ for templates)"
+                "  -> Omit --config to use automatic defaults, or create the file"
             )
+        else:
+            cfg = {}
+            base_dir = Path.cwd().resolve()
 
-        with open(config_path) as f:
-            cfg = json.load(f)
+        activities_dir = _discover_activities_dir(base_dir, cfg.get("ACTIVITIES_DIR"))
+        cfg.setdefault("ACTIVITIES_DIR", str(activities_dir))
+        if "ACTIVITY_TYPES" not in cfg:
+            cfg["ACTIVITY_TYPES"] = _discover_activity_types(activities_dir)
 
-        # Use Pydantic model for validation
-        # We need to pass the config file's parent directory as context
-        # for resolving relative paths. We do this by temporarily changing cwd.
-        original_cwd = os.getcwd()
-        try:
-            os.chdir(config_path.parent)
-            model = ConfigModel(**cfg)
-        finally:
-            os.chdir(original_cwd)
+        # Use Pydantic model for validation after resolving directory paths.
+        model = ConfigModel(**_resolve_relative_paths(cfg, base_dir))
 
         # Copy all validated fields from the model
         self.activities_dir = Path(model.activities_dir)
@@ -51,6 +57,7 @@ class Config:
         self.home_lat = model.home_lat
         self.home_lon = model.home_lon
         self.radius_km = model.radius_km
+        self.radius_km_auto = "RADIUS_KM" not in cfg
 
         self.gps_spread_min_m = model.gps_spread_min_m
         self.meters_per_pixel = model.meters_per_pixel
@@ -100,3 +107,48 @@ class Config:
         log.info(f"Source:  {self.activities_dir}/")
         log.info(f"Types:   {', '.join(self.activity_types)}")
         log.info(f"Output:  {self.output_html}")
+
+
+def _resolve_relative_paths(cfg: dict, base_dir: Path) -> dict:
+    """Resolve directory paths relative to the config or working directory."""
+    result = dict(cfg)
+    result.setdefault("CACHE_DIR", str(base_dir / "cache"))
+    result.setdefault("OUTPUT_DIR", str(base_dir / "outputs"))
+    for key in ("ACTIVITIES_DIR", "CACHE_DIR", "OUTPUT_DIR"):
+        path = Path(result[key]) if key in result else None
+        if path is not None and not path.is_absolute():
+            result[key] = str((base_dir / path).resolve())
+    return result
+
+
+def _discover_activities_dir(base_dir: Path, configured: str | None) -> Path:
+    """Find a Strava export directory without requiring a config file."""
+    if configured:
+        path = Path(configured)
+        return (base_dir / path).resolve() if not path.is_absolute() else path
+
+    candidates = [base_dir / "strava_export", base_dir]
+    candidates.extend(
+        path.parent
+        for path in base_dir.glob("*/activities.csv")
+        if path.parent.name not in {".venv", "build", "cache", "outputs"}
+    )
+    for candidate in candidates:
+        if (candidate / "activities.csv").is_file():
+            return candidate.resolve()
+    return (base_dir / "strava_export").resolve()
+
+
+def _discover_activity_types(activities_dir: Path) -> list[str]:
+    """Select all activity types with at least one track file in the export."""
+    csv_path = activities_dir / "activities.csv"
+    if not csv_path.is_file():
+        return ["Run"]
+    frame = pd.read_csv(csv_path, usecols=["Activity Type", "Filename"])
+    found: list[str] = []
+    for raw_type, group in frame.groupby("Activity Type", sort=False):
+        if any((activities_dir / str(name)).is_file() for name in group["Filename"]):
+            normalized = normalize_activity_type(raw_type)
+            if normalized and normalized not in found:
+                found.append(normalized)
+    return found or ["Run"]

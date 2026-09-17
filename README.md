@@ -2,8 +2,8 @@
 
 Turn a Strava data export into a self-contained, interactive activity heatmap.
 No Strava API access is needed: the input is the ZIP file Strava provides. A
-free [CARTO maps key](https://carto.com/developers/tiles) is required for the
-basemap tiles.
+Basemap tiles work out of the box with OpenStreetMap. An optional
+[CARTO maps key](https://carto.com/developers/tiles) enables the CARTO styles.
 
 This is a custom fork of [Sam Wilson's original project](https://github.com/moresamwilson/running-heatmap).
 
@@ -48,67 +48,29 @@ uv sync
 This creates or updates `.venv` and installs the dependencies from
 `pyproject.toml` and `uv.lock`.
 
-### CARTO basemap key
+### Optional CARTO basemap key
 
-Copy the ignored environment-file template and add a CARTO key:
+This step is optional. Without a key, OpenStreetMap tiles are used. To use
+CARTO basemaps, copy the ignored environment-file template and add a key:
 
 ```bash
 cp .env.example .env
 ```
 
 ```text
-CARTO_API_KEY = default_public_xxxxxxxxxxxxxxxxxxxxx
+CARTO_API_KEY = your_key_here
 ```
 
-Get a free key at <https://carto.com/developers/tiles>. A missing or blank key
-produces a clear error.
+Get a free key at <https://carto.com/developers/tiles>.
 
-## Usage
+## Quick start
 
 1. Request your data from Strava: **Settings → My Account → Download or Delete
    Your Account → Download Request**.
-2. Unzip the export and place the folder next to `config.json`. The default
-   folder name is `strava_export`.
-3. Create `config.json`, or copy a template from `example_configs/`:
-
-```json
-{
-  "ACTIVITIES_DIR": "strava_export",
-  "ACTIVITY_TYPES": ["Run"],
-  "DATE_FROM": null,
-  "DATE_TO": null,
-  "HOME_LAT": null,
-  "HOME_LON": null,
-  "RADIUS_KM": 20.0,
-  "GPS_SPREAD_MIN_M": 200,
-  "METERS_PER_PIXEL": 10,
-  "PADDING_M": 500,
-  "TRACK_CLIP_RADIUS_KM": 50.0,
-  "BLUR_SIGMA_PX": 2,
-  "MAP_OPACITY": 0.85,
-  "CARTO_STYLE": "dark_all",
-  "SPEED_MIN_MS": null,
-  "SPEED_MAX_MS": null,
-  "HR_MIN_BPM": null,
-  "HR_MAX_BPM": null,
-  "AUTO_RANGE_PCT": 5,
-  "MAX_CONSECUTIVE_SAME_CELL": 3,
-  "DECAY_FACTOR": 0.5,
-  "RASTER_MODE": "decay",
-  "COVERAGE_NORMALIZATION": "pct",
-  "OUTPUT_GPX": "tracks.gpx",
-  "EMBED_ENABLED": false,
-  "EMBED_HTML": "heatmap_embed.html",
-  "EMBED_LEGEND": true,
-  "EMBED_ATTRIBUTION": true,
-  "EMBED_HOME_MARKER": true,
-  "EMBED_TRACKS": false,
-  "EMBED_METRICS": [],
-  "EMBED_DEMO": true
-}
-```
-
-4. Generate the map:
+2. Unzip the export in the project directory. The generator automatically finds
+   a folder containing `activities.csv`, detects activity types with GPS files,
+   detects your most common start location, and chooses bounds from the data.
+3. Generate the map:
 
 ```bash
 uv run python main.py
@@ -117,16 +79,44 @@ uv run python main.py
 The map is saved to `outputs/heatmap.html`; the filtered tracks are also
 written to `outputs/tracks.gpx` by default.
 
+## Automatic defaults
+
+These settings are inferred or chosen automatically and normally need no
+configuration:
+
+- the export directory and activity types with GPS files;
+- the most common activity start as home;
+- a local activity radius that excludes exceptional travel;
+- map bounds from the selected tracks and a bounded raster resolution;
+- cache/output directories, date bounds, filtering, styling, and exports.
+
+## Optional configuration
+
+Most users do not need a config file. Create a partial `config.json` only when
+you want to override a setting; unspecified values keep the automatic defaults.
+
+```json
+{
+  "ACTIVITY_TYPES": ["Run", "Ride"],
+  "DATE_FROM": "2024-01-01",
+  "METERS_PER_PIXEL": 5,
+  "OUTPUT_HTML": "my_heatmap.html"
+}
+```
+
+Pass a different file with `--config path/to/config.json`. Use
+`uv run python main.py validate` to check the export and effective settings.
+
 ## Configuration
 
-### Activity, location, and rendering
+### Common settings
 
 | Setting | Description |
 | --- | --- |
 | `ACTIVITY_TYPES` | Activity types such as `["Run"]`, `["Ride"]`, or `["Run", "Ride"]`. Verbose aliases are accepted, including `"Running"`, `"Cycling"`, `"Bike"`, `"Swimming"`, `"Walking"`, `"Hiking"`, `"Ski"`, `"Snowboarding"`, `"Kayaking"`, and `"Stand Up Paddling"`; see `src/config.py` and `ACTIVITY_TYPE_ALIASES` for the full list. |
 | `DATE_FROM` / `DATE_TO` | ISO date bounds, or `null` for no bound. |
 | `HOME_LAT` / `HOME_LON` | Override the automatically detected home location. |
-| `RADIUS_KM` / `TRACK_CLIP_RADIUS_KM` | Activity-selection and track-clipping radii around home. |
+| `RADIUS_KM` / `TRACK_CLIP_RADIUS_KM` | Optional activity-selection and track-clipping radii around home. `RADIUS_KM` is inferred from the export when omitted; use `null` explicitly to include all activities. |
 | `GPS_SPREAD_MIN_M` | Minimum GPS spread used when selecting activities. |
 | `METERS_PER_PIXEL` | Grid resolution; lower values add detail and file size. Use about `3` for runs and `10` for rides. |
 | `PADDING_M` | Padding around the calculated map bounds. |
@@ -136,7 +126,13 @@ written to `outputs/tracks.gpx` by default.
 | `SPEED_MIN_MS` / `SPEED_MAX_MS` | Speed filters in metres per second, or `null`. |
 | `HR_MIN_BPM` / `HR_MAX_BPM` | Heart-rate filters in BPM, or `null`. |
 | `AUTO_RANGE_PCT` | Percentile used for automatic colour ranges; lower values increase contrast. |
-| `MAX_CONSECUTIVE_SAME_CELL` | Maximum consecutive GPS points in one cell before they are skipped; `1–10`, default `3`. Helps prevent stationary stops dominating the frequency layer. |
+| `MAX_CONSECUTIVE_SAME_CELL` | Maximum consecutive GPS points in one cell before they are skipped; minimum `1`, default `3`. Helps prevent stationary stops dominating the frequency layer. |
+
+### Advanced settings
+
+The remaining processing, filtering, path, and embed settings are supported for
+custom workflows and debugging. Their defaults and validation are defined in
+`src/config_schema.py`.
 
 ### Density and coverage
 

@@ -2,6 +2,7 @@
   "description": "Configuration for Strava Activity Heatmap Generator",
   "properties": {
     "ACTIVITIES_DIR": {
+      "default": "strava_export",
       "description": "Path to the directory containing your Strava export data (activities.csv and .fit.gz/.gpx files)",
       "examples": [
         "strava_export"
@@ -97,15 +98,22 @@
       "title": "Home Lon"
     },
     "RADIUS_KM": {
-      "default": 20.0,
-      "description": "Radius in kilometers around home location to include activities. Only used if HOME_LAT and HOME_LON are set.",
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Radius in kilometers around home. Omit to infer a local radius from the export; use null explicitly to include all activities.",
       "examples": [
         20.0,
         50.0
       ],
-      "minimum": 0,
-      "title": "Radius Km",
-      "type": "number"
+      "title": "Radius Km"
     },
     "GPS_SPREAD_MIN_M": {
       "default": 200,
@@ -119,15 +127,22 @@
       "type": "number"
     },
     "METERS_PER_PIXEL": {
-      "default": 3,
+      "anyOf": [
+        {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
       "description": "Ground resolution in meters per pixel for the heatmap raster.",
       "examples": [
         3,
         10
       ],
-      "exclusiveMinimum": 0,
-      "title": "Meters Per Pixel",
-      "type": "number"
+      "title": "Meters Per Pixel"
     },
     "PADDING_M": {
       "default": 500,
@@ -141,15 +156,22 @@
       "type": "number"
     },
     "TRACK_CLIP_RADIUS_KM": {
-      "default": 50.0,
-      "description": "Maximum distance in km from home to clip tracks. Tracks beyond this are clipped.",
+      "anyOf": [
+        {
+          "minimum": 0,
+          "type": "number"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "description": "Optional maximum distance in km from home to clip tracks. Omit to disable clipping.",
       "examples": [
         50.0,
         100.0
       ],
-      "minimum": 0,
-      "title": "Track Clip Radius Km",
-      "type": "number"
+      "title": "Track Clip Radius Km"
     },
     "BLUR_SIGMA_PX": {
       "default": 2,
@@ -451,10 +473,6 @@
       "type": "array"
     }
   },
-  "required": [
-    "ACTIVITIES_DIR",
-    "ACTIVITY_TYPES"
-  ],
   "title": "Strava Heatmap Configuration",
   "type": "object",
   "$schema": "https://json-schema.org/draft/2020-12/schema"

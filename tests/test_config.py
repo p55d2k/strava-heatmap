@@ -277,15 +277,14 @@ class TestConfig:
         with pytest.raises(json.JSONDecodeError):
             Config(self.config_path)
 
-    def test_raises_on_missing_required_fields(self):
-        """Should raise ValidationError for missing required fields."""
-        import pydantic
-
+    def test_missing_optional_fields_use_defaults(self):
+        """A partial config should be enough to get started."""
         incomplete_config = {"ACTIVITIES_DIR": self.temp_dir}
         self.config_path.write_text(json.dumps(incomplete_config))
 
-        with pytest.raises(pydantic.ValidationError):
-            Config(self.config_path)
+        config = Config(self.config_path)
+        assert config.activity_types == {"Run"}
+        assert config.meters_per_pixel is None
 
     def test_log_summary_runs_without_error(self):
         """log_summary should run without error."""

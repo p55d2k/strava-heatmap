@@ -42,19 +42,13 @@ CARTO_ATTRIBUTION = (
 def get_carto_api_key() -> str:
     """Return the CARTO API key from the `CARTO_API_KEY` environment variable.
 
-    The key must be provided via a `.env` file (see ``.env.example``) or the
+    The key can be provided via a `.env` file (see ``.env.example``) or the
     exported `CARTO_API_KEY` environment variable.
 
-    Raises:
-        ValueError: If `CARTO_API_KEY` is missing or blank.
+    Returns an empty string when no key is configured. The caller then uses
+    the keyless OpenStreetMap fallback.
     """
     key = os.getenv("CARTO_API_KEY", "").strip()
-    if not key:
-        raise ValueError(
-            "CARTO_API_KEY is not set.\n"
-            "  -> Copy .env.example to .env and add your CARTO_API_KEY.\n"
-            "  -> Get a key at https://carto.com/developers/tiles"
-        )
     return key
 
 
@@ -68,7 +62,9 @@ def build_tile_url(style: str = DEFAULT_CARTO_STYLE) -> str:
         A tile URL template with {z}/{x}/{y} placeholders and the API key.
     """
     key = get_carto_api_key()
-    return f"https://basemaps.cartocdn.com/rastertiles/{style}/{{z}}/{{x}}/{{y}}.png?key={key}"
+    if key:
+        return f"https://basemaps.cartocdn.com/rastertiles/{style}/{{z}}/{{x}}/{{y}}.png?key={key}"
+    return "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
 
 
 # Home marker sizing — Google-Maps style: the marker should shrink as you zoom

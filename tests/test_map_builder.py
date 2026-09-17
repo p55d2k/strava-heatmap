@@ -1812,17 +1812,15 @@ class TestLayerGroupConfig:
         """Should return the key from the environment."""
         assert get_carto_api_key() == "default_public_testkey"
 
-    def test_get_carto_api_key_raises_when_missing(self, monkeypatch):
-        """Should raise ValueError when CARTO_API_KEY is not set."""
+    def test_get_carto_api_key_is_optional(self, monkeypatch):
+        """A missing key selects the keyless OpenStreetMap fallback."""
         monkeypatch.delenv("CARTO_API_KEY", raising=False)
-        with pytest.raises(ValueError, match="CARTO_API_KEY is not set"):
-            get_carto_api_key()
+        assert get_carto_api_key() == ""
 
     def test_get_carto_api_key_ignores_blank(self, monkeypatch):
-        """Should raise when CARTO_API_KEY is blank or whitespace."""
+        """A blank key also selects the keyless OpenStreetMap fallback."""
         monkeypatch.setenv("CARTO_API_KEY", "   ")
-        with pytest.raises(ValueError, match="CARTO_API_KEY is not set"):
-            get_carto_api_key()
+        assert get_carto_api_key() == ""
 
     def test_build_tile_url_contains_key(self, carto_api_key):
         """build_tile_url should embed the API key and default style."""

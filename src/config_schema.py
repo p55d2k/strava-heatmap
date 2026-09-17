@@ -246,15 +246,16 @@ class ConfigModel(BaseModel):
 
     model_config = ConfigDict(populate_by_name=True)
 
-    # Required fields
+    # The wrapper fills these automatically for a fresh Strava export. They
+    # remain valid explicit overrides for existing config files.
     activities_dir: str = Field(
-        ...,
+        default="strava_export",
         alias="ACTIVITIES_DIR",
         description="Path to the directory containing your Strava export data (activities.csv and .fit.gz/.gpx files)",
         examples=["strava_export"],
     )
     activity_types: list[str] = Field(
-        ...,
+        default_factory=lambda: ["Run"],
         alias="ACTIVITY_TYPES",
         min_length=1,
         description="List of activity types to include in the heatmap. Can use canonical types (Run, Ride, Swim, etc.) or common aliases (Running, Cycling, Bike, etc.)",
@@ -288,11 +289,11 @@ class ConfigModel(BaseModel):
         description="Home longitude for radius filtering. Use null to disable radius filtering.",
         examples=[-122.0, None],
     )
-    radius_km: float = Field(
-        default=20.0,
+    radius_km: float | None = Field(
+        default=None,
         alias="RADIUS_KM",
         ge=0,
-        description="Radius in kilometers around home location to include activities. Only used if HOME_LAT and HOME_LON are set.",
+        description="Radius in kilometers around home. Omit to infer a local radius from the export; use null explicitly to include all activities.",
         examples=[20.0, 50.0],
     )
 
@@ -304,8 +305,8 @@ class ConfigModel(BaseModel):
         description="Minimum GPS spread in meters. Activities with less spread are treated as stationary.",
         examples=[200, 100],
     )
-    meters_per_pixel: float = Field(
-        default=3,
+    meters_per_pixel: float | None = Field(
+        default=None,
         alias="METERS_PER_PIXEL",
         gt=0,
         description="Ground resolution in meters per pixel for the heatmap raster.",
@@ -318,11 +319,11 @@ class ConfigModel(BaseModel):
         description="Padding in meters around the activity bounds for the heatmap extent.",
         examples=[500, 1000],
     )
-    track_clip_radius_km: float = Field(
-        default=50.0,
+    track_clip_radius_km: float | None = Field(
+        default=None,
         alias="TRACK_CLIP_RADIUS_KM",
         ge=0,
-        description="Maximum distance in km from home to clip tracks. Tracks beyond this are clipped.",
+        description="Optional maximum distance in km from home to clip tracks. Omit to disable clipping.",
         examples=[50.0, 100.0],
     )
 
@@ -434,7 +435,7 @@ class ConfigModel(BaseModel):
         examples=["pct", "max"],
     )
 
-    # Optional path overrides (relative to project root)
+    # Optional path overrides (relative to the config/project directory)
     cache_dir: str = Field(
         default="cache",
         alias="CACHE_DIR",

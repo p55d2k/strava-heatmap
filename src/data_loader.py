@@ -136,9 +136,12 @@ def determine_home_location(config, runs: pd.DataFrame) -> tuple[float, float]:
 
 
 def filter_by_home_radius(
-    runs: pd.DataFrame, home_lat: float, home_lon: float, radius_km: float
+    runs: pd.DataFrame, home_lat: float, home_lon: float, radius_km: float | None
 ) -> pd.DataFrame:
     """Filter activities by distance from home."""
+    if radius_km is None:
+        log.info("Home-radius filter disabled; keeping all GPS activities")
+        return runs
     runs["dist_from_home_km"] = runs.apply(
         lambda r: haversine_km(home_lat, home_lon, r["start_lat"], r["start_lon"]), axis=1
     )

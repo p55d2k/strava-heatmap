@@ -18,13 +18,12 @@ class TestConfigSchema:
         schema = generate_json_schema()
         assert isinstance(schema, dict)
         assert "properties" in schema
-        assert "required" in schema
+        assert "required" not in schema
 
-    def test_schema_has_required_fields(self):
-        """Schema should require ACTIVITIES_DIR and ACTIVITY_TYPES (using aliases)."""
+    def test_schema_has_no_required_fields(self):
+        """A config file is optional and every setting has a default."""
         schema = generate_json_schema()
-        assert "ACTIVITIES_DIR" in schema["required"]
-        assert "ACTIVITY_TYPES" in schema["required"]
+        assert "required" not in schema
 
     def test_schema_has_all_config_fields(self):
         """Schema should include all config fields using UPPERCASE aliases."""
@@ -132,14 +131,12 @@ class TestConfigSchema:
             }
             jsonschema.validate(valid_config, schema)
 
-    def test_schema_rejects_missing_required(self):
-        """Schema should reject config missing required fields."""
+    def test_schema_accepts_partial_config(self):
+        """Schema should accept a partial config."""
         import jsonschema  # type: ignore
 
         schema = generate_json_schema()
-        invalid_config = {"ACTIVITY_TYPES": ["Run"]}  # missing ACTIVITIES_DIR
-        with pytest.raises(jsonschema.ValidationError):
-            jsonschema.validate(invalid_config, schema)
+        jsonschema.validate({"ACTIVITY_TYPES": ["Run"]}, schema)
 
     def test_schema_rejects_invalid_carto_style(self):
         """Schema should reject CARTO_STYLE values outside the allowed set."""

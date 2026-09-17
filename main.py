@@ -28,6 +28,7 @@ from src.data_loader import (
 )
 from src.geojson_export import build_geojson, geojson_feature_count
 from src.gpx_export import write_gpx
+from src.helpers import haversine_km
 from src.map_builder import (
     DENSITY_MODE_LAYERS,
     INDEPENDENT_LAYER_NAMES,
@@ -73,6 +74,31 @@ def format_embed_size(n_chars: int) -> str:
     return f"{n_chars / 1000:.0f} KB"
 
 
+def auto_meters_per_pixel(tracks: list[tuple[str, list]]) -> float:
+    """Choose a bounded raster size so a full export remains renderable."""
+    points = [point for _, track in tracks for point in track]
+    if not points:
+        return 3.0
+    lats = [point[0] for point in points]
+    lons = [point[1] for point in points]
+    lat_span = haversine_km(min(lats), min(lons), max(lats), min(lons)) * 1000
+    lon_span = haversine_km(min(lats), min(lons), min(lats), max(lons)) * 1000
+    largest_span = max(lat_span, lon_span)
+    return max(3.0, min(100.0, largest_span / 1200))
+
+
+def auto_activity_radius(runs, home_lat: float, home_lon: float) -> float:
+    """Ignore exceptional travel while keeping the normal activity area."""
+    distances = [
+        haversine_km(home_lat, home_lon, row.start_lat, row.start_lon) for row in runs.itertuples()
+    ]
+    if not distances:
+        return 20.0
+    distances.sort()
+    percentile_index = min(len(distances) - 1, round(len(distances) * 0.95))
+    return max(20.0, min(100.0, distances[percentile_index]))
+
+
 def print_success(message: str) -> None:
     """Print a success message."""
     print(f"  ✓ {message}")
@@ -97,12 +123,13 @@ def parse_args() -> argparse.Namespace:
     common.add_argument(
         "--config",
         type=Path,
-        default=Path("config.json"),
-        help="Path to config.json file (default: config.json)",
+        default=argparse.SUPPRESS,
+        help="Optional config file; omitted to auto-detect the Strava export",
     )
     common.add_argument(
         "--dev",
         action="store_true",
+        default=argparse.SUPPRESS,
         help="Enable verbose/debug logging for development",
     )
     # The map-building subcommands additionally open the result in a browser.
@@ -111,12 +138,14 @@ def parse_args() -> argparse.Namespace:
         "--no-open",
         action="store_true",
         dest="no_open",
+        default=argparse.SUPPRESS,
         help="Do not automatically open the generated heatmap in the browser",
     )
     parent.add_argument(
         "--embed",
         action="store_true",
         dest="embed",
+        default=argparse.SUPPRESS,
         help=("Also build the minimal, interactive widget (no control panel) for iframe embedding"),
     )
 
@@ -124,8 +153,8 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--config",
         type=Path,
-        default=Path("config.json"),
-        help="Path to config.json file (default: config.json)",
+        default=None,
+        help="Optional config file; omitted to auto-detect the Strava export",
     )
     parser.add_argument(
         "--dev",
@@ -162,6 +191,7 @@ def parse_args() -> argparse.Namespace:
     generate_parser.add_argument(
         "--dry-run",
         action="store_true",
+        default=argparse.SUPPRESS,
         help="Validate config, show activity count, and exit without generating map",
     )
 
@@ -266,7 +296,12 @@ def run_generate(args: argparse.Namespace) -> None:
         print_stage("Stage 1: Loading & Filtering Activities")
         runs = load_and_filter_activities(config)
         home_lat, home_lon = determine_home_location(config, runs)
-        runs = filter_by_home_radius(runs, home_lat, home_lon, config.radius_km)
+        radius_km = (
+            auto_activity_radius(runs, home_lat, home_lon)
+            if config.radius_km_auto
+            else config.radius_km
+        )
+        runs = filter_by_home_radius(runs, home_lat, home_lon, radius_km)
 
         print_info("Activities after all filters", str(len(runs)))
 
@@ -278,6 +313,8 @@ def run_generate(args: argparse.Namespace) -> None:
         # same filtered tracks as GPX for other tools.
         print_stage("Stage 2: Loading GPS Tracks")
         tracks = load_tracks(config, runs)
+        meters_per_pixel = config.meters_per_pixel or auto_meters_per_pixel(tracks)
+        print_info("Raster resolution", f"{meters_per_pixel:.1f} m/pixel")
         n_gpx_tracks, n_gpx_points = write_gpx(tracks, config.output_gpx, gpx_title(config))
         print_success(
             f"Re-exported {n_gpx_tracks} tracks ({n_gpx_points:,} points) to {config.output_gpx}"
@@ -304,7 +341,7 @@ def run_generate(args: argparse.Namespace) -> None:
             tracks, to_wm, to_utm, home_x_utm, home_y_utm, clip_m, config.padding_m
         )
 
-        grids = create_grids(x_min_wm, x_max_wm, y_min_wm, y_max_wm, config.meters_per_pixel)
+        grids = create_grids(x_min_wm, x_max_wm, y_min_wm, y_max_wm, meters_per_pixel)
 
         n_activities = rasterize_tracks(
             tracks,
@@ -315,7 +352,7 @@ def run_generate(args: argparse.Namespace) -> None:
             clip_m,
             x_min_wm,
             y_max_wm,
-            config.meters_per_pixel,
+            meters_per_pixel,
             config.max_consecutive_same_cell,
             grids,
             config.decay_factor,
@@ -348,7 +385,7 @@ def run_generate(args: argparse.Namespace) -> None:
                 grids,
                 x_min_wm,
                 y_max_wm,
-                config.meters_per_pixel,
+                meters_per_pixel,
                 from_wm,
             )
             pbar.update(1)
@@ -500,7 +537,12 @@ def run_export_gpx(args: argparse.Namespace) -> None:
         print_stage("Filtering Activities")
         runs = load_and_filter_activities(config)
         home_lat, home_lon = determine_home_location(config, runs)
-        runs = filter_by_home_radius(runs, home_lat, home_lon, config.radius_km)
+        radius_km = (
+            auto_activity_radius(runs, home_lat, home_lon)
+            if config.radius_km_auto
+            else config.radius_km
+        )
+        runs = filter_by_home_radius(runs, home_lat, home_lon, radius_km)
         print_info("Activities after all filters", str(len(runs)))
 
         print_stage("Loading GPS Tracks")
