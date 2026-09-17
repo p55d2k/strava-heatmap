@@ -32,9 +32,11 @@ import folium
 import pytest
 
 from src.map_builder.constants import (
+    COVERAGE_LAYER,
     DEFAULT_RASTER_MODE,
     DENSITY_LAYER_NAMES,
     DENSITY_MODE_LAYERS,
+    DENSITY_VIRTUAL_LAYER,
     LEGEND_IDS,
     METRIC_LAYER_NAMES,
 )
@@ -374,6 +376,20 @@ function toggle(layerName, checked) {
   ok(rowVisible("Coverage (Places Visited)") === "none",
      "initial: Coverage density row hidden");
   ok(rowVisible("Pace (average)") === "none", "initial: pace metric row hidden");
+
+  // Scenario U - each toggle's data-size badge spells its unit correctly. Naive
+  // suffix-pluralisation renders "activitys"; the badge must use real plurals.
+  function badgeText(layerName) {
+    var input = panel.querySelector('input[data-layer-name="' + layerName + '"]');
+    var badge = input && input.parentNode.querySelector(".hcp-layer-count");
+    return badge ? badge.textContent : null;
+  }
+  ok(badgeText("GPS Density") === "3 activities",
+     "density badge reads '3 activities', not 'activitys'");
+  ok(badgeText("Coverage (Places Visited)") === "1 activity",
+     "a single activity stays singular");
+  ok(badgeText("Raw GPS tracks") === "3 tracks",
+     "track badge pluralises with 'tracks'");
 
   // Scenario A - the two density concepts (GPS Density / Coverage) are
   // mutually-exclusive radio rows: toggling Coverage on removes the default
@@ -837,6 +853,20 @@ def _overlay_layers() -> list[tuple[str, str, bool]]:
     return layers
 
 
+def _layer_counts() -> dict[str, int]:
+    """Production-shaped per-layer data counts for the toggle badges.
+
+    Coverage is given 1 so the singular branch is exercised, and the density
+    concept 3 so the plural one is (catching a naive "activitys").
+    """
+    return {
+        "Raw GPS tracks": 3,
+        DENSITY_VIRTUAL_LAYER: 3,
+        COVERAGE_LAYER: 1,
+        "Pace (average)": 2,
+    }
+
+
 def _write_harness(tmp: Path, panel_cfg: dict) -> None:
     """Write the node harness inputs derived from real production assets."""
     config = dict(panel_cfg)
@@ -880,7 +910,9 @@ def test_control_panel_toggles_update_legend_via_overlay_events(node_available, 
         centre=[37.0, -122.0],
         home=home,
         gpx_filename="my_runs.gpx",
-        layer_groups=build_layer_group_config(_overlay_layers(), has_tracks=True),
+        layer_groups=build_layer_group_config(
+            _overlay_layers(), has_tracks=True, layer_counts=_layer_counts()
+        ),
         advanced=build_advanced_config(
             DEFAULT_RASTER_MODE,
             overlay_layers=_overlay_layers(),

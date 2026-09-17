@@ -451,6 +451,11 @@
         : 0.85;
   }
 
+  // Plural nouns for the badge's units. "activity" cannot be pluralized by
+  // suffixing an "s" (that reads "activitys"), so the plural forms are spelled
+  // out here; an unknown unit falls back to the naive “s”.
+  var UNIT_PLURALS = { activity: "activities", track: "tracks", item: "items" };
+
   // Build the muted badge showing how much data a layer carries (the number of
   // tracks / activities it is built from). The figure is computed at build time
   // (see src/map_builder/control.py::compute_layer_counts); layers with no count
@@ -458,9 +463,10 @@
   function makeLayerCountBadge(lDef) {
     if (!lDef || typeof lDef.count !== "number") return null;
     var unit = lDef.unit || "item";
+    var word = lDef.count === 1 ? unit : UNIT_PLURALS[unit] || unit + "s";
     var badge = document.createElement("span");
     badge.className = "hcp-layer-count";
-    badge.textContent = lDef.count + " " + unit + (lDef.count === 1 ? "" : "s");
+    badge.textContent = lDef.count + " " + word;
     return badge;
   }
 

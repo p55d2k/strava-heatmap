@@ -29,8 +29,10 @@ from src.data_loader import (
 from src.geojson_export import build_geojson, geojson_feature_count
 from src.gpx_export import write_gpx
 from src.map_builder import (
+    DENSITY_MODE_LAYERS,
     INDEPENDENT_LAYER_NAMES,
     LegendBuilder,
+    build_embed_demo_html,
     build_map,
     encode_for_embedding,
 )
@@ -111,6 +113,12 @@ def parse_args() -> argparse.Namespace:
         dest="no_open",
         help="Do not automatically open the generated heatmap in the browser",
     )
+    parent.add_argument(
+        "--embed",
+        action="store_true",
+        dest="embed",
+        help=("Also build the minimal, interactive widget (no control panel) for iframe embedding"),
+    )
 
     # Also add them to the main parser for backward compatibility when no subcommand is used
     parser.add_argument(
@@ -135,6 +143,12 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         dest="no_open",
         help="Do not automatically open the generated heatmap in the browser",
+    )
+    parser.add_argument(
+        "--embed",
+        action="store_true",
+        dest="embed",
+        help=("Also build the minimal, interactive widget (no control panel) for iframe embedding"),
     )
 
     subparsers = parser.add_subparsers(dest="command", help="Available commands")
@@ -219,6 +233,8 @@ def run_validate(args: argparse.Namespace) -> None:
         print_info("Radius", f"{config.radius_km} km")
         print_info("Output directory", str(config.output_dir))
         print_info("Cache directory", str(config.cache_dir))
+        if config.embed_enabled:
+            print_info("Embed widget", str(config.output_embed_html))
 
     except (FileNotFoundError, NotADirectoryError, ValueError) as e:
         print_error(str(e))
@@ -397,6 +413,56 @@ def run_generate(args: argparse.Namespace) -> None:
 
         print_success(f"Heatmap saved to: {config.output_html}")
         print_info("GPX track export", str(config.output_gpx))
+
+        # Optional second build: the same heatmap as a minimal, still-interactive
+        # widget (no control panel) for dropping into an <iframe> on another page.
+        if args.embed or config.embed_enabled:
+            print_stage("Stage 7: Building Embeddable Widget")
+            # The widget has no layer control to sync legend rows, so its legend
+            # is rendered with exactly the rows for the layers it ships: the
+            # configured raster mode's density layer plus any EMBED_METRICS.
+            widget_layer_names = [
+                DENSITY_MODE_LAYERS[config.raster_mode],
+                *config.embed_metrics,
+            ]
+            widget_legend = LegendBuilder(
+                rows=legend_builder.visible_for(widget_layer_names)
+            ).build(
+                normalized,
+                colormaps,
+                normalized["max_passes"],
+                max_passes_by_strategy=normalized["max_passes_by_strategy"],
+            )
+            build_map(
+                tracks,
+                layers,
+                bounds,
+                centre,
+                widget_legend,
+                config.output_embed_html,
+                config.map_opacity,
+                carto_style=config.carto_style,
+                home=[home_lat, home_lon],
+                embed=True,
+                embed_legend=config.embed_legend,
+                embed_attribution=config.embed_attribution,
+                embed_home_marker=config.embed_home_marker,
+                embed_tracks=config.embed_tracks,
+                embed_metrics=config.embed_metrics,
+            )
+            print_success(f"Embeddable widget saved to: {config.output_embed_html}")
+            if config.embed_metrics:
+                print_info("Widget metric layers", ", ".join(config.embed_metrics))
+
+            # A tiny demo page beside the widget: it hosts the widget in a
+            # responsive iframe and repeats the snippet to copy, so opening it
+            # shows how the widget is meant to be embedded.
+            if config.embed_demo:
+                config.output_embed_demo_html.write_text(
+                    build_embed_demo_html(config.output_embed_html.name),
+                    encoding="utf-8",
+                )
+                print_success(f"Embed demo page saved to: {config.output_embed_demo_html}")
 
         if not args.no_open:
             file_url = f"file://{config.output_html.absolute()}"

@@ -41,8 +41,10 @@ from src.map_builder.control import (
     compute_layer_counts,
     control_panel_script,
     controls_css,
+    legend_css,
 )
 from src.map_builder.embed import (
+    build_embed_demo_html,
     decode_embedded,
     encode_for_embedding,
 )
@@ -94,6 +96,7 @@ __all__ = [
     "ExclusiveLayerControl",
     "ControlPanel",
     "controls_css",
+    "legend_css",
     "build_control_panel_html",
     "build_layer_group_config",
     "build_advanced_config",
@@ -103,6 +106,7 @@ __all__ = [
     # Embed
     "encode_for_embedding",
     "decode_embedded",
+    "build_embed_demo_html",
     # Map builder
     "ScalableHomeMarker",
     "build_map",

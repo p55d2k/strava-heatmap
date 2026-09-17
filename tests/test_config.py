@@ -176,6 +176,93 @@ class TestConfig:
         expected = (Path(self.temp_dir) / "outputs" / "my_runs.gpx").resolve()
         assert config.output_gpx == expected
 
+    def test_embed_defaults(self):
+        """Embed widget mode should be off, named heatmap_embed.html, and keep
+        the legend, attribution and home marker while leaving tracks out."""
+        config = Config(self.config_path)
+
+        assert config.embed_enabled is False
+        assert (
+            config.output_embed_html
+            == (Path(self.temp_dir) / "outputs" / "heatmap_embed.html").resolve()
+        )
+        assert config.embed_legend is True
+        assert config.embed_attribution is True
+        assert config.embed_home_marker is True
+        assert config.embed_tracks is False
+
+    def test_uses_configured_embed_options(self):
+        """Embed widget name and content flags should follow config.json."""
+        custom_config = self.valid_config.copy()
+        custom_config.update(
+            {
+                "EMBED_ENABLED": True,
+                "EMBED_HTML": "widget.html",
+                "EMBED_LEGEND": False,
+                "EMBED_ATTRIBUTION": False,
+                "EMBED_HOME_MARKER": False,
+                "EMBED_TRACKS": True,
+            }
+        )
+        self.config_path.write_text(json.dumps(custom_config))
+
+        config = Config(self.config_path)
+
+        assert config.embed_enabled is True
+        assert (
+            config.output_embed_html == (Path(self.temp_dir) / "outputs" / "widget.html").resolve()
+        )
+        assert config.embed_legend is False
+        assert config.embed_attribution is False
+        assert config.embed_home_marker is False
+        assert config.embed_tracks is True
+
+    def test_embed_demo_path_follows_embed_html(self):
+        """The demo page sits beside the widget and is named after it."""
+        config = Config(self.config_path)
+
+        assert config.embed_demo is True
+        expected = (Path(self.temp_dir) / "outputs" / "heatmap_embed_demo.html").resolve()
+        assert config.output_embed_demo_html == expected
+
+    def test_embed_demo_follows_custom_embed_html_and_can_be_disabled(self):
+        """A renamed widget renames its demo page; EMBED_DEMO turns it off."""
+        custom_config = self.valid_config.copy()
+        custom_config["EMBED_HTML"] = "widget.html"
+        custom_config["EMBED_DEMO"] = False
+        self.config_path.write_text(json.dumps(custom_config))
+
+        config = Config(self.config_path)
+
+        assert config.embed_demo is False
+        expected = (Path(self.temp_dir) / "outputs" / "widget_demo.html").resolve()
+        assert config.output_embed_demo_html == expected
+
+    def test_embed_metrics_defaults_to_empty(self):
+        """No metric layers travel with the widget unless they are asked for."""
+        assert Config(self.config_path).embed_metrics == []
+
+    def test_embed_metrics_accept_layer_names_and_aliases(self):
+        """EMBED_METRICS entries resolve to layer names, de-duplicated."""
+        custom_config = self.valid_config.copy()
+        custom_config["EMBED_METRICS"] = ["pace", "Heart rate (average)", "pace"]
+        self.config_path.write_text(json.dumps(custom_config))
+
+        config = Config(self.config_path)
+
+        assert config.embed_metrics == ["Pace (average)", "Heart rate (average)"]
+
+    def test_embed_metrics_rejects_unknown_entry(self):
+        """A typo must fail loudly instead of silently dropping a layer."""
+        import pydantic
+
+        custom_config = self.valid_config.copy()
+        custom_config["EMBED_METRICS"] = ["pace", "warp-drive"]
+        self.config_path.write_text(json.dumps(custom_config))
+
+        with pytest.raises(pydantic.ValidationError, match="Unknown EMBED_METRICS entry"):
+            Config(self.config_path)
+
     def test_raises_on_missing_config_file(self):
         """Should raise FileNotFoundError for missing config file."""
         missing_path = Path(self.temp_dir) / "missing.json"

@@ -16,8 +16,8 @@ show/hide the correct legend row.
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Iterable
+from dataclasses import dataclass, replace
 from pathlib import Path
 from string import Template
 
@@ -208,6 +208,17 @@ class LegendBuilder:
             )
         )
         return rows
+
+    def visible_for(self, layer_names: Iterable[str]) -> list[LegendRow]:
+        """Return the configured rows with ``visible`` set for ``layer_names``.
+
+        Used for the embeddable widget, which has no layer control to sync the
+        legend: the legend must instead match the layers baked into the widget,
+        so the rows for exactly those layers start out shown and the rest stay
+        hidden.
+        """
+        wanted = set(layer_names)
+        return [replace(row, visible=row.layer_name in wanted) for row in self.rows]
 
     @property
     def legend_ids(self) -> dict[str, str]:

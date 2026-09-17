@@ -1,0 +1,80 @@
+/* ================================================================
+   Shared legend stylesheet — the colour / typography custom
+   properties and the legend card itself.
+
+   Kept separate from panel.css so the embeddable widget (which has no
+   control panel) can pull in just the legend without also dragging in
+   the full-height sidebar layout, which would otherwise offset the map
+   beside a sidebar the widget does not have.
+   ================================================================ */
+
+:root {
+  --hcp-bg: rgba(15, 15, 15, 0.92);
+  --hcp-border: rgba(255, 255, 255, 0.12);
+  --hcp-radius: 10px;
+  --hcp-shadow: 0 4px 18px rgba(0, 0, 0, 0.65);
+  --hcp-text: #ddd;
+  --hcp-text-strong: #f1f1f1;
+  --hcp-text-muted: #999;
+  --hcp-accent: #fc4c02;
+  --hcp-control-bg: rgba(255, 255, 255, 0.06);
+  --hcp-control-border: rgba(255, 255, 255, 0.14);
+  --hcp-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial,
+    sans-serif;
+}
+
+/* ---------------------------------------------------------- Heatmap legend */
+
+/* Match by id and/or class so the legend can never fall back to an
+   unstyled, full-width block at the top of the page on any code path.
+   It is always a small card pinned to the bottom-right (separate from the
+   top-right control panel). */
+#heatmap-legend,
+.hcp-legend {
+  position: fixed;
+  top: auto;
+  left: auto;
+  bottom: 28px;
+  right: 10px;
+  z-index: 5000;
+  width: auto;
+  max-width: 300px;
+  background: var(--hcp-bg);
+  padding: 13px 16px 14px;
+  border-radius: var(--hcp-radius);
+  border: 1px solid var(--hcp-border);
+  box-shadow: var(--hcp-shadow);
+  color: var(--hcp-text);
+  font-family: var(--hcp-font);
+  font-size: 12px;
+  min-width: 210px;
+  line-height: 1.4;
+}
+
+.hcp-legend-row {
+  margin-bottom: 8px;
+}
+
+.hcp-legend-row:last-child {
+  margin-bottom: 0;
+}
+
+.hcp-legend-title {
+  font-weight: 600;
+  color: var(--hcp-text-strong);
+  margin-bottom: 3px;
+}
+
+.hcp-legend-swatches {
+  height: 10px;
+  border-radius: 3px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.hcp-legend-scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 3px;
+  color: var(--hcp-text-muted);
+  font-size: 11px;
+}

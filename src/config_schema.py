@@ -186,6 +186,57 @@ def normalize_activity_type(raw: str | None) -> str:
     return str(raw).strip()
 
 
+# ==============================================================================
+# METRIC LAYER ALIASES
+# ==============================================================================
+# The map builder's metric overlay names, shown in the control panel and used
+# as layer names (see METRIC_LAYER_NAMES in src/map_builder/constants.py, which
+# this mirrors). EMBED_METRICS accepts either these full names or the short keys
+# below, so a widget's config can read "pace" instead of "Pace (average)".
+# The canonical values are the single source of truth here; a test pins them to
+# METRIC_LAYER_NAMES so the two cannot drift apart.
+METRIC_LAYER_ALIASES = {
+    # --- Pace ---
+    "pace": "Pace (average)",
+    "pace_avg": "Pace (average)",
+    "pace_average": "Pace (average)",
+    # --- Heart rate ---
+    "heart_rate": "Heart rate (average)",
+    "heartrate": "Heart rate (average)",
+    "hr": "Heart rate (average)",
+    "heart_rate_avg": "Heart rate (average)",
+    "heart_rate_average": "Heart rate (average)",
+    # --- Gradient (absolute) ---
+    "gradient": "Gradient (absolute)",
+    "gradient_abs": "Gradient (absolute)",
+    "gradient_absolute": "Gradient (absolute)",
+    # --- Gradient (change) ---
+    "elev_change": "Gradient (change)",
+    "elevation_change": "Gradient (change)",
+    "gradient_change": "Gradient (change)",
+}
+
+
+def normalize_metric_layer(raw: str) -> str:
+    """Map an ``EMBED_METRICS`` entry to its canonical metric layer name.
+
+    Accepts the full layer name (case-insensitively, e.g. ``"Pace (average)"``)
+    or one of the short keys in :data:`METRIC_LAYER_ALIASES` (e.g. ``"pace"``).
+
+    Raises:
+        ValueError: If the entry names no known metric layer, so a typo in
+            ``config.json`` fails loudly instead of silently dropping a layer.
+    """
+    key = str(raw).strip().lower()
+    canonical = {name.lower(): name for name in METRIC_LAYER_ALIASES.values()}
+    if key in canonical:
+        return canonical[key]
+    if key in METRIC_LAYER_ALIASES:
+        return METRIC_LAYER_ALIASES[key]
+    known = ", ".join(sorted(set(METRIC_LAYER_ALIASES.values())))
+    raise ValueError(f"Unknown EMBED_METRICS entry: {raw!r}. Expected one of: {known}")
+
+
 class ConfigModel(BaseModel):
     """Pydantic model for Strava Heatmap configuration.
 
@@ -425,11 +476,98 @@ class ConfigModel(BaseModel):
         examples=["tracks.gpx", "runs.gpx"],
     )
 
+    # --- Embeddable widget (iframe) mode ---------------------------------
+    # A second, minimal HTML file built next to the full map. It drops the
+    # control panel and every way of moving the map so the view stays pinned to
+    # the data bounds, which makes it safe to drop into an <iframe> on another
+    # page. What the widget keeps is configurable below.
+    embed_enabled: bool = Field(
+        default=False,
+        alias="EMBED_ENABLED",
+        description=(
+            "Also build a minimal, non-interactive HTML widget (no controls, "
+            "fixed bounds) next to the full map, for embedding in an iframe. "
+            "The --embed CLI flag turns this on for a single run."
+        ),
+    )
+    embed_html: str = Field(
+        default="heatmap_embed.html",
+        alias="EMBED_HTML",
+        description="Name of the embeddable widget file in OUTPUT_DIR.",
+        examples=["heatmap_embed.html", "widget.html"],
+    )
+    embed_legend: bool = Field(
+        default=True,
+        alias="EMBED_LEGEND",
+        description="Show the colour legend in the embeddable widget.",
+    )
+    embed_attribution: bool = Field(
+        default=True,
+        alias="EMBED_ATTRIBUTION",
+        description=(
+            "Show the map tile attribution in the embeddable widget. Keep this "
+            "on: the CARTO / OpenStreetMap tile terms require it."
+        ),
+    )
+    embed_home_marker: bool = Field(
+        default=True,
+        alias="EMBED_HOME_MARKER",
+        description="Show the home marker in the embeddable widget.",
+    )
+    embed_tracks: bool = Field(
+        default=False,
+        alias="EMBED_TRACKS",
+        description=(
+            "Draw the raw GPS tracks in the embeddable widget. Off by default, "
+            "since the heatmap alone is usually the point of a small widget."
+        ),
+    )
+    embed_demo: bool = Field(
+        default=True,
+        alias="EMBED_DEMO",
+        description=(
+            "Also write a small demo page beside the embeddable widget. It shows "
+            "the widget in a responsive iframe (fluid width, fixed aspect "
+            "ratio) with a copy-paste snippet, so opening it demonstrates how "
+            "the widget embeds. Named after EMBED_HTML with a '_demo' suffix."
+        ),
+    )
+    embed_metrics: list[str] = Field(
+        default_factory=list,
+        alias="EMBED_METRICS",
+        description=(
+            "Metric layers to bake into the embeddable widget and show there, "
+            "since the widget has no toggles to switch them on. Entries are "
+            "metric layer names or short aliases (pace, heart_rate, gradient, "
+            "elev_change); the widget's density layer follows RASTER_MODE. "
+            "Empty (the default) leaves the widget as the bare density heatmap."
+        ),
+        examples=[["pace"], ["pace", "heart_rate"]],
+    )
+
     @field_validator("activity_types", mode="before")
     @classmethod
     def normalize_activity_types_input(cls, v: list[str]) -> list[str]:
         """Normalize activity types using the alias mapping at input time."""
         return [normalize_activity_type(t) for t in v]
+
+    @field_validator("embed_metrics", mode="before")
+    @classmethod
+    def normalize_embed_metrics_input(cls, v: list[str] | str | None) -> list[str]:
+        """Resolve EMBED_METRICS to canonical layer names, de-duplicated in order.
+
+        A single string is accepted as a one-item list, and unknown entries raise
+        rather than being dropped silently.
+        """
+        if v is None:
+            return []
+        entries = [v] if isinstance(v, str) else v
+        metrics: list[str] = []
+        for entry in entries:
+            layer = normalize_metric_layer(entry)
+            if layer not in metrics:
+                metrics.append(layer)
+        return metrics
 
     @model_validator(mode="after")
     def validate_paths_and_create_dirs(self) -> "ConfigModel":

@@ -79,6 +79,20 @@ class Config:
         self.output_html = self.output_dir / model.output_html
         self.output_gpx = self.output_dir / model.output_gpx
 
+        # Embeddable widget (iframe) mode.
+        self.embed_enabled = model.embed_enabled
+        self.output_embed_html = self.output_dir / model.embed_html
+        self.embed_legend = model.embed_legend
+        self.embed_attribution = model.embed_attribution
+        self.embed_home_marker = model.embed_home_marker
+        self.embed_tracks = model.embed_tracks
+        self.embed_metrics = list(model.embed_metrics)
+        self.embed_demo = model.embed_demo
+        # The demo page sits beside the widget, so its filename follows EMBED_HTML.
+        self.output_embed_demo_html = self.output_embed_html.with_name(
+            f"{self.output_embed_html.stem}_demo.html"
+        )
+
     def log_summary(self):
         import logging
 

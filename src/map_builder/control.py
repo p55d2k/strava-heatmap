@@ -53,9 +53,24 @@ def _read(name: str) -> str:
     return (_ASSETS_DIR / name).read_text(encoding="utf-8")
 
 
+def legend_css() -> str:
+    """Return the ``<style>`` block for just the legend card.
+
+    The embeddable widget carries no control panel, so it takes this rather
+    than :func:`controls_css`: the panel stylesheet docks a 300px sidebar and
+    offsets the map by its width, which would leave a blank strip beside a
+    widget that has no sidebar.
+    """
+    return f"<style>\n{_read('legend.css')}\n</style>"
+
+
 def controls_css() -> str:
-    """Return the unified ``<style>`` block for the panel, legend, and the hidden Leaflet layer control."""
-    return f"<style>\n{_read('panel.css')}\n</style>"
+    """Return the unified ``<style>`` block for the panel, legend, and the hidden Leaflet layer control.
+
+    ``legend.css`` supplies the shared custom properties and the legend card;
+    ``panel.css`` builds on them, so it is concatenated after it.
+    """
+    return f"<style>\n{_read('legend.css')}\n{_read('panel.css')}\n</style>"
 
 
 def carto_basemap_choices(styles: list[str] | None = None) -> list[dict[str, str]]:

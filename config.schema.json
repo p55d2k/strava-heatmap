@@ -386,6 +386,69 @@
       ],
       "title": "Output Gpx",
       "type": "string"
+    },
+    "EMBED_ENABLED": {
+      "default": false,
+      "description": "Also build a minimal, non-interactive HTML widget (no controls, fixed bounds) next to the full map, for embedding in an iframe. The --embed CLI flag turns this on for a single run.",
+      "title": "Embed Enabled",
+      "type": "boolean"
+    },
+    "EMBED_HTML": {
+      "default": "heatmap_embed.html",
+      "description": "Name of the embeddable widget file in OUTPUT_DIR.",
+      "examples": [
+        "heatmap_embed.html",
+        "widget.html"
+      ],
+      "title": "Embed Html",
+      "type": "string"
+    },
+    "EMBED_LEGEND": {
+      "default": true,
+      "description": "Show the colour legend in the embeddable widget.",
+      "title": "Embed Legend",
+      "type": "boolean"
+    },
+    "EMBED_ATTRIBUTION": {
+      "default": true,
+      "description": "Show the map tile attribution in the embeddable widget. Keep this on: the CARTO / OpenStreetMap tile terms require it.",
+      "title": "Embed Attribution",
+      "type": "boolean"
+    },
+    "EMBED_HOME_MARKER": {
+      "default": true,
+      "description": "Show the home marker in the embeddable widget.",
+      "title": "Embed Home Marker",
+      "type": "boolean"
+    },
+    "EMBED_TRACKS": {
+      "default": false,
+      "description": "Draw the raw GPS tracks in the embeddable widget. Off by default, since the heatmap alone is usually the point of a small widget.",
+      "title": "Embed Tracks",
+      "type": "boolean"
+    },
+    "EMBED_DEMO": {
+      "default": true,
+      "description": "Also write a small demo page beside the embeddable widget. It shows the widget in a responsive iframe (fluid width, fixed aspect ratio) with a copy-paste snippet, so opening it demonstrates how the widget embeds. Named after EMBED_HTML with a '_demo' suffix.",
+      "title": "Embed Demo",
+      "type": "boolean"
+    },
+    "EMBED_METRICS": {
+      "description": "Metric layers to bake into the embeddable widget and show there, since the widget has no toggles to switch them on. Entries are metric layer names or short aliases (pace, heart_rate, gradient, elev_change); the widget's density layer follows RASTER_MODE. Empty (the default) leaves the widget as the bare density heatmap.",
+      "examples": [
+        [
+          "pace"
+        ],
+        [
+          "pace",
+          "heart_rate"
+        ]
+      ],
+      "items": {
+        "type": "string"
+      },
+      "title": "Embed Metrics",
+      "type": "array"
     }
   },
   "required": [

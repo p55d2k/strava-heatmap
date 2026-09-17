@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Embeddable heatmap widget — demo</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: #101010;
+    color: #ddd;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial,
+      sans-serif;
+    line-height: 1.55;
+  }
+  main {
+    max-width: 960px;
+    margin: 0 auto;
+    padding: 28px 18px 56px;
+  }
+  h1 { margin: 0 0 6px; font-size: 1.35rem; color: #f1f1f1; }
+  h2 { margin: 34px 0 8px; font-size: 1rem; color: #f1f1f1; }
+  p { color: #a8a8a8; }
+  code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: 0.9em;
+  }
+  p code {
+    background: rgba(255, 255, 255, 0.07);
+    padding: 1px 5px;
+    border-radius: 4px;
+  }
+
+  /* The widget frame. It is fluid in width and keeps a 16:10 shape, with the
+     iframe filling it edge to edge, so the map never ends up as a sliver. The
+     min/max clamps stop it from collapsing on a very short viewport or growing
+     taller than the screen on a landscape one; on a narrow screen it switches
+     to a taller 4:5 shape so the map stays usable. Modern browsers get the
+     shape from `aspect-ratio`, with a fixed-height fallback for older ones. */
+  .widget-frame {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 10;
+    min-height: 240px;
+    max-height: 78vh;
+    margin-top: 16px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+    overflow: hidden;
+    background: #000;
+  }
+  @supports not (aspect-ratio: 1 / 1) {
+    .widget-frame { height: 340px; }
+  }
+  @media (max-width: 640px) {
+    .widget-frame { aspect-ratio: 4 / 5; min-height: 340px; max-height: 80vh; }
+    @supports not (aspect-ratio: 1 / 1) {
+      .widget-frame { height: 420px; }
+    }
+  }
+  .widget-frame iframe {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+  }
+
+  pre {
+    margin: 10px 0 0;
+    padding: 14px 16px;
+    overflow-x: auto;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    border-radius: 10px;
+  }
+  pre code { color: #e6e6e6; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Embeddable heatmap widget</h1>
+  <p>This page demonstrates the widget written alongside the full heatmap:
+  <code>$widget_filename</code>. It is the same map without the control panel —
+  still fully interactive (drag to pan, scroll or pinch to zoom) — shown here in
+  a responsive frame that fills the width of whatever it is placed in.</p>
+
+  <div class="widget-frame">
+    <iframe src="$widget_filename" title="Strava activity heatmap"
+            loading="lazy"></iframe>
+  </div>
+
+  <h2>Use it on your own page</h2>
+  <p>Copy <code>$widget_filename</code> next to your page and drop this in. The
+  wrapper keeps the iframe fluid, and the map inside frames itself to the data
+  on load.</p>
+  <pre><code>&lt;div style="position:relative;width:100%;aspect-ratio:16/10"&gt;
+  &lt;iframe src="$widget_filename" title="Strava activity heatmap"
+          loading="lazy"
+          style="position:absolute;inset:0;width:100%;height:100%;border:0"&gt;
+  &lt;/iframe&gt;
+&lt;/div&gt;</code></pre>
+
+  <p>Because the widget zooms on scroll, give it a fixed frame like this rather
+  than a bare iframe whose height would depend on its content.</p>
+</main>
+</body>
+</html>

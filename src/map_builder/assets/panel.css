@@ -1,24 +1,15 @@
 /* ================================================================
-   Unified controls stylesheet — heatmap control panel, legend, and
-   Leaflet layer-control overrides. A single set of CSS custom
-   properties keeps every UI surface visually consistent.
+   Heatmap control panel and Leaflet layer-control overrides.
+
+   The shared colour / typography custom properties and the legend card
+   live in legend.css, which is always loaded before this file — by the
+   full page (via controls_css) and by the embeddable widget, which has
+   no panel but does keep the legend.
    ================================================================ */
 
+/* Layout-only token: the panel is a full-height sidebar, and the Leaflet
+   map is offset by its width so it fills the remaining viewport. */
 :root {
-  --hcp-bg: rgba(15, 15, 15, 0.92);
-  --hcp-border: rgba(255, 255, 255, 0.12);
-  --hcp-radius: 10px;
-  --hcp-shadow: 0 4px 18px rgba(0, 0, 0, 0.65);
-  --hcp-text: #ddd;
-  --hcp-text-strong: #f1f1f1;
-  --hcp-text-muted: #999;
-  --hcp-accent: #fc4c02;
-  --hcp-control-bg: rgba(255, 255, 255, 0.06);
-  --hcp-control-border: rgba(255, 255, 255, 0.14);
-  --hcp-font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial,
-    sans-serif;
-  /* The map controls live in a full-height sidebar; the Leaflet map is offset
-     by this width so it fills the remaining viewport. */
   --hcp-sidebar-width: 300px;
 }
 
@@ -418,60 +409,8 @@
 }
 
 /* ---------------------------------------------------------- Heatmap legend */
-
-/* Match by id and/or class so the legend can never fall back to an
-   unstyled, full-width block at the top of the page on any code path.
-   It is always a small card pinned to the bottom-right (separate from the
-   top-right control panel). */
-#heatmap-legend,
-.hcp-legend {
-  position: fixed;
-  top: auto;
-  left: auto;
-  bottom: 28px;
-  right: 10px;
-  z-index: 5000;
-  width: auto;
-  max-width: 300px;
-  background: var(--hcp-bg);
-  padding: 13px 16px 14px;
-  border-radius: var(--hcp-radius);
-  border: 1px solid var(--hcp-border);
-  box-shadow: var(--hcp-shadow);
-  color: var(--hcp-text);
-  font-family: var(--hcp-font);
-  font-size: 12px;
-  min-width: 210px;
-  line-height: 1.4;
-}
-
-.hcp-legend-row {
-  margin-bottom: 8px;
-}
-
-.hcp-legend-row:last-child {
-  margin-bottom: 0;
-}
-
-.hcp-legend-title {
-  font-weight: 600;
-  color: var(--hcp-text-strong);
-  margin-bottom: 3px;
-}
-
-.hcp-legend-swatches {
-  height: 10px;
-  border-radius: 3px;
-  border: 1px solid rgba(255, 255, 255, 0.08);
-}
-
-.hcp-legend-scale {
-  display: flex;
-  justify-content: space-between;
-  margin-top: 3px;
-  color: var(--hcp-text-muted);
-  font-size: 11px;
-}
+/* The legend card itself is styled in legend.css (shared with the embeddable
+   widget); only the panel-specific rules below live here. */
 
 /* -------------------------------------------------------- Info tooltips */
 /* Every control that carries a `data-hcp-help` attribute shows its plain-

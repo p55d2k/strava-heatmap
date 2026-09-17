@@ -36,6 +36,7 @@ from src.map_builder import (
     encode_for_embedding,
     get_carto_api_key,
     home_marker_radius,
+    legend_css,
     legend_row,
     pace_str,
 )
@@ -314,6 +315,22 @@ class TestLegendBuilder:
         # custom-b has no layer_name so it is excluded from exclusive behavior.
         assert builder.exclusive_layer_names == ["Custom A layer"]
         assert builder.legend_ids == {"Custom A layer": "custom-a"}
+
+    def test_visible_for_marks_only_the_requested_layers(self):
+        """The widget's legend must show exactly the rows for the layers it ships
+        (it has no layer control to sync a full legend)."""
+        builder = LegendBuilder()
+
+        rows = builder.visible_for(["GPS Density (Time Spent)", "Pace (average)"])
+
+        assert {row.layer_name for row in rows if row.visible} == {
+            "GPS Density (Time Spent)",
+            "Pace (average)",
+        }
+        # The other rows keep their configured (hidden) state.
+        hidden = {row.layer_name for row in rows if not row.visible}
+        assert "Heart rate (average)" in hidden
+        assert "Coverage (Places Visited)" in hidden
 
     def test_callable_fields_resolved_with_context(self):
         """Callable gradient/labels should be resolved using the build context."""
@@ -1830,6 +1847,24 @@ class TestConstants:
         assert "<style>" in css
         assert "leaflet-control-layers" in css
 
+    def test_controls_css_includes_legend_and_panel(self):
+        """The full page needs both stylesheets: the shared legend rules and the
+        panel (with its sidebar layout)."""
+        css = controls_css()
+        assert "#heatmap-legend" in css
+        assert ".folium-map" in css
+
+    def test_legend_css_is_widget_safe(self):
+        """The legend-only stylesheet keeps the legend card but none of the
+        sidebar layout that would misplace a control-less widget's map."""
+        css = legend_css()
+        assert "<style>" in css
+        assert "#heatmap-legend" in css
+        assert ".hcp-legend-row" in css
+        assert ".folium-map" not in css
+        assert "leaflet-control-layers" not in css
+        assert css.count(":root") == 1
+
     def test_folium_map_sizing_beats_folium_id_rule(self):
         """The sidebar map-offset sizing must survive Folium's #map_<hash> rule.
 
@@ -1863,3 +1898,212 @@ class TestConstants:
         instance = ExclusiveLayerControl()
         assert instance is not None
         assert instance._name == "ExclusiveLayerControl"
+
+
+class TestEmbedMap:
+    """Tests for the minimal iframe widget built with ``embed=True``.
+
+    The widget is the same heatmap with every control removed and the view
+    pinned to the data bounds, so these tests pin the two halves of that
+    promise: nothing interactive is emitted, and the configurable pieces
+    (legend, attribution, home marker, tracks) follow the caller's flags.
+    """
+
+    def setup_method(self):
+        """Set up test fixtures."""
+        self.tracks = [("Track 1", [[45.0, -122.0], [45.001, -122.001]])]
+        self.layers = [
+            ("GPS Density (Time Spent)", "data:image/png;base64,visible", True),
+            ("GPS Density (Raw Passes)", "data:image/png;base64,hidden", False),
+            ("Pace (average)", "data:image/png;base64,pace", False),
+            ("Heart rate (average)", "data:image/png;base64,hr", False),
+            ("Gradient (absolute)", "data:image/png;base64,grad", False),
+        ]
+        self.bounds = [[44.9, -122.1], [45.1, -121.9]]
+        self.centre = [45.0, -122.0]
+        self.home = [45.01, -122.01]
+        self.legend_html = "<div>Legend</div>"
+        self.output_path = Path("/tmp/test_embed_map.html")
+        self.map_opacity = 0.7
+
+    def _build(self, **overrides):
+        """Call build_map in widget mode with every Folium element mocked.
+
+        Returns the mocks so a test can assert on what was (and was not)
+        emitted. ``overrides`` lets a test flip one embed_* flag at a time.
+        """
+        kwargs = {"carto_style": "dark_all", "home": self.home, "embed": True}
+        kwargs.update(overrides)
+        with (
+            patch("src.map_builder.map_builder.folium.Map") as mock_map,
+            patch("src.map_builder.map_builder.folium.TileLayer") as mock_tile,
+            patch("src.map_builder.map_builder.folium.FeatureGroup") as mock_feature_group,
+            patch("src.map_builder.map_builder.folium.PolyLine") as mock_polyline,
+            patch("src.map_builder.map_builder.folium.raster_layers.ImageOverlay") as mock_overlay,
+            patch("src.map_builder.map_builder.folium.LayerControl") as mock_layer_control,
+            patch("src.map_builder.map_builder.ExclusiveLayerControl") as mock_exclusive,
+            patch("src.map_builder.map_builder.ControlPanel") as mock_panel,
+            patch("src.map_builder.map_builder.ScalableHomeMarker") as mock_home_marker,
+        ):
+            for mock in (
+                mock_tile,
+                mock_feature_group,
+                mock_polyline,
+                mock_overlay,
+                mock_layer_control,
+                mock_exclusive,
+                mock_panel,
+                mock_home_marker,
+            ):
+                mock.return_value = MagicMock()
+            build_map(
+                self.tracks,
+                self.layers,
+                self.bounds,
+                self.centre,
+                self.legend_html,
+                self.output_path,
+                self.map_opacity,
+                **kwargs,
+            )
+            return {
+                "map": mock_map,
+                "map_instance": mock_map.return_value,
+                "overlay": mock_overlay,
+                "feature_group": mock_feature_group,
+                "polyline": mock_polyline,
+                "layer_control": mock_layer_control,
+                "exclusive": mock_exclusive,
+                "panel": mock_panel,
+                "home_marker": mock_home_marker,
+            }
+
+    def test_stays_interactive_and_drops_only_the_scale_bar(self):
+        """The widget can still be panned, zoomed and scrolled.
+
+        Only the heatmap control panel is dropped, so none of Leaflet's
+        interaction options may be switched off — a widget locked to a fixed
+        view would defeat the point. Folium's camelCase option names are what
+        the JS sees, so an accidental snake_case override would silently do
+        nothing; asserting the keys are absent pins both.
+        """
+        kwargs = self._build()["map"].call_args[1]
+
+        assert kwargs["control_scale"] is False
+        for option in (
+            "dragging",
+            "touchZoom",
+            "scrollWheelZoom",
+            "doubleClickZoom",
+            "boxZoom",
+            "keyboard",
+            "zoomControl",
+            "zoom_control",
+        ):
+            assert option not in kwargs, f"{option} must not be disabled in the widget"
+        # Attribution stays on unless explicitly dropped.
+        assert "attributionControl" not in kwargs
+
+    def test_attribution_control_can_be_dropped(self):
+        """EMBED_ATTRIBUTION=False should be forwarded to Leaflet."""
+        kwargs = self._build(embed_attribution=False)["map"].call_args[1]
+        assert kwargs["attributionControl"] is False
+
+    def test_frames_the_data_bounds_on_load(self):
+        """The initial view frames the data; the visitor can move on from there."""
+        calls = self._build()
+        calls["map_instance"].fit_bounds.assert_called_once_with(self.bounds)
+
+    def test_omits_control_panel_and_layer_control(self):
+        """No panel, no hidden Leaflet layer control, no legend-sync script."""
+        calls = self._build()
+        calls["panel"].assert_not_called()
+        calls["layer_control"].assert_not_called()
+        calls["exclusive"].assert_not_called()
+
+    def test_writes_only_the_visible_layers(self):
+        """Hidden layers are dead weight in a control-less widget, so they are
+        left out entirely; only the visible layer's image is embedded."""
+        calls = self._build()
+
+        assert calls["overlay"].call_count == 1
+        assert calls["overlay"].call_args[1]["image"] == "data:image/png;base64,visible"
+        # The raw track group is absent by default, so just the one layer group.
+        assert calls["feature_group"].call_count == 1
+
+    def test_keeps_the_legend_by_default(self):
+        """The legend (markup plus its stylesheet) is added to the widget.
+
+        The stylesheet must be the legend-only one: the panel stylesheet docks
+        a 300px sidebar and offsets the map beside it, which in a widget with no
+        sidebar would just leave a blank strip.
+        """
+        calls = self._build()
+        added = calls["map_instance"].get_root().html.add_child.call_args_list
+        assert len(added) == 2
+        css = added[0].args[0]._template_str
+        assert "#heatmap-legend" in css
+        assert ".folium-map" not in css
+        assert added[1].args[0]._template_str == self.legend_html
+
+    def test_drops_the_legend_when_disabled(self):
+        """EMBED_LEGEND=False should add neither the legend nor its stylesheet."""
+        calls = self._build(embed_legend=False)
+        calls["map_instance"].get_root().html.add_child.assert_not_called()
+
+    def test_no_metrics_by_default(self):
+        """Without EMBED_METRICS the widget stays the bare density heatmap."""
+        calls = self._build()
+        assert calls["overlay"].call_count == 1
+
+    def test_bakes_in_and_shows_configured_metrics(self):
+        """Requested metrics travel with the widget and start shown.
+
+        The widget has no toggle to switch a metric on, so a requested metric
+        must be visible — unlike the full map, where metric layers start hidden.
+        """
+        calls = self._build(embed_metrics=["Pace (average)", "Heart rate (average)"])
+
+        images = [call.kwargs["image"] for call in calls["overlay"].call_args_list]
+        # The visible density layer comes first, then only the requested metrics.
+        assert images == [
+            "data:image/png;base64,visible",
+            "data:image/png;base64,pace",
+            "data:image/png;base64,hr",
+        ]
+        # Every included layer is added visible (tracks are off here).
+        assert [call.kwargs["show"] for call in calls["feature_group"].call_args_list] == [
+            True,
+            True,
+            True,
+        ]
+        # A metric that was not requested stays out of the file entirely.
+        assert "data:image/png;base64,grad" not in images
+
+    def test_tracks_are_left_out_by_default(self):
+        """A minimal widget shows the heatmap alone unless tracks are asked for."""
+        calls = self._build()
+        calls["polyline"].assert_not_called()
+
+    def test_tracks_included_and_visible_when_requested(self):
+        """With no controls to switch them on, requested tracks must start shown."""
+        calls = self._build(embed_tracks=True)
+
+        assert calls["polyline"].call_count == 1
+        track_group = calls["feature_group"].call_args_list[0]
+        assert track_group[1]["name"] == "Raw GPS tracks"
+        assert track_group[1]["show"] is True
+
+    def test_home_marker_kept_by_default_and_droppable(self):
+        """The home marker follows EMBED_HOME_MARKER."""
+        calls = self._build()
+        calls["home_marker"].assert_called_once()
+        calls["home_marker"].return_value.add_to.assert_called_once()
+
+        calls = self._build(embed_home_marker=False)
+        calls["home_marker"].assert_not_called()
+
+    def test_saves_to_the_given_output_path(self):
+        """The widget is written to its own file, leaving the full map alone."""
+        calls = self._build()
+        calls["map_instance"].save.assert_called_once_with(self.output_path)

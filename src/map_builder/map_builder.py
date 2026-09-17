@@ -27,6 +27,7 @@ from src.map_builder.control import (
     build_layer_group_config,
     compute_layer_counts,
     controls_css,
+    legend_css,
 )
 
 # Load variables from .env (without overriding already-set environment variables).
@@ -154,6 +155,28 @@ class ScalableHomeMarker(MacroElement):
         self._max_radius = HOME_MARKER_MAX_RADIUS
 
 
+def _new_map(location: list[float], *, embed: bool, show_attribution: bool = True) -> folium.Map:
+    """Create the Folium map in full-page or minimal widget form.
+
+    Both maps stay fully interactive — the widget can still be panned, zoomed
+    and scrolled, it just carries no heatmap control panel (and no scale bar).
+    The only option that changes is the browser-level attribution control, which
+    the tile terms require and which ``show_attribution=False`` drops.
+    """
+    options: dict = {}
+    if not show_attribution:
+        # Leaflet's camelCase option name: Folium forwards unknown kwargs
+        # straight through to the JS options object.
+        options["attributionControl"] = False
+    return folium.Map(
+        location=location,
+        zoom_start=14,
+        tiles=None,
+        control_scale=not embed,
+        **options,
+    )
+
+
 def build_map(
     tracks: list[tuple[str, list]],
     layers: list[tuple[str, str, bool]],
@@ -172,6 +195,12 @@ def build_map(
     geojson: str | None = None,
     gpx: str | None = None,
     gpx_filename: str | None = None,
+    embed: bool = False,
+    embed_legend: bool = True,
+    embed_attribution: bool = True,
+    embed_home_marker: bool = True,
+    embed_tracks: bool = False,
+    embed_metrics: list[str] | None = None,
     progress_callback=None,
 ) -> None:
     """Build and save the Folium map.
@@ -213,10 +242,25 @@ def build_map(
             out (the button then reports that no track data is available).
         gpx_filename: Filename the GPX download is offered as; defaults to the
             panel's ``DEFAULT_GPX_FILENAME``.
+        embed: When True, build a minimal widget instead of the full map: no
+            control panel, no layer control and no scale bar, but the map stays
+            fully interactive (pan / zoom / scroll / pinch), framed once on the
+            data bounds. Only the layers that are actually visible are written,
+            and the GeoJSON / GPX payloads (which exist for panel buttons) are
+            left out, keeping the file small enough to drop into an ``<iframe>``.
+        embed_legend: Keep the colour legend in the widget.
+        embed_attribution: Keep the tile attribution control in the widget.
+            The tile terms require it, so it defaults on.
+        embed_home_marker: Keep the home marker in the widget.
+        embed_tracks: Draw the raw GPS tracks in the widget.
+        embed_metrics: Metric layer names to bake into the widget and show
+            there. The widget has no toggles, so a metric is only worth
+            including if it is visible; these are shown on top of the density
+            layer (which follows ``raster_mode``).
         progress_callback: Optional callable invoked with a step count.
     """
     map_location = home if home is not None else centre
-    m = folium.Map(location=map_location, zoom_start=14, tiles=None, control_scale=True)
+    m = _new_map(map_location, embed=embed, show_attribution=embed_attribution)
     folium.TileLayer(
         tiles=build_tile_url(carto_style),
         attr=CARTO_ATTRIBUTION,
@@ -236,24 +280,40 @@ def build_map(
     # Add a zoom-responsive marker for the home location so it is visually
     # identifiable on the map without being a giant fixed dot (it shrinks/grows
     # with zoom, Google-Maps style).
-    if home is not None:
+    if home is not None and (not embed or embed_home_marker):
         ScalableHomeMarker(location=[home[0], home[1]]).add_to(m)
 
-    track_group = folium.FeatureGroup(name="Raw GPS tracks", show=False)
-    for label, pts in tracks:
-        folium.PolyLine(
-            locations=[(p[0], p[1]) for p in pts],
-            color="#fc4c02",
-            weight=1,
-            opacity=TRACK_OPACITY,
-            tooltip=label,
-        ).add_to(track_group)
-    track_group.add_to(m)
+    # A widget with no controls cannot switch the tracks on, so when they are
+    # included there they are shown, not left hidden behind a checkbox.
+    if not embed or embed_tracks:
+        track_group = folium.FeatureGroup(name="Raw GPS tracks", show=embed)
+        for label, pts in tracks:
+            folium.PolyLine(
+                locations=[(p[0], p[1]) for p in pts],
+                color="#fc4c02",
+                weight=1,
+                opacity=TRACK_OPACITY,
+                tooltip=label,
+            ).add_to(track_group)
+        track_group.add_to(m)
 
     if progress_callback:
         progress_callback(1)  # Tracks added
 
-    for name, uri, visible in layers:
+    # A widget ships only the layers it actually shows: a hidden layer would be
+    # dead weight (each is a base64 PNG) with no control to switch it on. The
+    # configured metrics are additionally requested (and shown) there, since
+    # the widget cannot switch them on itself.
+    if embed:
+        wanted = set(embed_metrics or [])
+        overlay_layers = [
+            (name, uri, name in wanted or visible)
+            for name, uri, visible in layers
+            if visible or name in wanted
+        ]
+    else:
+        overlay_layers = layers
+    for name, uri, visible in overlay_layers:
         fg = folium.FeatureGroup(name=name, show=visible)
         folium.raster_layers.ImageOverlay(
             image=uri,
@@ -268,44 +328,56 @@ def build_map(
     if progress_callback:
         progress_callback(1)  # All layers added
 
-    # A (visually hidden) LayerControl is kept purely so Folium emits its
-    # `<layer_control>_layers.overlays` registry, which both the control panel
-    # and ExclusiveLayerControl rely on to locate overlay layers by name.
-    folium.LayerControl(collapsed=True).add_to(m)
-    m.get_root().html.add_child(folium.Element(controls_css()))
-    m.get_root().html.add_child(folium.Element(legend_html))
-    ExclusiveLayerControl(
-        exclusive_names=exclusive_layer_names,
-        legend_ids=legend_ids,
-        metric_names=(
-            metric_layer_names if metric_layer_names is not None else INDEPENDENT_LAYER_NAMES
-        ),
-    ).add_to(m)
-
-    if control_panel:
-        ControlPanel(
-            map_opacity=map_opacity,
-            carto_style=carto_style,
-            api_key=get_carto_api_key(),
-            bounds=bounds,
-            centre=centre,
-            home=home,
-            layer_groups=build_layer_group_config(
-                overlay_layers=layers,
-                has_tracks=bool(tracks),
-                metric_layer_names=METRIC_LAYER_NAMES,
-                map_opacity=map_opacity,
-                layer_counts=compute_layer_counts(tracks),
+    if embed:
+        # No layer control and no legend-sync script: the layers are fixed at
+        # build time, so the statically rendered legend already matches the map.
+        if embed_legend:
+            # Only the legend stylesheet: panel.css would dock a sidebar the
+            # widget does not have and offset the map beside it.
+            m.get_root().html.add_child(folium.Element(legend_css()))
+            m.get_root().html.add_child(folium.Element(legend_html))
+        # Frame the data on load. The map stays interactive, so this is just
+        # the initial view — the visitor can pan and zoom from here.
+        m.fit_bounds(bounds)
+    else:
+        # A (visually hidden) LayerControl is kept purely so Folium emits its
+        # `<layer_control>_layers.overlays` registry, which both the control panel
+        # and ExclusiveLayerControl rely on to locate overlay layers by name.
+        folium.LayerControl(collapsed=True).add_to(m)
+        m.get_root().html.add_child(folium.Element(controls_css()))
+        m.get_root().html.add_child(folium.Element(legend_html))
+        ExclusiveLayerControl(
+            exclusive_names=exclusive_layer_names,
+            legend_ids=legend_ids,
+            metric_names=(
+                metric_layer_names if metric_layer_names is not None else INDEPENDENT_LAYER_NAMES
             ),
-            advanced=build_advanced_config(
-                raster_mode=raster_mode,
-                overlay_layers=layers,
-                default_opacity=map_opacity,
-            ),
-            geojson=geojson,
-            gpx=gpx,
-            gpx_filename=gpx_filename,
         ).add_to(m)
+
+        if control_panel:
+            ControlPanel(
+                map_opacity=map_opacity,
+                carto_style=carto_style,
+                api_key=get_carto_api_key(),
+                bounds=bounds,
+                centre=centre,
+                home=home,
+                layer_groups=build_layer_group_config(
+                    overlay_layers=overlay_layers,
+                    has_tracks=bool(tracks),
+                    metric_layer_names=METRIC_LAYER_NAMES,
+                    map_opacity=map_opacity,
+                    layer_counts=compute_layer_counts(tracks),
+                ),
+                advanced=build_advanced_config(
+                    raster_mode=raster_mode,
+                    overlay_layers=overlay_layers,
+                    default_opacity=map_opacity,
+                ),
+                geojson=geojson,
+                gpx=gpx,
+                gpx_filename=gpx_filename,
+            ).add_to(m)
 
     if progress_callback:
         progress_callback(1)  # Controls and legend added

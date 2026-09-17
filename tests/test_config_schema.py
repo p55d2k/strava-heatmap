@@ -59,8 +59,25 @@ class TestConfigSchema:
             "CACHE_FILE",
             "OUTPUT_HTML",
             "OUTPUT_GPX",
+            "EMBED_ENABLED",
+            "EMBED_HTML",
+            "EMBED_LEGEND",
+            "EMBED_ATTRIBUTION",
+            "EMBED_HOME_MARKER",
+            "EMBED_TRACKS",
+            "EMBED_METRICS",
+            "EMBED_DEMO",
         }
         assert expected_fields.issubset(set(schema["properties"].keys()))
+
+    def test_metric_aliases_match_map_builder_layer_names(self):
+        """The schema's metric aliases must resolve to the map builder's metric
+        layer names, so a widget layer request can never name a layer that does
+        not exist in the generated overlay list."""
+        from src.config_schema import METRIC_LAYER_ALIASES
+        from src.map_builder.constants import METRIC_LAYER_NAMES
+
+        assert set(METRIC_LAYER_ALIASES.values()) == set(METRIC_LAYER_NAMES)
 
     def test_config_model_validates_example_config(self):
         """Should validate the example config.json files."""
