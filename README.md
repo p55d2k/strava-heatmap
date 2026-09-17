@@ -32,6 +32,14 @@ instant swap of the pre-baked layer. The four metric layers (**Pace**, **Heart
 rate**, **Gradient absolute**, **Gradient change**) can each be toggled on and
 overlaid on the density heatmap.
 
+Each layer toggle also shows how much data it carries: a muted count on the right
+of the row, so a layer's size is visible before it is switched on. **Raw GPS
+tracks** counts the tracks themselves, while the density and coverage layers
+count the activities they were rasterized from. The metric layers count only the
+activities whose devices actually recorded that metric, so **Heart rate** or a
+**Gradient** layer can read noticeably lower than the activity total when some
+devices recorded no heart rate or elevation.
+
 Raw GPS tracks are a separate checkbox. The home location is marked with a
 google-maps-style pin that scales with zoom — it is on by default and can be
 hidden via the **Home marker** checkbox in the panel.

@@ -30,6 +30,7 @@ from src.map_builder import (
     build_tile_url,
     carto_basemap_choices,
     cmap_to_css,
+    compute_layer_counts,
     control_panel_script,
     controls_css,
     encode_for_embedding,
@@ -1093,6 +1094,17 @@ class TestControlPanel:
         assert 'value="85"' not in html
         assert 'value="0"' not in html
 
+    def test_script_renders_per_layer_data_counts(self):
+        """Each layer toggle must be able to show how much data it carries."""
+        script = control_panel_script()
+        assert "makeLayerCountBadge" in script
+        assert "hcp-layer-count" in script
+        # The badge reads the build-time count/unit pair off the layer config.
+        assert "lDef.count" in script
+        assert "lDef.unit" in script
+        # The badge is styled by the shared panel stylesheet.
+        assert ".heatmap-control-panel .hcp-layer-count" in controls_css()
+
     def test_script_contains_init_function(self):
         """control_panel_script should expose initHeatmapControlPanel."""
         script = control_panel_script()
@@ -1383,6 +1395,11 @@ class TestBuildMapControlPanel:
             and any(lay["name"] in ("Layer 1", "Layer 2") for lay in g["layers"])
             for g in layer_groups
         )
+        # Each toggle carries how much data feeds it: the fixture track counts
+        # as a raw track (the vector layer uses the "track" unit).
+        tracks_group = next(g for g in layer_groups if g["label"] == "Raw GPS tracks")
+        assert tracks_group["layers"][0]["count"] == 1
+        assert tracks_group["layers"][0]["unit"] == "track"
 
     @patch("src.map_builder.map_builder.folium.Map")
     @patch("src.map_builder.map_builder.folium.TileLayer")
@@ -1561,6 +1578,33 @@ class TestBuildMapControlPanel:
         mock_panel.assert_not_called()
 
 
+class TestComputeLayerCounts:
+    """Tests for compute_layer_counts (per-layer data-volume figures)."""
+
+    def test_counts_activities_carrying_each_metric(self):
+        """Density/coverage count every activity; each metric counts only the
+        activities whose devices recorded that metric."""
+        tracks = [
+            ("full", [[1.0, 2.0, 3.0, 120.0, 10.0]]),
+            ("speed-only", [[1.0, 2.0, 4.0, None, None]]),
+            ("bare", [[1.0, 2.0]]),
+        ]
+        counts = compute_layer_counts(tracks)
+
+        assert counts["Raw GPS tracks"] == 3
+        assert counts[DENSITY_VIRTUAL_LAYER] == 3
+        assert counts[COVERAGE_LAYER] == 3
+        assert counts["Pace (average)"] == 2
+        assert counts["Heart rate (average)"] == 1
+        assert counts["Gradient (absolute)"] == 1
+        assert counts["Gradient (change)"] == 1
+
+    def test_empty_tracks_yield_zero_counts(self):
+        counts = compute_layer_counts([])
+        assert counts
+        assert all(value == 0 for value in counts.values())
+
+
 class TestLayerGroupConfig:
     """Tests for build_layer_group_config (the panel layerGroups config)."""
 
@@ -1705,6 +1749,45 @@ class TestLayerGroupConfig:
                     assert lay["opacity"] == TRACK_OPACITY
                 else:
                     assert lay["opacity"] == 0.4
+
+    def test_layers_carry_data_counts_when_provided(self):
+        """layer_counts should attach ``count`` + ``unit`` to each matching layer
+        so the panel can show the layer's data volume on its toggle."""
+        counts = {
+            "Raw GPS tracks": 3,
+            DENSITY_VIRTUAL_LAYER: 3,
+            COVERAGE_LAYER: 2,
+            "Pace (average)": 1,
+        }
+        groups = build_layer_group_config(self.layers, has_tracks=True, layer_counts=counts)
+        by_label = {g["label"]: g for g in groups}
+
+        # Raw tracks count polylines; every other layer counts activities.
+        tracks = by_label["Raw GPS tracks"]["layers"][0]
+        assert tracks["count"] == 3
+        assert tracks["unit"] == "track"
+
+        heatmap = {lay["name"]: lay for lay in by_label["Heatmap"]["layers"]}
+        assert heatmap[DENSITY_VIRTUAL_LAYER]["count"] == 3
+        assert heatmap[DENSITY_VIRTUAL_LAYER]["unit"] == "activity"
+        assert heatmap[COVERAGE_LAYER]["count"] == 2
+
+        metrics = {lay["name"]: lay for lay in by_label["Metrics"]["layers"]}
+        assert metrics["Pace (average)"]["count"] == 1
+        assert metrics["Pace (average)"]["unit"] == "activity"
+
+        # A layer with no count (a bespoke overlay) gets no badge fields.
+        overlays = {lay["name"]: lay for lay in by_label["Overlays"]["layers"]}
+        assert "count" not in overlays["Custom overlay"]
+        assert "unit" not in overlays["Custom overlay"]
+
+    def test_layers_have_no_count_without_layer_counts(self):
+        """Without layer_counts no toggle advertises a data volume."""
+        groups = build_layer_group_config(self.layers, has_tracks=True)
+        for group in groups:
+            for lay in group["layers"]:
+                assert "count" not in lay
+                assert "unit" not in lay
 
     """Tests for CARTO API key loading and tile URL building."""
 

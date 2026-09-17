@@ -25,6 +25,7 @@ from src.map_builder.control import (
     ExclusiveLayerControl,
     build_advanced_config,
     build_layer_group_config,
+    compute_layer_counts,
     controls_css,
 )
 
@@ -294,6 +295,7 @@ def build_map(
                 has_tracks=bool(tracks),
                 metric_layer_names=METRIC_LAYER_NAMES,
                 map_opacity=map_opacity,
+                layer_counts=compute_layer_counts(tracks),
             ),
             advanced=build_advanced_config(
                 raster_mode=raster_mode,

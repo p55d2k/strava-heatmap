@@ -91,11 +91,54 @@ def build_control_panel_html() -> str:
     return _read("control_panel.html")
 
 
+def compute_layer_counts(tracks: list[tuple[str, list]]) -> dict[str, int]:
+    """Count the activities behind each panel layer, for the toggle badges.
+
+    Every heatmap layer is rasterized from the same activity set, so the density
+    and coverage layers carry the full activity count. The metric layers only
+    carry the activities whose devices actually recorded that metric, so their
+    counts can be lower: a phone without a chest strap records no heart rate,
+    and a device without a barometer records no elevation. The panel shows these
+    counts on the layer toggles so each layer's data volume is visible before it
+    is switched on.
+
+    Args:
+        tracks: ``(label, points)`` pairs from ``data_loader.load_tracks``.
+            Points are ``[lat, lon, speed, hr, alt]``; any optional field may be
+            ``None`` (or missing entirely, in a short legacy point).
+
+    Returns:
+        Mapping from layer name to the number of activities it is built from,
+        covering every layer the panel can show a count on. Layer names absent
+        from the mapping (bespoke overlays) simply get no badge.
+    """
+    n_activities = len(tracks)
+    has_speed = has_hr = has_elevation = 0
+    for _, points in tracks:
+        if any(len(p) > 2 and p[2] is not None for p in points):
+            has_speed += 1
+        if any(len(p) > 3 and p[3] is not None for p in points):
+            has_hr += 1
+        if any(len(p) > 4 and p[4] is not None for p in points):
+            has_elevation += 1
+
+    return {
+        "Raw GPS tracks": n_activities,
+        DENSITY_VIRTUAL_LAYER: n_activities,
+        COVERAGE_LAYER: n_activities,
+        "Pace (average)": has_speed,
+        "Heart rate (average)": has_hr,
+        "Gradient (absolute)": has_elevation,
+        "Gradient (change)": has_elevation,
+    }
+
+
 def build_layer_group_config(
     overlay_layers: list[tuple[str, str, bool]],
     has_tracks: bool = True,
     metric_layer_names: list[str] | None = None,
     map_opacity: float = 0.85,
+    layer_counts: dict[str, int] | None = None,
 ) -> list[dict]:
     """Build the ``layerGroups`` config consumed by ``assets/panel.js``.
 
@@ -112,7 +155,10 @@ def build_layer_group_config(
 
     Every returned layer entry carries its own ``opacity`` (0.0-1.0), seeded
     from ``map_opacity``, so the panel can render a per-layer opacity slider for
-    each layer independently.
+    each layer independently. When ``layer_counts`` supplies a figure for a
+    layer, the entry also carries ``count`` (an integer of activities) and
+    ``unit`` (``"track"`` or ``"activity"``) so the panel can show the layer's
+    data volume on its toggle.
 
     Args:
         overlay_layers: The ``(name, image_uri, visible)`` tuples handed to
@@ -121,6 +167,10 @@ def build_layer_group_config(
         metric_layer_names: Distinct metric layer names shown as independent
             checkboxes. Defaults to ``METRIC_LAYER_NAMES``.
         map_opacity: Default per-layer opacity (0.0-1.0) applied to every layer.
+        layer_counts: Optional mapping from layer name to the number of
+            activities it is built from, e.g. from
+            :func:`compute_layer_counts`. Layers without an entry get no count
+            badge.
 
     Returns:
         A list of ``{label, mode, layers}`` groups for the panel's layer list.
@@ -135,6 +185,17 @@ def build_layer_group_config(
     # toggles and duplicate opacity sliders.
     metrics -= density
     groups: list[dict] = []
+    counts = layer_counts or {}
+
+    def _count_fields(name: str) -> dict:
+        """Per-layer data-volume fields for the toggle badge, when known."""
+        if name not in counts:
+            return {}
+        return {
+            "count": counts[name],
+            # Raw tracks count polylines; every other layer counts activities.
+            "unit": "track" if name == "Raw GPS tracks" else "activity",
+        }
 
     if has_tracks:
         groups.append(
@@ -146,13 +207,20 @@ def build_layer_group_config(
                         "name": "Raw GPS tracks",
                         "visible": False,
                         "opacity": TRACK_OPACITY,  # mirrors the PolyLine stroke opacity
+                        **_count_fields("Raw GPS tracks"),
                     }
                 ],
             }
         )
 
     def _item(name: str, visible: bool) -> dict:
-        return {"name": name, "visible": visible, "opacity": map_opacity, "label": name}
+        return {
+            "name": name,
+            "visible": visible,
+            "opacity": map_opacity,
+            "label": name,
+            **_count_fields(name),
+        }
 
     # The Heatmap group presents the two density CONCEPTS, not the per-mode
     # layers: one virtual "GPS Density" row (panel.js binds it to whichever
@@ -166,6 +234,7 @@ def build_layer_group_config(
             "name": DENSITY_VIRTUAL_LAYER,
             "visible": any(mode_visibility.values()),
             "opacity": map_opacity,
+            **_count_fields(DENSITY_VIRTUAL_LAYER),
         },
         _item(COVERAGE_LAYER, bool(mode_visibility.get(COVERAGE_LAYER, False))),
     ]

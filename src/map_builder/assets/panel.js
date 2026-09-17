@@ -45,7 +45,8 @@
  *     home:           [lat, lon]  (fallback: centre),
  *     zoomStart:      14,
  *     legendId:       "heatmap-legend",
- *     layerGroups:    [{ label, mode, layers: [{ name, visible }, ...] }, ...],
+ *     layerGroups:    [{ label, mode,
+ *                        layers: [{ name, visible, count?, unit? }, ...] }, ...],
  *     advanced:       { modes: [{ key, label, layer, visible, opacity }...],
  *                       densityLayerNames: [...], active: "decay" },
  *     gpxFilename:    "tracks.gpx"  (name offered by the Export GPX button),
@@ -450,6 +451,19 @@
         : 0.85;
   }
 
+  // Build the muted badge showing how much data a layer carries (the number of
+  // tracks / activities it is built from). The figure is computed at build time
+  // (see src/map_builder/control.py::compute_layer_counts); layers with no count
+  // in the config render no badge, so bespoke overlays stay uncluttered.
+  function makeLayerCountBadge(lDef) {
+    if (!lDef || typeof lDef.count !== "number") return null;
+    var unit = lDef.unit || "item";
+    var badge = document.createElement("span");
+    badge.className = "hcp-layer-count";
+    badge.textContent = lDef.count + " " + unit + (lDef.count === 1 ? "" : "s");
+    return badge;
+  }
+
   // Build a single toggle row (radio or checkbox) bound to an overlay layer.
   // Opacity sliders live in a separate section (see buildOpacityList) so the
   // toggle rows stay compact. For radio groups, onRadioChange(name) fires when
@@ -497,6 +511,10 @@
     row.appendChild(span);
     // Explain what the layer shows, in everyday language (see LAYER_HELP).
     addHelpIcon(row, LAYER_HELP[lDef.name] || LAYER_HELP[lDef.label] || LAYER_HELP_FALLBACK);
+    // The data-size badge sits at the row's right edge (CSS), so the counts
+    // line up in a column and the layer names stay scannable.
+    var countBadge = makeLayerCountBadge(lDef);
+    if (countBadge) row.appendChild(countBadge);
     return row;
   }
 

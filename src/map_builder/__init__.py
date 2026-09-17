@@ -38,6 +38,7 @@ from src.map_builder.control import (
     build_control_panel_html,
     build_layer_group_config,
     carto_basemap_choices,
+    compute_layer_counts,
     control_panel_script,
     controls_css,
 )
@@ -96,6 +97,7 @@ __all__ = [
     "build_control_panel_html",
     "build_layer_group_config",
     "build_advanced_config",
+    "compute_layer_counts",
     "control_panel_script",
     "carto_basemap_choices",
     # Embed
