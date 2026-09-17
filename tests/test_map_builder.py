@@ -3,6 +3,7 @@ Unit tests for src/map_builder.py - map building and HTML output functions.
 """
 
 import json
+import re
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -939,6 +940,79 @@ class TestControlPanel:
         assert "hcp-density-mode" in script
         assert "resolveDensityLayer" in script
         assert "syncAdvancedFromMap" in script
+
+    def test_html_explains_the_controls_that_need_it(self):
+        """Controls whose purpose isn't obvious must carry an explanation.
+
+        A user shouldn't have to guess what a control does: each one advertises
+        a `data-hcp-help` blurb plus the `.hcp-info` badge that points at it.
+        """
+        html = build_control_panel_html()
+        for control in (
+            'id="hcp-basemap"',
+            'id="hcp-density-mode"',
+            'id="hcp-home-marker"',
+        ):
+            # The explanation may sit on the control itself or on its label, but
+            # it must appear before the next control's markup starts.
+            start = html.index(control)
+            window = html[max(0, start - 400) : start + 400]
+            assert "data-hcp-help=" in window, f"no help text near {control}"
+            assert "hcp-info" in window, f"no info badge near {control}"
+
+    def test_html_leaves_self_explanatory_controls_alone(self):
+        """Section headers and action buttons get no hover card or badge.
+
+        Their labels already say what they do, so an explanation there would be
+        noise rather than help.
+        """
+        html = build_control_panel_html()
+        for control in (
+            "hcp-opacity-toggle",
+            "hcp-advanced-toggle",
+            "hcp-fit",
+            "hcp-reset",
+            "hcp-legend",
+        ):
+            match = re.search(rf'<button[^>]*id="{control}".*?</button>', html, re.DOTALL)
+            assert match, f"{control} not found in the panel markup"
+            assert "data-hcp-help" not in match.group(0), f"{control} has help text"
+            assert "hcp-info" not in match.group(0), f"{control} has an info badge"
+
+    def test_html_help_text_is_plain_language(self):
+        """Help text must be short and jargon-free enough for a lay person."""
+        html = build_control_panel_html()
+        blurbs = re.findall(r'data-hcp-help="([^"]+)"', html)
+        assert blurbs, "the panel must carry at least one explanation"
+        for blurb in blurbs:
+            # Long enough to actually explain, short enough to read at a glance.
+            assert 30 <= len(blurb) <= 220, blurb
+            # Plain sentences — no implementation jargon leaking into the UI.
+            for jargon in ("rasteriz", "normaliz", "opacity value", "layer group"):
+                assert jargon not in blurb.lower(), blurb
+            assert blurb.endswith("."), blurb
+
+    def test_script_explains_every_layer_toggle(self):
+        """panel.js must supply help text for every layer the panel can show."""
+        script = control_panel_script()
+        assert "installHelpTooltips" in script
+        assert "hcp-tooltip" in script
+        assert "data-hcp-help" in script
+        # The panel renders the virtual "GPS Density" row, not the per-mode
+        # layer names behind it, so those are the rows that need explanations.
+        rows = [DENSITY_VIRTUAL_LAYER, COVERAGE_LAYER, *METRIC_LAYER_NAMES, "Raw GPS tracks"]
+        assert DENSITY_VIRTUAL_LAYER not in INDEPENDENT_LAYER_NAMES  # sanity
+        for name in rows:
+            assert f'"{name}":' in script, f"no help text for layer {name!r}"
+
+    def test_script_explains_opacity_and_basemap_controls(self):
+        """The client-rendered controls carry explanations too."""
+        script = control_panel_script()
+        assert "OPACITY_HELP" in script
+        assert "HEATMAP_OPACITY_HELP" in script
+        assert "BASEMAP_HELP" in script
+        for style in CARTO_STYLES:
+            assert f"{style}:" in script, f"no help text for basemap style {style!r}"
 
     def test_control_panel_carries_advanced_config(self):
         """ControlPanel should embed the advanced raster-mode config for panel.js."""

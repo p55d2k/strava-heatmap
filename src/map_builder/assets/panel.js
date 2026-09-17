@@ -17,6 +17,9 @@
  *                               bound to the "GPS Density" row)
  *   - Fit-to-heatmap / Reset view
  *   - Legend toggle
+ *   - Info tooltips             (every control carries plain-language help
+ *                               text, shown in a floating card on hover or
+ *                               keyboard focus)
  *
  * Folium's build pipeline inlines this file (see
  * src/map_builder/control.py::ControlPanel) and calls
@@ -194,6 +197,156 @@
     }
   }
 
+  /* ---- Info tooltips ---------------------------------------------------- */
+
+  // Plain-language explanations, keyed by the layer names used in the panel
+  // config. Every toggle therefore gets an explanation, and a new layer only
+  // needs one entry added here. The wording deliberately avoids jargon:
+  // this is read by people who just want to know what a control does.
+  var LAYER_HELP = {
+    "GPS Density":
+      "A heatmap of where you spend the most time. Brighter areas are places you visit more often or stay in longer.",
+    "Coverage (Places Visited)":
+      "Shows the places you have been to at least once. Brighter areas are spots that more of your activities passed through.",
+    "Raw GPS tracks":
+      "Draws the exact routes you travelled as thin lines, so you can see the paths behind the heatmap.",
+    "Pace (average)":
+      "Colours the map by how fast you were moving. Warm colours mean a faster pace, cool colours a slower one.",
+    "Heart rate (average)":
+      "Colours the map by your average heart rate. Warm colours mean your heart was beating faster.",
+    "Gradient (absolute)":
+      "Colours the map by how steep the ground is. Bright areas are steep, dark areas are flat.",
+    "Gradient (change)":
+      "Colours the map by whether you were going uphill or downhill: one colour for climbing, another for descending.",
+  };
+  var LAYER_HELP_FALLBACK = "Turn this layer on or off on the map.";
+
+  var OPACITY_HELP =
+    "How see-through this layer is. Drag left to make it fainter, right to make it stronger.";
+  var HEATMAP_OPACITY_HELP =
+    "How bold the heatmap looks. Drag left to make it fainter, right to make it bolder.";
+
+  // One line per basemap style (the group itself is explained by the label).
+  var BASEMAP_HELP = {
+    voyager: "A colourful street map with lots of road and place names — handy for keeping your bearings.",
+    light_all: "A plain light background. Easiest to see against in bright daylight.",
+    dark_all: "A dark background that makes the heatmap colours stand out. Easy on the eyes at night.",
+  };
+  var BASEMAP_HELP_FALLBACK = "Changes the background map behind your heatmap.";
+
+  // The floating card is created once and reused; it lives on <body> (not in
+  // the sidebar) so the sidebar's own scrolling can never clip it.
+  var helpTip = null;
+  var helpTimer = null;
+  var HELP_DELAY_MS = 250;
+
+  function ensureHelpTip() {
+    if (helpTip) return helpTip;
+    if (!document || !document.body) return null;
+    helpTip = document.createElement("div");
+    helpTip.className = "hcp-tooltip";
+    helpTip.setAttribute("role", "tooltip");
+    document.body.appendChild(helpTip);
+    return helpTip;
+  }
+
+  // Sit the card just to the right of the control, flipping to the left (or
+  // above/below) rather than running off the edge of the viewport.
+  function positionHelpTip(target) {
+    var tip = ensureHelpTip();
+    if (!tip || typeof target.getBoundingClientRect !== "function") return;
+    var rect = target.getBoundingClientRect();
+    var tipRect = tip.getBoundingClientRect();
+    var left = rect.right + 10;
+    if (left + tipRect.width > window.innerWidth - 8) {
+      left = rect.left - tipRect.width - 10;
+    }
+    if (left < 8) left = 8;
+    var top = rect.top + rect.height / 2 - tipRect.height / 2;
+    if (top < 8) top = 8;
+    if (top + tipRect.height > window.innerHeight - 8) {
+      top = window.innerHeight - tipRect.height - 8;
+    }
+    tip.style.left = Math.round(left) + "px";
+    tip.style.top = Math.round(top) + "px";
+  }
+
+  function showHelp(target) {
+    var text = target && target.getAttribute ? target.getAttribute("data-hcp-help") : null;
+    if (!text) return;
+    var tip = ensureHelpTip();
+    if (!tip) return;
+    tip.textContent = text;
+    positionHelpTip(target);
+    tip.classList.add("hcp-tooltip-visible");
+  }
+
+  function hideHelp() {
+    if (helpTimer) {
+      clearTimeout(helpTimer);
+      helpTimer = null;
+    }
+    if (helpTip) helpTip.classList.remove("hcp-tooltip-visible");
+  }
+
+  // Walk up from an event target to the nearest control that owns help text, so
+  // hovering any part of a row (its label, its checkbox, its badge) works.
+  function findHelpOwner(node) {
+    var depth = 0;
+    while (node && depth < 8) {
+      if (node.getAttribute && node.getAttribute("data-hcp-help")) return node;
+      node = node.parentNode;
+    }
+    return null;
+  }
+
+  // Add the small "i" badge that advertises an explanation. The hover handling
+  // itself is delegated (see installHelpTooltips), so controls that are
+  // re-rendered later keep working without re-wiring anything.
+  function makeHelpIcon() {
+    var icon = document.createElement("span");
+    icon.className = "hcp-info";
+    icon.setAttribute("aria-hidden", "true");
+    icon.textContent = "i";
+    return icon;
+  }
+
+  function addHelpIcon(el, help) {
+    if (!el || !help) return el;
+    el.setAttribute("data-hcp-help", help);
+    el.appendChild(makeHelpIcon());
+    return el;
+  }
+
+  // Delegated listeners on the panel container: a short pause before the card
+  // appears keeps quick taps on a checkbox from flashing it, and the card is
+  // dismissed as soon as the pointer leaves (or the panel is scrolled).
+  function installHelpTooltips(scope) {
+    if (!scope || typeof scope.addEventListener !== "function") return;
+    scope.addEventListener("mouseover", function (event) {
+      var owner = findHelpOwner(event.target);
+      if (!owner) return;
+      if (helpTimer) clearTimeout(helpTimer);
+      helpTimer = setTimeout(function () {
+        showHelp(owner);
+      }, HELP_DELAY_MS);
+    });
+    scope.addEventListener("mouseout", function (event) {
+      var owner = findHelpOwner(event.target);
+      if (!owner) return;
+      // Sliding between two children of the same control must not close it.
+      var next = event.relatedTarget;
+      if (next && typeof owner.contains === "function" && owner.contains(next)) return;
+      hideHelp();
+    });
+    scope.addEventListener("focusin", function (event) {
+      var owner = findHelpOwner(event.target);
+      if (owner) showHelp(owner);
+    });
+    scope.addEventListener("focusout", hideHelp);
+    scope.addEventListener("scroll", hideHelp, true);
+  }
+
   /* ---- Advanced section (rasterization-mode dropdown) ------------------- */
 
   // Resolve the raster-mode config into a lookup keyed by overlay layer name:
@@ -327,6 +480,8 @@
     var span = document.createElement("span");
     span.textContent = lDef.label || lDef.name;
     row.appendChild(span);
+    // Explain what the layer shows, in everyday language (see LAYER_HELP).
+    addHelpIcon(row, LAYER_HELP[lDef.name] || LAYER_HELP[lDef.label] || LAYER_HELP_FALLBACK);
     return row;
   }
 
@@ -399,6 +554,9 @@
     var nameEl = document.createElement("span");
     nameEl.className = "hcp-layer-opacity-name";
     nameEl.textContent = name;
+    // The help text hangs off the whole row so hovering the slider explains it too.
+    item.setAttribute("data-hcp-help", OPACITY_HELP);
+    nameEl.appendChild(makeHelpIcon());
     item.appendChild(nameEl);
 
     var control = document.createElement("div");
@@ -446,6 +604,8 @@
     var nameEl = document.createElement("span");
     nameEl.className = "hcp-layer-opacity-name";
     nameEl.textContent = group.label;
+    item.setAttribute("data-hcp-help", HEATMAP_OPACITY_HELP);
+    nameEl.appendChild(makeHelpIcon());
     item.appendChild(nameEl);
 
     var control = document.createElement("div");
@@ -637,6 +797,9 @@
     if (!panel || !config.map) return;
     var map = config.map;
 
+    // Hover / focus explanations for every control that carries help text.
+    installHelpTooltips(panel);
+
     // Shared render context: resolves the virtual "GPS Density" row to the
     // raster-mode layer selected in the Advanced dropdown, and tracks the
     // opacity-slider listeners so re-renders can unregister them.
@@ -674,6 +837,9 @@
         btn.type = "button";
         btn.className = "hcp-segment";
         btn.setAttribute("data-style", option.key);
+        // Each style gets its own explanation; the "Basemap" label carries the
+        // visible info badge, so the buttons themselves stay uncluttered.
+        btn.setAttribute("data-hcp-help", BASEMAP_HELP[option.key] || BASEMAP_HELP_FALLBACK);
         btn.textContent = option.label;
         if (option.key === currentKey) {
           btn.classList.add("hcp-segment-active");

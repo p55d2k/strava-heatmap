@@ -6,14 +6,27 @@
      overlayremove when the layer becomes visible. The "Advanced"
      section (rasterization-mode dropdown + Home marker toggle) sits below the
      Layer opacity section and is collapsed by default too — the Home marker
-     toggle collapses together with it. -->
+     toggle collapses together with it.
+
+     Controls that need explaining carry a `data-hcp-help` attribute holding a
+     short, plain-language explanation. assets/panel.js shows that text in a
+     small floating card when the pointer rests on the control (or the control
+     takes keyboard focus); the `.hcp-info` badge is the visual cue that the
+     explanation exists. The client-rendered controls (basemap buttons, layer
+     toggles, opacity sliders) get the same treatment from panel.js.
+
+     The Layer opacity and Advanced section headers, and the Fit map / Reset /
+     Legend buttons, deliberately carry no explanation — their labels already
+     say what they do. -->
 <div id="heatmap-control-panel" class="heatmap-control-panel hcp-opacity-collapsed" aria-label="Map controls">
   <div class="hcp-header">
     <span>Map Controls</span>
   </div>
   <div class="hcp-body">
     <div class="hcp-section">
-      <div class="hcp-label">Basemap</div>
+      <div class="hcp-label" data-hcp-help="The background map that sits behind your heatmap. Pick whichever style is easiest for you to read.">
+        <span>Basemap <span class="hcp-info" aria-hidden="true">i</span></span>
+      </div>
       <div class="hcp-segments" id="hcp-basemap"></div>
     </div>
     <div class="hcp-section hcp-section-layers">
@@ -21,26 +34,27 @@
     </div>
     <div class="hcp-section hcp-section-opacity">
       <button type="button" id="hcp-opacity-toggle" class="hcp-opacity-toggle"
-              aria-expanded="false" title="Show / hide layer opacity sliders">
+              aria-expanded="false">
         <span>Layer opacity</span> <span class="hcp-caret">&#9656;</span>
       </button>
       <div id="hcp-opacity-list"></div>
     </div>
     <div class="hcp-section hcp-section-advanced">
       <button type="button" id="hcp-advanced-toggle" class="hcp-advanced-toggle"
-              aria-expanded="false" title="Show / hide rasterization options and the home marker toggle">
+              aria-expanded="false">
         <span>Advanced</span> <span class="hcp-caret">&#9656;</span>
       </button>
       <div id="hcp-advanced-body" hidden>
         <div class="hcp-advanced-row">
-          <label class="hcp-advanced-label" for="hcp-density-mode">Heatmap raster mode</label>
-          <select id="hcp-density-mode" class="hcp-select" title="How GPS Density is rasterized"></select>
+          <label class="hcp-advanced-label" for="hcp-density-mode" data-hcp-help="How the heatmap is worked out. Time Spent favours places you stayed longest, Raw Passes counts every time you went through, and Unique Visits counts each place only once per trip.">Heatmap
+            raster mode <span class="hcp-info" aria-hidden="true">i</span></label>
+          <select id="hcp-density-mode" class="hcp-select"></select>
         </div>
         <!-- The Home marker toggle collapses together with the Advanced section. -->
         <div class="hcp-section hcp-section-home" id="hcp-home-section" hidden>
-          <label class="hcp-layer-row">
+          <label class="hcp-layer-row" data-hcp-help="Shows or hides the marker for your home location on the map.">
             <input type="checkbox" id="hcp-home-marker" checked />
-            <span>Home marker</span>
+            <span>Home marker <span class="hcp-info" aria-hidden="true">i</span></span>
           </label>
         </div>
       </div>

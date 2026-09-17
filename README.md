@@ -36,6 +36,12 @@ Raw GPS tracks are a separate checkbox. The home location is marked with a
 google-maps-style pin that scales with zoom — it is on by default and can be
 hidden via the **Home marker** checkbox in the panel.
 
+Controls that aren't self-explanatory — the basemap, each layer toggle, the
+heatmap raster mode, the home marker and the opacity sliders — carry a small
+**i** badge: hovering the control (or tabbing to it) opens a short,
+plain-English card explaining what it does, so the map is usable without knowing
+anything about the underlying data pipeline.
+
 ## Setup
 
 ```bash

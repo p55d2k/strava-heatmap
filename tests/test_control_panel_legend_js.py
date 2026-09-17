@@ -116,10 +116,14 @@ function makeEl(tag, id) {
     children: [], attributes: {}, _listeners: {}, _html: "", classList: mkClassList(),
     setAttribute(k, v) { this.attributes[k] = String(v); },
     getAttribute(k) { return k in this.attributes ? this.attributes[k] : null; },
-    appendChild(c) { this.children.push(c); return c; },
+    appendChild(c) { c.parentNode = this; this.children.push(c); return c; },
     addEventListener(evt, fn) { (this._listeners[evt] = this._listeners[evt] || []).push(fn); },
     dispatch(evt, detail) { (this._listeners[evt] || []).forEach((f) => f(detail || {})); },
     querySelector(sel) { return querySelectorIn(this, sel); },
+    // Deterministic geometry so the tooltip positioning maths can run headless.
+    getBoundingClientRect() {
+      return { left: 10, top: 10, right: 30, bottom: 24, width: 20, height: 14 };
+    },
   };
   // Faithfully mirror real DOM containers: innerHTML = "" empties the children.
   Object.defineProperty(el, "innerHTML", {
@@ -140,6 +144,8 @@ function makeEl(tag, id) {
 const byId = new Map();
 const documentObj = {
   readyState: "complete",
+  // The info-tooltip card is appended to <body>, so the fake document needs one.
+  body: makeEl("body"),
   getElementById: (id) => byId.get(id) || null,
   createElement: (tag) => makeEl(tag),
 };
@@ -226,7 +232,7 @@ for (const nm of layerNames) {
 }
 
 // Global scope so the free `window` / `document` / `<mapVar>` lookups resolve.
-const windowObj = {};
+const windowObj = { innerWidth: 1024, innerHeight: 768 };
 windowObj[config.__registryKey] = { base_layers: {}, overlays }; // findOverlays() scans this
 global.window = windowObj;
 global.document = documentObj;
@@ -539,6 +545,48 @@ function toggle(layerName, checked) {
   toggle("GPS Density", true);
   ok(heatRowEl.classList.contains("hcp-opacity-disabled") === false,
      "Heatmap slider row re-enables when the density concept is back on");
+
+  // Scenario T - every control carries a plain-language explanation, and the
+  // explanation appears in a floating card while the pointer rests on it.
+  const rawInput = panel.querySelector('input[data-layer-name="Raw GPS tracks"]');
+  assert.ok(rawInput, "raw GPS tracks toggle exists");
+  const rawRow = rawInput.parentNode;
+  const rawHelp = rawRow && rawRow.getAttribute("data-hcp-help");
+  ok(typeof rawHelp === "string" && rawHelp.length > 30,
+     "each layer toggle carries an explanation");
+  ok(rawRow.querySelector(".hcp-info") !== null,
+     "each explained toggle shows the info badge");
+
+  // Hovering any part of the row (here the checkbox itself) finds the
+  // explanation through the delegated listeners on the panel.
+  panel.dispatch("mouseover", { target: rawInput, relatedTarget: null });
+  await delay(500);
+  const tip = document.body.children.filter(
+    (el) => el.className === "hcp-tooltip"
+  ).pop();
+  ok(Boolean(tip && tip.classList.contains("hcp-tooltip-visible")),
+     "hovering a control opens the help card");
+  ok(Boolean(tip) && tip.textContent === rawHelp,
+     "help card shows that control's explanation");
+
+  // Leaving the control closes the card again.
+  panel.dispatch("mouseout", { target: rawInput, relatedTarget: null });
+  ok(Boolean(tip) && !tip.classList.contains("hcp-tooltip-visible"),
+     "leaving the control closes the help card");
+
+  // The shared Heatmap slider and the per-layer sliders are explained too.
+  const heatSliderRow = panel.querySelector('div[data-layer-opacity="Heatmap"]');
+  ok(Boolean(heatSliderRow && heatSliderRow.getAttribute("data-hcp-help")),
+     "the shared Heatmap opacity slider carries an explanation");
+  const paceSliderRow = panel.querySelector('div[data-layer-opacity="Pace (average)"]');
+  ok(Boolean(paceSliderRow && paceSliderRow.getAttribute("data-hcp-help")),
+     "a per-layer opacity slider carries an explanation");
+  // The basemap style buttons are explained individually (no badge needed —
+  // the "Basemap" label carries the visible cue).
+  const basemapBox = byId.get("hcp-basemap");
+  ok(Boolean(basemapBox) && basemapBox.children.length > 0 &&
+     basemapBox.children.every((b) => Boolean(b.getAttribute("data-hcp-help"))),
+     "each basemap style button carries an explanation");
 
   console.log("ALL_PASS");
   process.exit(0);
