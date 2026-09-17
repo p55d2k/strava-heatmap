@@ -6,6 +6,7 @@ with customizable legends and layer controls.
 
 Modules:
 - constants: Shared constants and configuration
+- embed: Compressed payloads embedded in the generated page
 - legend: Legend generation functions
 - control: Layer control and exclusive layer handling
 - map_builder: Main map building function
@@ -39,6 +40,10 @@ from src.map_builder.control import (
     carto_basemap_choices,
     control_panel_script,
     controls_css,
+)
+from src.map_builder.embed import (
+    decode_embedded,
+    encode_for_embedding,
 )
 from src.map_builder.legend import (
     LegendBuilder,
@@ -93,6 +98,9 @@ __all__ = [
     "build_advanced_config",
     "control_panel_script",
     "carto_basemap_choices",
+    # Embed
+    "encode_for_embedding",
+    "decode_embedded",
     # Map builder
     "ScalableHomeMarker",
     "build_map",

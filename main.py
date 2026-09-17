@@ -32,6 +32,7 @@ from src.map_builder import (
     INDEPENDENT_LAYER_NAMES,
     LegendBuilder,
     build_map,
+    encode_for_embedding,
 )
 from src.rasterizer import (
     compute_grid_bounds,
@@ -259,6 +260,20 @@ def run_generate(args: argparse.Namespace) -> None:
             f"Re-exported {n_gpx_tracks} tracks ({n_gpx_points:,} points) to {config.output_gpx}"
         )
 
+        # The panel's "Export GPX" button downloads that very document, so the
+        # page carries a compressed copy of it. Reading back what was just
+        # written means the download and the file on disk cannot drift apart.
+        gpx_text = config.output_gpx.read_text(encoding="utf-8")
+        gpx_embed = encode_for_embedding(gpx_text)
+        del gpx_text  # the compressed copy is all the rest of the run needs
+        embed_size = len(gpx_embed)
+        shown_size = (
+            f"{embed_size / 1e6:.1f} MB"
+            if embed_size >= 1_000_000
+            else f"{embed_size / 1000:.0f} KB"
+        )
+        print_info("GPX embedded for the panel's Export GPX button", shown_size)
+
         # Stage 3: Rasterizing Tracks (has progress bar)
         print_stage("Stage 3: Rasterizing Tracks")
         to_wm, from_wm, to_utm, home_x_utm, home_y_utm, clip_m = setup_transformers(
@@ -358,6 +373,8 @@ def run_generate(args: argparse.Namespace) -> None:
                 legend_ids=legend_builder.legend_ids,
                 home=[home_lat, home_lon],
                 geojson=geojson,
+                gpx=gpx_embed,
+                gpx_filename=config.output_gpx.name,
                 progress_callback=pbar.update,
             )
             pbar.update(1)

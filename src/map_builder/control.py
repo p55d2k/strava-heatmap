@@ -40,6 +40,10 @@ from src.map_builder.constants import (
     TRACK_OPACITY,
 )
 
+# Filename the panel's "Export GPX" button offers when the build does not name
+# one; main passes the configured OUTPUT_GPX name, so this is the fallback.
+DEFAULT_GPX_FILENAME = "tracks.gpx"
+
 # Directory holding the external CSS / HTML / JS assets.
 _ASSETS_DIR = Path(__file__).parent / "assets"
 
@@ -253,15 +257,21 @@ class ControlPanel(MacroElement):
     """Inlines a unified control panel into the generated heatmap HTML.
 
     The element renders an ``html`` macro (the panel markup plus the embedded
-    GeoJSON grid export) and a ``script`` macro (the inlined ``assets/panel.js``
-    logic plus the runtime config), which Folium emits into the map's body and
-    script fragments respectively. The styling comes from the separate
-    :func:`controls_css` stylesheet.
+    GeoJSON grid export and GPX track export) and a ``script`` macro (the
+    inlined ``assets/panel.js`` logic plus the runtime config), which Folium
+    emits into the map's body and script fragments respectively. The styling
+    comes from the separate :func:`controls_css` stylesheet.
 
     The GeoJSON is embedded as an inert ``<script type="application/geo+json">``
     block: the browser never parses or executes it, so the map still loads
     quickly, and the panel's "Export GeoJSON" button reads its text and hands it
     to the browser as a download.
+
+    The GPX track export rides along the same way, in a
+    ``<script type="application/gpx+xml">`` block, but *compressed* (see
+    :mod:`src.map_builder.embed`) because the document is an order of magnitude
+    smaller that way; the "Export GPX" button inflates it in the browser before
+    handing it over, so what the user gets is the file on disk, byte for byte.
 
     ``_template`` must be a **class-level** ``Template`` so that Folium's
     ``MacroElement`` rendering pipeline can invoke its ``html``/``script``
@@ -276,6 +286,9 @@ class ControlPanel(MacroElement):
     {{ this.html }}
     {% if this.geojson %}
     <script type="application/geo+json" id="hcp-geojson-data">{{ this.geojson }}</script>
+    {% endif %}
+    {% if this.gpx %}
+    <script type="application/gpx+xml" id="hcp-gpx-data">{{ this.gpx }}</script>
     {% endif %}
     {% endmacro %}
     {% macro script(this, kwargs) %}
@@ -305,6 +318,8 @@ class ControlPanel(MacroElement):
         layer_groups: list[dict] | None = None,
         advanced: dict | None = None,
         geojson: str | None = None,
+        gpx: str | None = None,
+        gpx_filename: str | None = None,
     ):
         """Initialize the ControlPanel.
 
@@ -327,12 +342,20 @@ class ControlPanel(MacroElement):
             geojson: Minified GeoJSON string of the rasterized grids, embedded
                 in the page for the "Export GeoJSON" button to download. Omit
                 (or pass an empty string) to leave the block out.
+            gpx: The GPX track export, already run through
+                :func:`src.map_builder.embed.encode_for_embedding`, embedded in
+                the page for the "Export GPX" button to inflate and download.
+                Omit (or pass an empty string) to leave the block out.
+            gpx_filename: Filename offered for the GPX download. Defaults to
+                :data:`DEFAULT_GPX_FILENAME`; ``main`` passes the configured
+                ``OUTPUT_GPX`` name so the download matches the file on disk.
         """
         super().__init__()
         self._name = "ControlPanel"
         self.html = build_control_panel_html()
         self.script_code = control_panel_script()
         self.geojson = geojson or ""
+        self.gpx = gpx or ""
         config = {
             "panelId": panel_id,
             "basemapStyles": carto_basemap_choices(styles),
@@ -347,6 +370,7 @@ class ControlPanel(MacroElement):
             "legendId": legend_id,
             "layerGroups": layer_groups or [],
             "advanced": advanced or {},
+            "gpxFilename": gpx_filename or DEFAULT_GPX_FILENAME,
         }
         self.config_json = json.dumps(config)
 

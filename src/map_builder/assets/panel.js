@@ -23,6 +23,9 @@
  *   - Export GeoJSON            (hands the rasterized grids — embedded in the
  *                               page as an inert script block — to the browser
  *                               as a .geojson download for QGIS / Mapbox)
+ *   - Export GPX                (inflates the compressed GPX track document
+ *                               embedded in the page and downloads it for
+ *                               Garmin Connect / QGIS / any other GPX tool)
  *   - Info tooltips             (every control carries plain-language help
  *                               text, shown in a floating card on hover or
  *                               keyboard focus)
@@ -45,6 +48,7 @@
  *     layerGroups:    [{ label, mode, layers: [{ name, visible }, ...] }, ...],
  *     advanced:       { modes: [{ key, label, layer, visible, opacity }...],
  *                       densityLayerNames: [...], active: "decay" },
+ *     gpxFilename:    "tracks.gpx"  (name offered by the Export GPX button),
  *     map:            <the Leaflet map instance>
  *   }
  *
@@ -819,6 +823,14 @@
   var GEOJSON_FILENAME = "heatmap.geojson";
   var GEOJSON_MIME = "application/geo+json";
 
+  // The raw tracks travel with the page the same way, but as the GPX document
+  // itself — zlib-compressed and base64-encoded, because the file is roughly ten
+  // times larger uncompressed. The button inflates it in the browser, so what
+  // the user gets is byte for byte the file the build wrote to OUTPUT_GPX.
+  var GPX_DATA_ID = "hcp-gpx-data";
+  var GPX_FILENAME = "tracks.gpx";
+  var GPX_MIME = "application/gpx+xml";
+
   // Render at 2x so the exported picture stays sharp on high-density screens.
   var EXPORT_SCALE = 2;
   var EXPORT_FILENAME = "heatmap.png";
@@ -975,6 +987,64 @@
     setTimeout(function () {
       URL.revokeObjectURL(url);
     }, 1000);
+  }
+
+  /* ---- Export GPX (raw tracks) ------------------------------------------ */
+
+  // Decode a base64 payload to bytes. atob is used rather than fetching a data:
+  // URL because this has to work just as well from a file:// page.
+  function decodeBase64Bytes(payload) {
+    if (typeof atob !== "function") {
+      throw new Error("This browser cannot unpack the GPX file.");
+    }
+    var binary = atob(payload);
+    var bytes = new Uint8Array(binary.length);
+    for (var i = 0; i < binary.length; i++) {
+      bytes[i] = binary.charCodeAt(i);
+    }
+    return bytes;
+  }
+
+  // Inflate zlib-wrapped bytes back to text. "deflate" in DecompressionStream is
+  // the RFC 1950 format Python's zlib.compress writes; the decompressor is part
+  // of the browser, so nothing is fetched.
+  function inflateZlib(bytes) {
+    if (typeof DecompressionStream === "undefined" || typeof Response === "undefined") {
+      return Promise.reject(
+        new Error("This browser cannot unpack the GPX file. Try a newer browser.")
+      );
+    }
+    var stream = new Response(bytes).body.pipeThrough(new DecompressionStream("deflate"));
+    return new Response(stream).text();
+  }
+
+  // Download the embedded tracks as GPX. Resolves once the file has been handed
+  // to the browser; rejects with a readable Error when the page carries no track
+  // data (the button then reports that instead of failing silently).
+  function exportGpxTracks(filename) {
+    var el = document.getElementById(GPX_DATA_ID);
+    var payload = el && el.textContent ? el.textContent.replace(/\s+/g, "") : "";
+    if (!payload) throw new Error("No track data is available to export.");
+
+    return inflateZlib(decodeBase64Bytes(payload)).then(function (text) {
+      if (
+        typeof Blob === "undefined" ||
+        typeof URL === "undefined" ||
+        typeof URL.createObjectURL !== "function"
+      ) {
+        // Fallback for browsers without Blob/object URLs: a (large) data URI.
+        triggerDownloadFile(
+          "data:" + GPX_MIME + ";charset=utf-8," + encodeURIComponent(text),
+          filename
+        );
+        return;
+      }
+      var url = URL.createObjectURL(new Blob([text], { type: GPX_MIME }));
+      triggerDownloadFile(url, filename);
+      setTimeout(function () {
+        URL.revokeObjectURL(url);
+      }, 1000);
+    });
   }
 
   // Is the map mid-movement? Leaflet keeps no single "am I moving?" flag, so
@@ -1355,6 +1425,37 @@
             true
           );
         }
+      });
+    }
+
+    /* --- Export GPX ------------------------------------------------------ */
+    // Unpacking the embedded document takes a moment on a large export, so the
+    // button is disabled while it works and reports the outcome on the shared
+    // export status line. The filename comes from the build, so the download is
+    // named after the OUTPUT_GPX file it reproduces.
+    var gpxBtn = panel.querySelector("#hcp-export-gpx");
+    if (gpxBtn) {
+      var gpxFilename = config.gpxFilename || GPX_FILENAME;
+      gpxBtn.addEventListener("click", function () {
+        if (gpxBtn.disabled) return;
+        gpxBtn.disabled = true;
+        setExportStatus("Unpacking the GPX file\u2026", false);
+        Promise.resolve()
+          .then(function () {
+            return exportGpxTracks(gpxFilename);
+          })
+          .then(function () {
+            setExportStatus("Saved as " + gpxFilename + ".", false);
+          })
+          .catch(function (error) {
+            setExportStatus(
+              error && error.message ? error.message : "The GPX file could not be saved.",
+              true
+            );
+          })
+          .then(function () {
+            gpxBtn.disabled = false;
+          });
       });
     }
 

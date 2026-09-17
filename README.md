@@ -4,7 +4,7 @@ A custom fork of the original Strava Activity Heatmap project by [Sam Wilson](ht
 
 Turns a Strava data export into an interactive heatmap. No API needed just for the data - just the zip file Strava lets you download. (A free CARTO maps key is required for the basemap tiles.)
 
-The output is a single HTML file with eight layers — three GPS-density views (one per raster mode, swapped by the panel's **Advanced** dropdown), a coverage layer, and four metrics — plus a **Save as PNG** and an **Export GeoJSON** button — and the filtered tracks re-exported as GPX (see below):
+The output is a single HTML file with eight layers — three GPS-density views (one per raster mode, swapped by the panel's **Advanced** dropdown), a coverage layer, and four metrics — plus **Save as PNG**, **Export GeoJSON** and **Export GPX** buttons — and the filtered tracks re-exported as a GPX file next to the map (see below):
 
 | Layer                      | Colour         | Shows                                              |
 | -------------------------- | -------------- | -------------------------------------------------- |
@@ -112,6 +112,17 @@ for either — so tools that understand the extension show them and the rest
 ignore it. The GPX loader reads that extension back, so feeding this file (or a
 Garmin/Strava one) back into the project keeps HR and speed instead of dropping
 them; tracks cached by an older version are reparsed once on the next run.
+
+The panel's **Export GPX** button downloads that same file without leaving the
+page. The document travels with the HTML — zlib-compressed and base64-encoded in
+an inert `<script type="application/gpx+xml">` block, because it is an order of
+magnitude smaller that way (a ~180,000-point export is 22.7 MB of GPX and 2.3 MB
+embedded) — and the button inflates it in the browser with the built-in
+`DecompressionStream`, so what lands in your downloads folder is byte for byte
+the file the build wrote. Unpacking happens on click and needs a browser with
+`DecompressionStream` (Chrome 80+, Firefox 113+, Safari 16.4+); on an older one
+the button says so instead of failing silently, and `outputs/tracks.gpx` is
+always there regardless.
 
 ## Setup
 

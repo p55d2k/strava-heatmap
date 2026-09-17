@@ -46,6 +46,7 @@ from src.map_builder.control import (
     build_layer_group_config,
     control_panel_script,
 )
+from src.map_builder.embed import encode_for_embedding
 
 # Not bound to a legend row (raw GPS tracks); used as a negative case.
 _RAW_TRACKS = "Raw GPS tracks"
@@ -54,6 +55,23 @@ _RAW_TRACKS = "Raw GPS tracks"
 # rasterized grids here). Kept tiny — the harness only checks pass-through.
 _GEOJSON_SAMPLE = (
     '{"type":"FeatureCollection","name":"strava-heatmap-grids","cell_size_m":10.0,"features":[]}'
+)
+
+# Stand-in for the GPX track document the panel embeds, shaped like the output of
+# src/gpx_export.write_gpx: several tracks, an elevation, a Garmin
+# TrackPointExtension, and non-ASCII text in the metadata. The harness inflates
+# the compressed payload with the browser's own decompressor and checks the
+# bytes come back unchanged, so the sample is written to survive that exactly.
+_GPX_SAMPLE = (
+    '<?xml version="1.0" encoding="UTF-8"?>\n'
+    '<gpx version="1.1" creator="strava-heatmap" xmlns="http://www.topografix.com/GPX/1/1"\n'
+    '    xmlns:gpxtpx="http://www.garmin.com/xmlschemas/TrackPointExtension/v2">\n'
+    "  <metadata>\n    <name>Strava Ride/Run tracks \u2014 R\u00fcckweg</name>\n  </metadata>\n"
+    "  <trk>\n    <name>2024-01-01 Morning Run</name>\n    <trkseg>\n"
+    '      <trkpt lat="45.0000000" lon="-122.0000000"><ele>100.0</ele>'
+    "<extensions><gpxtpx:TrackPointExtension><gpxtpx:hr>150</gpxtpx:hr>"
+    "<gpxtpx:speed>5.000</gpxtpx:speed></gpxtpx:TrackPointExtension></extensions></trkpt>\n"
+    "    </trkseg>\n  </trk>\n</gpx>\n"
 )
 
 # ---------------------------------------------------------------------------
@@ -272,8 +290,10 @@ global.window = windowObj;
 global.document = documentObj;
 global[mapVar] = map; // the exclusive script's `var map = <name>;`
 
-// Stub the browser download primitives so the GeoJSON export can run headless;
-// the harness records exactly what would have been handed to the browser.
+// Stub the browser download primitives so the GeoJSON and GPX exports can run
+// headless; the harness records exactly what would have been handed to the
+// browser. Only Blob/URL are stubbed — the GPX export inflates with the real
+// DecompressionStream, so the decompression itself is exercised for real.
 const blobs = [];
 global.Blob = function (parts, options) {
   this.parts = parts;
@@ -309,10 +329,22 @@ const cfg = Object.assign({}, config);
 delete cfg.__legendIdByLayer; delete cfg.__layerNames;
 delete cfg.__panelIds; delete cfg.__mapVar; delete cfg.__registryKey;
 delete cfg.__defaultDensityLayer; delete cfg.__geojsonData;
+delete cfg.__gpxData; delete cfg.__gpxText;
 cfg.map = map;
 windowObj.initHeatmapControlPanel(cfg);
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Poll until `pred()` holds (the GPX export resolves asynchronously) or the
+// deadline passes, so a slow decompressor never turns into a flaky failure.
+async function waitFor(pred, ms) {
+  const deadline = Date.now() + ms;
+  while (Date.now() < deadline) {
+    if (pred()) return true;
+    await delay(20);
+  }
+  return false;
+}
 
 function rowVisible(layerName) {
   const el = byId.get(legendIdByLayer[layerName]);
@@ -705,6 +737,46 @@ function toggle(layerName, checked) {
      blobs[0].parts.join("") === config.__geojsonData,
      "the embedded grid GeoJSON is downloaded verbatim");
 
+  // Scenario R - "Export GPX" downloads the raw tracks. The GPX document is
+  // embedded compressed (zlib + base64) because it is an order of magnitude
+  // bigger raw, so this checks the whole chain end to end: base64 decode, the
+  // browser's own DecompressionStream, and a download whose bytes are the
+  // document the build wrote to OUTPUT_GPX. It is asynchronous (unlike the
+  // GeoJSON pass-through), so the button reports progress and stays disabled
+  // until the file is ready.
+  const gpxBtn = byId.get("hcp-export-gpx");
+  assert.ok(gpxBtn, "Export GPX button exists");
+
+  gpxBtn.dispatch("click");
+  await delay(20);
+  ok(exportStatus.classList.contains("hcp-export-status-error") === true &&
+     exportStatus.textContent.indexOf("No track data") !== -1,
+     "missing track data is reported instead of throwing");
+  ok(gpxBtn.disabled === false, "the button is usable again after reporting");
+
+  const gpxEl = makeEl("script", "hcp-gpx-data");
+  gpxEl.textContent = config.__gpxData;
+  byId.set("hcp-gpx-data", gpxEl);
+  const blobsBeforeGpx = blobs.length;
+  gpxBtn.dispatch("click");
+  ok(gpxBtn.disabled === true, "the button is disabled while the file is unpacked");
+
+  const saved = await waitFor(() => exportStatus.textContent.indexOf("Saved as") === 0, 5000);
+  ok(saved, "the embedded tracks unpack into a download: " + exportStatus.textContent);
+  ok(exportStatus.classList.contains("hcp-export-status-error") === false,
+     "unpacking the compressed tracks does not report an error");
+  ok(exportStatus.textContent === "Saved as my_runs.gpx.",
+     "the status line names the configured OUTPUT_GPX file");
+  ok(gpxBtn.disabled === false, "the button is usable again once the file is ready");
+
+  const gpxLinks = createdEls.filter((e) => e.tagName === "A" && e.download === "my_runs.gpx");
+  ok(gpxLinks.length === 1, "the download is offered under the OUTPUT_GPX name");
+
+  const gpxBlobs = blobs.slice(blobsBeforeGpx).filter((b) => b.type === "application/gpx+xml");
+  ok(gpxBlobs.length === 1, "exactly one GPX file is handed to the browser");
+  ok(gpxBlobs[0].parts.join("") === config.__gpxText,
+     "the inflated download is the embedded GPX document, byte for byte");
+
   console.log("ALL_PASS");
   process.exit(0);
 })().catch((err) => {
@@ -751,6 +823,8 @@ def _write_harness(tmp: Path, panel_cfg: dict) -> None:
     config["__defaultDensityLayer"] = DENSITY_MODE_LAYERS[DEFAULT_RASTER_MODE]
     config["__activeMode"] = DEFAULT_RASTER_MODE
     config["__geojsonData"] = _GEOJSON_SAMPLE
+    config["__gpxText"] = _GPX_SAMPLE
+    config["__gpxData"] = encode_for_embedding(_GPX_SAMPLE)
     config["__modeLayers"] = [
         {"mode": mode, "layer": layer} for mode, layer in DENSITY_MODE_LAYERS.items()
     ]
@@ -779,6 +853,7 @@ def test_control_panel_toggles_update_legend_via_overlay_events(node_available, 
     panel = ControlPanel(
         centre=[37.0, -122.0],
         home=home,
+        gpx_filename="my_runs.gpx",
         layer_groups=build_layer_group_config(_overlay_layers(), has_tracks=True),
         advanced=build_advanced_config(
             DEFAULT_RASTER_MODE,

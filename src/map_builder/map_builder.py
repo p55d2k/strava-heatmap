@@ -169,6 +169,8 @@ def build_map(
     control_panel: bool = True,
     raster_mode: str = DEFAULT_RASTER_MODE,
     geojson: str | None = None,
+    gpx: str | None = None,
+    gpx_filename: str | None = None,
     progress_callback=None,
 ) -> None:
     """Build and save the Folium map.
@@ -203,6 +205,12 @@ def build_map(
         geojson: Minified GeoJSON of the rasterized grids, embedded in the page
             for the control panel's "Export GeoJSON" button. Omit to leave it
             out (the button then reports that no grid data is available).
+        gpx: The GPX track export, compressed by
+            :func:`src.map_builder.embed.encode_for_embedding`, embedded in the
+            page for the control panel's "Export GPX" button. Omit to leave it
+            out (the button then reports that no track data is available).
+        gpx_filename: Filename the GPX download is offered as; defaults to the
+            panel's ``DEFAULT_GPX_FILENAME``.
         progress_callback: Optional callable invoked with a step count.
     """
     map_location = home if home is not None else centre
@@ -292,6 +300,8 @@ def build_map(
                 default_opacity=map_opacity,
             ),
             geojson=geojson,
+            gpx=gpx,
+            gpx_filename=gpx_filename,
         ).add_to(m)
 
     if progress_callback:

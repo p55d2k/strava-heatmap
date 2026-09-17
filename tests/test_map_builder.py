@@ -32,6 +32,7 @@ from src.map_builder import (
     cmap_to_css,
     control_panel_script,
     controls_css,
+    encode_for_embedding,
     get_carto_api_key,
     home_marker_radius,
     legend_row,
@@ -968,6 +969,57 @@ class TestControlPanel:
         bare = ControlPanel(centre=[1.0, 2.0])
         assert "hcp-geojson-data" not in bare._template.module.html(bare, {})
 
+    def test_html_contains_export_gpx_button(self):
+        """The panel offers a download of the raw tracks as GPX.
+
+        Like the other two exports it lives in the export section and carries an
+        explanation (nothing on the button says it is the same document the
+        build wrote to OUTPUT_GPX).
+        """
+        html = build_control_panel_html()
+        match = re.search(r'<button[^>]*id="hcp-export-gpx".*?</button>', html, re.DOTALL)
+        assert match, "no Export GPX button in the panel markup"
+        assert "Export GPX" in match.group(0)
+        assert "data-hcp-help=" in match.group(0)
+        assert "hcp-info" in match.group(0)
+        # Shares the export section (and its status line) with the other exports.
+        assert html.index('id="hcp-export-geojson"') < html.index('id="hcp-export-gpx"')
+        assert html.index('id="hcp-export-gpx"') < html.index('id="hcp-export-status"')
+
+    def test_script_contains_gpx_export_logic(self):
+        """panel.js must inflate the embedded GPX and hand it to the browser."""
+        script = control_panel_script()
+        assert "hcp-export-gpx" in script
+        assert "hcp-gpx-data" in script
+        assert "tracks.gpx" in script
+        assert "application/gpx+xml" in script
+        assert "exportGpxTracks" in script
+        # The document is embedded compressed, so the button has to inflate it
+        # with the browser's own decompressor before offering the download.
+        assert "DecompressionStream" in script
+        assert "deflate" in script
+
+    def test_control_panel_embeds_gpx_for_the_download(self):
+        """ControlPanel should inline the compressed GPX in an inert script block."""
+        payload = encode_for_embedding("<gpx><trk><name>run</name></trk></gpx>")
+        panel = ControlPanel(centre=[1.0, 2.0], gpx=payload)
+        html = panel._template.module.html(panel, {})
+        assert 'id="hcp-gpx-data"' in html
+        assert 'type="application/gpx+xml"' in html
+        assert payload in html
+        # Without tracks the block is left out entirely; the button then reports
+        # that there is nothing to export.
+        bare = ControlPanel(centre=[1.0, 2.0])
+        assert "hcp-gpx-data" not in bare._template.module.html(bare, {})
+
+    def test_gpx_download_is_named_after_output_gpx(self):
+        """The panel offers the download under the configured OUTPUT_GPX name."""
+        default = json.loads(ControlPanel(centre=[1.0, 2.0]).config_json)
+        assert default["gpxFilename"] == "tracks.gpx"
+
+        named = json.loads(ControlPanel(centre=[1.0, 2.0], gpx_filename="my_runs.gpx").config_json)
+        assert named["gpxFilename"] == "my_runs.gpx"
+
     def test_script_renders_a_still_map_without_the_home_marker(self):
         """The export must capture a map that is not moving, and must leave the
         home marker out of the picture.
@@ -1411,6 +1463,52 @@ class TestBuildMapControlPanel:
 
         mock_panel.assert_called_once()
         assert mock_panel.call_args[1]["geojson"] == geojson
+
+    @patch("src.map_builder.map_builder.folium.Map")
+    @patch("src.map_builder.map_builder.folium.TileLayer")
+    @patch("src.map_builder.map_builder.folium.FeatureGroup")
+    @patch("src.map_builder.map_builder.folium.PolyLine")
+    @patch("src.map_builder.map_builder.folium.raster_layers.ImageOverlay")
+    @patch("src.map_builder.map_builder.folium.LayerControl")
+    @patch("src.map_builder.map_builder.ExclusiveLayerControl")
+    @patch("src.map_builder.map_builder.ControlPanel")
+    def test_passes_the_gpx_export_to_the_panel(
+        self,
+        mock_panel,
+        mock_exclusive_control,
+        mock_layer_control,
+        mock_image_overlay,
+        mock_polyline,
+        mock_feature_group,
+        mock_tile_layer,
+        mock_map,
+    ):
+        """build_map should hand the compressed tracks and their name to the panel."""
+        mock_map.return_value = MagicMock()
+        mock_tile_layer.return_value = MagicMock()
+        mock_feature_group.return_value = MagicMock()
+        mock_polyline.return_value = MagicMock()
+        mock_image_overlay.return_value = MagicMock()
+        mock_layer_control.return_value = MagicMock()
+        mock_exclusive_control.return_value = MagicMock()
+        mock_panel.return_value = MagicMock()
+        payload = encode_for_embedding("<gpx/>")
+
+        build_map(
+            self.tracks,
+            self.layers,
+            self.bounds,
+            self.centre,
+            self.legend_html,
+            self.output_path,
+            self.map_opacity,
+            gpx=payload,
+            gpx_filename="my_runs.gpx",
+        )
+
+        mock_panel.assert_called_once()
+        assert mock_panel.call_args[1]["gpx"] == payload
+        assert mock_panel.call_args[1]["gpx_filename"] == "my_runs.gpx"
 
     @patch("src.map_builder.map_builder.folium.Map")
     @patch("src.map_builder.map_builder.folium.TileLayer")

@@ -17,17 +17,19 @@
 
      The Layer opacity and Advanced section headers, and the Fit map / Reset /
      Legend buttons, deliberately carry no explanation — their labels already
-     say what they do. The two export buttons (Save as PNG / Export GeoJSON) do
-     carry one: what ends up in the exported file is not obvious from their
-     labels alone.
+     say what they do. The three export buttons (Save as PNG / Export GeoJSON /
+     Export GPX) do carry one: what ends up in the exported file is not obvious
+     from their labels alone.
 
      The export buttons live in their own section below the actions because they
      are primary actions rather than view controls, and because their shared
      status line needs the full sidebar width. The image library Save as PNG
      needs is fetched by panel.js on first click, never at page load; the
-     GeoJSON itself is embedded in the page as an inert
-     <script type="application/geo+json"> block that panel.js hands to the
-     browser as a download. -->
+     GeoJSON and the GPX track export are embedded in the page as inert script
+     blocks (<script type="application/geo+json"> and
+     <script type="application/gpx+xml">) that panel.js hands to the browser as
+     downloads — the GPX one compressed, since that document is around ten times
+     smaller that way. -->
 <div id="heatmap-control-panel" class="heatmap-control-panel hcp-opacity-collapsed" aria-label="Map controls">
   <div class="hcp-header">
     <span>Map Controls</span>
@@ -82,6 +84,10 @@
       <button type="button" id="hcp-export-geojson" class="hcp-export hcp-export-alt"
               data-hcp-help="Downloads the heatmap data as a GeoJSON file — one polygon per grid cell, with its pass counts, coverage, pace, heart rate and gradient — for opening in QGIS, Mapbox or another mapping tool.">
         <span>Export GeoJSON</span> <span class="hcp-info" aria-hidden="true">i</span>
+      </button>
+      <button type="button" id="hcp-export-gpx" class="hcp-export hcp-export-alt"
+              data-hcp-help="Downloads the GPS tracks themselves as a GPX file — one track per activity, with elevation and heart rate wherever your device recorded them — for Garmin Connect, QGIS, OsmAnd or any other GPX tool.">
+        <span>Export GPX</span> <span class="hcp-info" aria-hidden="true">i</span>
       </button>
       <div id="hcp-export-status" class="hcp-export-status" role="status"
            aria-live="polite"></div>
