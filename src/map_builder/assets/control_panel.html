@@ -17,7 +17,13 @@
 
      The Layer opacity and Advanced section headers, and the Fit map / Reset /
      Legend buttons, deliberately carry no explanation — their labels already
-     say what they do. -->
+     say what they do. The Save as PNG button does carry one: what ends up in
+     the exported picture is not obvious from its label alone.
+
+     Save as PNG lives in its own section below the actions because it is a
+     primary action rather than another view control, and because its status
+     line needs the full sidebar width. The image library it needs is fetched
+     by panel.js on first click, never at page load. -->
 <div id="heatmap-control-panel" class="heatmap-control-panel hcp-opacity-collapsed" aria-label="Map controls">
   <div class="hcp-header">
     <span>Map Controls</span>
@@ -63,6 +69,14 @@
       <button type="button" id="hcp-fit">Fit map</button>
       <button type="button" id="hcp-reset">Reset</button>
       <button type="button" id="hcp-legend">Legend</button>
+    </div>
+    <div class="hcp-section hcp-section-export">
+      <button type="button" id="hcp-export-png" class="hcp-export"
+              data-hcp-help="Saves the map as a picture file you can share or print. It captures exactly what is on screen right now, including the legend.">
+        <span>Save as PNG</span> <span class="hcp-info" aria-hidden="true">i</span>
+      </button>
+      <div id="hcp-export-status" class="hcp-export-status" role="status"
+           aria-live="polite"></div>
     </div>
   </div>
 </div>

@@ -17,6 +17,9 @@
  *                               bound to the "GPS Density" row)
  *   - Fit-to-heatmap / Reset view
  *   - Legend toggle
+ *   - Save as PNG              (static image export of the current view; the
+ *                               html2canvas library it needs is fetched on the
+ *                               first click, never at page load)
  *   - Info tooltips             (every control carries plain-language help
  *                               text, shown in a floating card on hover or
  *                               keyboard focus)
@@ -111,6 +114,11 @@
       maxZoom: 20,
       maxNativeZoom: 20,
       attribution: attribution,
+      // Ask for the tiles with CORS so "Save as PNG" can read them back out of
+      // the canvas; a tile loaded without it would taint the canvas and make
+      // the export unreadable (CARTO serves the tiles with
+      // `Access-Control-Allow-Origin: *`).
+      crossOrigin: true,
     });
   }
 
@@ -790,6 +798,235 @@
     });
   }
 
+  /* ---- Save as PNG (static image export) -------------------------------- */
+
+  // The renderer is fetched the first time the user actually asks for a PNG, so
+  // the generated page keeps loading fast and stays usable when the CDN is
+  // unreachable — the button then reports what went wrong instead of failing
+  // silently. html2canvas draws the live DOM (basemap tiles, the data-URI
+  // heatmap layers and the SVG track lines) to a canvas — everything that is on
+  // screen except the home marker, which is left out on purpose.
+  var HTML2CANVAS_URL =
+    "https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js";
+
+  // Render at 2x so the exported picture stays sharp on high-density screens.
+  var EXPORT_SCALE = 2;
+  var EXPORT_FILENAME = "heatmap.png";
+  // Where the legend card sits inside the exported image. Mirrors the panel
+  // CSS (bottom: 28px / right: 10px) so the PNG matches what was on screen.
+  var EXPORT_LEGEND_RIGHT_PX = 10;
+  var EXPORT_LEGEND_BOTTOM_PX = 28;
+  // Class ScalableHomeMarker puts on the home marker's SVG path. It is left out
+  // of the export: the marker points at a personal location, and as a lone dot
+  // in a still image it reads as an artefact rather than as information.
+  var EXPORT_EXCLUDED_CLASS = "hcp-home-marker";
+  // Class put on the map container while a PNG is being built. The panel CSS
+  // uses it to neutralise the Leaflet zoom buttons (pointer-events only, so the
+  // exported picture is unaffected).
+  var EXPORTING_CLASS = "hcp-exporting";
+  // How long to wait for the map to stop moving before giving up and rendering
+  // what is on screen anyway, and how often to re-check while waiting.
+  var EXPORT_SETTLE_TIMEOUT_MS = 5000;
+  var EXPORT_SETTLE_POLL_MS = 100;
+  // Leaflet interaction handlers switched off for the duration of the render, so
+  // a stray drag or wheel tick cannot move the map mid-capture.
+  var EXPORT_INTERACTION_HANDLERS = [
+    "dragging",
+    "touchZoom",
+    "doubleClickZoom",
+    "scrollWheelZoom",
+    "boxZoom",
+    "keyboard",
+  ];
+
+  var html2canvasPromise = null;
+
+  function loadHtml2Canvas() {
+    if (global.html2canvas) return Promise.resolve(global.html2canvas);
+    if (html2canvasPromise) return html2canvasPromise;
+    html2canvasPromise = new Promise(function (resolve, reject) {
+      if (!document || !document.head || typeof document.createElement !== "function") {
+        reject(new Error("This page cannot load the image library."));
+        return;
+      }
+      var script = document.createElement("script");
+      script.src = HTML2CANVAS_URL;
+      script.async = true;
+      script.onload = function () {
+        if (global.html2canvas) resolve(global.html2canvas);
+        else reject(new Error("The image library failed to start."));
+      };
+      script.onerror = function () {
+        // Clear the cached attempt so a later click retries the download.
+        html2canvasPromise = null;
+        reject(new Error("Could not download the image library. Check your connection."));
+      };
+      document.head.appendChild(script);
+    });
+    return html2canvasPromise;
+  }
+
+  // Render a DOM element to a canvas. Cross-origin basemap tiles are requested
+  // with CORS (the tile layers also set crossOrigin, so this is usually a cache
+  // hit) because a canvas holding a non-CORS image cannot be turned into a
+  // downloadable picture.
+  function renderToCanvas(element, html2canvas) {
+    return html2canvas(element, {
+      useCORS: true,
+      backgroundColor: null,
+      logging: false,
+      scale: EXPORT_SCALE,
+      // Drop the home marker from the picture (see EXPORT_EXCLUDED_CLASS).
+      ignoreElements: function (node) {
+        return Boolean(node && node.classList && node.classList.contains(EXPORT_EXCLUDED_CLASS));
+      },
+    });
+  }
+
+  // The legend is a fixed-position sibling of the map rather than part of it, so
+  // it is missing from the map's own render; draw it into the bottom-right
+  // corner (its on-screen spot) instead. A legend the user has hidden via the
+  // Legend button is skipped, so the PNG matches the screen.
+  function addLegendToCanvas(canvas, html2canvas, legendId) {
+    var legend = legendId ? document.getElementById(legendId) : null;
+    if (!legend || legend.style.display === "none") return Promise.resolve();
+    return renderToCanvas(legend, html2canvas).then(function (legendCanvas) {
+      var context = canvas.getContext("2d");
+      if (!context) return;
+      var right = EXPORT_LEGEND_RIGHT_PX * EXPORT_SCALE;
+      var bottom = EXPORT_LEGEND_BOTTOM_PX * EXPORT_SCALE;
+      context.drawImage(
+        legendCanvas,
+        Math.max(right, canvas.width - legendCanvas.width - right),
+        Math.max(bottom, canvas.height - legendCanvas.height - bottom)
+      );
+    });
+  }
+
+  // Hand a finished canvas to the browser as a file download. toBlob keeps
+  // memory use sane for the large canvases the map produces; the data-URL path
+  // is a fallback for browsers without it.
+  function saveCanvasAsPng(canvas, filename) {
+    function triggerDownload(href) {
+      var link = document.createElement("a");
+      link.href = href;
+      link.download = filename;
+      document.body.appendChild(link);
+      if (typeof link.click === "function") link.click();
+      document.body.removeChild(link);
+    }
+
+    if (
+      typeof canvas.toBlob === "function" &&
+      typeof URL !== "undefined" &&
+      typeof URL.createObjectURL === "function"
+    ) {
+      canvas.toBlob(function (blob) {
+        if (!blob) return;
+        var url = URL.createObjectURL(blob);
+        triggerDownload(url);
+        setTimeout(function () {
+          URL.revokeObjectURL(url);
+        }, 1000);
+      }, "image/png");
+      return;
+    }
+    triggerDownload(canvas.toDataURL("image/png"));
+  }
+
+  // Is the map mid-movement? Leaflet keeps no single "am I moving?" flag, so
+  // combine the animation internals it does expose (the same way isBasemapLayer
+  // reads layer._url) — an animated zoom, an inertia pan / fly-to, or a queued
+  // fly-to frame. Tiles that shuffle during the capture smear the exported
+  // picture, so nothing may be in flight when we render.
+  function mapIsMoving(map) {
+    if (map._animatingZoom) return true;
+    if (map._panAnim && map._panAnim._inProgress) return true;
+    if (map._flyToFrame) return true;
+    return false;
+  }
+
+  // Call back once the map has stopped moving. Polling (rather than listening
+  // for moveend/zoomend) also covers an interrupted or re-started animation
+  // that reports no end event; the timeout guarantees we never hang the button.
+  function whenMapSettled(map, callback) {
+    var deadline = Date.now() + EXPORT_SETTLE_TIMEOUT_MS;
+    function check() {
+      if (!mapIsMoving(map) || Date.now() > deadline) {
+        callback();
+        return;
+      }
+      setTimeout(check, EXPORT_SETTLE_POLL_MS);
+    }
+    check();
+  }
+
+  // Switch off the interactions that can move the map, remembering which ones
+  // were actually on so only those are switched back on afterwards.
+  function freezeMapInteractions(map) {
+    var frozen = [];
+    EXPORT_INTERACTION_HANDLERS.forEach(function (name) {
+      var handler = map[name];
+      if (handler && typeof handler.disable === "function" && handler.enabled()) {
+        handler.disable();
+        frozen.push(handler);
+      }
+    });
+    return frozen;
+  }
+
+  function thawMapInteractions(frozen) {
+    frozen.forEach(function (handler) {
+      handler.enable();
+    });
+  }
+
+  // Export the current map view (plus the legend) as a PNG download. The map is
+  // let settle and then held still for the duration of the render, so the image
+  // always shows a single, stable view. Rejects with a human-readable Error when
+  // anything goes wrong, so the caller can report it next to the button.
+  //
+  // ``onBuilding`` (optional) fires once the map has settled and the render is
+  // about to start, which is when waiting is over and work actually begins.
+  function exportMapPng(map, legendId, onBuilding) {
+    var container = map && typeof map.getContainer === "function" ? map.getContainer() : null;
+    if (!container) return Promise.reject(new Error("The map is not ready yet."));
+    // Cancel any glide (inertia pan / fly-to) rather than waiting it out.
+    if (typeof map.stop === "function") map.stop();
+    var frozen = freezeMapInteractions(map);
+    if (container.classList) container.classList.add(EXPORTING_CLASS);
+
+    function release() {
+      if (container.classList) container.classList.remove(EXPORTING_CLASS);
+      thawMapInteractions(frozen);
+    }
+
+    return new Promise(function (resolve) {
+      whenMapSettled(map, resolve);
+    })
+      .then(function () {
+        if (onBuilding) onBuilding();
+        return loadHtml2Canvas();
+      })
+      .then(function (html2canvas) {
+        return renderToCanvas(container, html2canvas).then(function (canvas) {
+          return addLegendToCanvas(canvas, html2canvas, legendId).then(function () {
+            return canvas;
+          });
+        });
+      })
+      .then(
+        function (canvas) {
+          saveCanvasAsPng(canvas, EXPORT_FILENAME);
+          release();
+        },
+        function (error) {
+          release();
+          throw error;
+        }
+      );
+  }
+
   /* ---- Init ------------------------------------------------------------- */
 
   function init(config) {
@@ -1011,6 +1248,50 @@
         if (!legend) return;
         legendVisible = !legendVisible;
         legend.style.display = legendVisible ? "block" : "none";
+      });
+    }
+
+    /* --- Save as PNG ----------------------------------------------------- */
+    // Renders the current view (map + legend) to a PNG file entirely in the
+    // browser. The button is disabled while the image is being built so a
+    // double click cannot start two exports, and the small status line under
+    // it reports progress and failures.
+    var exportBtn = panel.querySelector("#hcp-export-png");
+    var exportStatus = panel.querySelector("#hcp-export-status");
+
+    function setExportStatus(message, isError) {
+      if (!exportStatus) return;
+      exportStatus.textContent = message || "";
+      exportStatus.classList.toggle("hcp-export-status-error", Boolean(isError));
+    }
+
+    if (exportBtn) {
+      exportBtn.addEventListener("click", function () {
+        if (exportBtn.disabled) return;
+        exportBtn.disabled = true;
+        // The picture must show one still view, so a zoom or pan already in
+        // flight is awaited before rendering starts (see whenMapSettled).
+        setExportStatus(
+          mapIsMoving(map)
+            ? "Waiting for the map to stop moving\u2026"
+            : "Building the image\u2026",
+          false
+        );
+        exportMapPng(map, config.legendId, function () {
+          setExportStatus("Building the image\u2026", false);
+        })
+          .then(function () {
+            setExportStatus("Saved as " + EXPORT_FILENAME + ".", false);
+          })
+          .catch(function (error) {
+            setExportStatus(
+              error && error.message ? error.message : "The image could not be saved.",
+              true
+            );
+          })
+          .then(function () {
+            exportBtn.disabled = false;
+          });
       });
     }
 

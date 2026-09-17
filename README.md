@@ -42,6 +42,26 @@ heatmap raster mode, the home marker and the opacity sliders — carry a small
 plain-English card explaining what it does, so the map is usable without knowing
 anything about the underlying data pipeline.
 
+The **Save as PNG** button below the map actions exports the current view as a
+static image: the basemap, every layer you have turned on (including raw GPS
+tracks), the map attribution and the legend are rendered to a PNG and downloaded
+as `heatmap.png`, entirely in the browser. The rendering library (html2canvas)
+is fetched from a CDN the first time you click the button, so the page loads
+exactly as before and the button reports a clear error if the library cannot be
+reached. Basemap tiles are requested with CORS (CARTO allows this) so the canvas
+stays readable and can actually be saved.
+
+Two details keep the exported picture clean:
+
+- **The map is held still for the capture.** Tiles that shuffle mid-render smear
+the image, so a zoom or pan that is already in flight is waited out (the status
+line says so), any glide is cancelled, and drag / wheel / pinch / keyboard input
+and the zoom buttons are switched off until the render finishes — then
+everything is released again.
+- **The home marker is left out.** It points at a personal location and reads as
+a stray dot in a shared still image, so the export filters it out (it stays on
+the interactive map).
+
 ## Setup
 
 ```bash

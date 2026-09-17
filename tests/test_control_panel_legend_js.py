@@ -216,6 +216,20 @@ function makeMap() {
     on(evt, fn) { (handlers[evt] = handlers[evt] || []).push(fn); },
     fire(evt, data) { (handlers[evt] || []).forEach((f) => f(data || {})); },
     fitBounds() {},
+    // The map container the PNG export renders into. Stable across calls, as on
+    // a real Leaflet map, so the export's "held still" marker can be observed.
+    _container: makeEl("div", "map-container"),
+    getContainer() { return this._container; },
+    // Cancels any in-flight glide; the PNG export calls it before capturing.
+    stopCalls: 0,
+    stop() { this.stopCalls++; },
+    // A real interaction handler, so the export's freeze/thaw is observable.
+    dragging: {
+      _on: true,
+      enabled() { return this._on; },
+      disable() { this._on = false; },
+      enable() { this._on = true; },
+    },
     // Record setView calls so the Reset-button scenario can assert the view
     // re-centres on the home location.
     views: [],
@@ -587,6 +601,49 @@ function toggle(layerName, checked) {
   ok(Boolean(basemapBox) && basemapBox.children.length > 0 &&
      basemapBox.children.every((b) => Boolean(b.getAttribute("data-hcp-help"))),
      "each basemap style button carries an explanation");
+
+  // Scenario P - "Save as PNG" builds a static image of the current view and
+  // downloads it. The markup tests cover that the button advertises what it
+  // does; here we check the wiring and, above all, that the picture is taken of
+  // a map that is not moving. This harness has no <head> for the on-demand
+  // image library and no canvas, so the render itself cannot succeed — what
+  // matters is that the export waits out an in-flight zoom, holds the map still
+  // (freezing interactions and cancelling glides) while it renders, and then
+  // releases everything and reports the failure instead of throwing or hanging.
+  const exportBtn = byId.get("hcp-export-png");
+  const exportStatus = byId.get("hcp-export-status");
+  const mapContainer = map.getContainer();
+  assert.ok(exportBtn && exportStatus, "Save as PNG button and status line exist");
+  ok(exportStatus.textContent === "", "export status starts empty");
+
+  // The map is mid-zoom when the button is clicked: the capture must wait for it
+  // to stop rather than filtering a moving map, so nothing may be rendered yet.
+  map._animatingZoom = true;
+  exportBtn.dispatch("click");
+  await delay(20);
+  ok(map.stopCalls === 1, "any in-flight glide is cancelled before capturing");
+  ok(exportStatus.textContent.indexOf("Waiting") === 0,
+     "a zoom in progress makes the export wait: " + exportStatus.textContent);
+  ok(map.dragging.enabled() === false,
+     "map dragging is disabled while the export waits");
+  ok(mapContainer.classList.contains("hcp-exporting") === true,
+     "the map is held still while the export runs");
+  await delay(250);
+  ok(exportStatus.classList.contains("hcp-export-status-error") === false,
+     "nothing is rendered while the map is still moving");
+
+  // Once the map settles the render goes ahead (and fails here only because the
+  // harness cannot load the image library), releasing what it froze.
+  map._animatingZoom = false;
+  await delay(300);
+  ok(exportStatus.classList.contains("hcp-export-status-error") === true,
+     "the status line reports the export failure once the map has settled");
+  ok(map.dragging.enabled() === true,
+     "map dragging is re-enabled after the export attempt");
+  ok(mapContainer.classList.contains("hcp-exporting") === false,
+     "the map is released again after the export attempt");
+  ok(exportBtn.disabled === false,
+     "the Save as PNG button is re-enabled after the export attempt");
 
   console.log("ALL_PASS");
   process.exit(0);

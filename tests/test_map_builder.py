@@ -373,6 +373,18 @@ class TestScalableHomeMarker:
         # The marker is positioned at the home coordinates.
         assert "45.0" in script
 
+    def test_marks_itself_for_exclusion_from_png_exports(self):
+        """The marker must carry the class the PNG export filters on, so the
+        home location never ends up in an exported picture."""
+        m = folium.Map(location=[45.0, -122.0], zoom_start=14, tiles=None)
+        marker = ScalableHomeMarker(location=[45.0, -122.0])
+        marker.add_to(m)
+
+        script = marker._template.module.script(marker, {})
+
+        # Leaflet's Path option (applied to the SVG path by the SVG renderer).
+        assert 'className: "hcp-home-marker"' in script
+
 
 @pytest.mark.usefixtures("carto_api_key")
 class TestBuildMap:
@@ -740,6 +752,9 @@ class TestBuildMap:
         assert "{z}/{x}/{y}" in url
         assert tile_kwargs["max_zoom"] == 20
         assert "carto.com/attributions" in tile_kwargs["attr"]
+        # Tiles must be requested with CORS (Leaflet's camelCase option name) so
+        # the control panel's "Save as PNG" export can read them off a canvas.
+        assert tile_kwargs["crossOrigin"] is True
 
     @patch("src.map_builder.map_builder.folium.Map")
     @patch("src.map_builder.map_builder.folium.TileLayer")
@@ -882,6 +897,68 @@ class TestControlPanel:
         # Layer-opacity controls are collapsed by default (hidden until toggled).
         assert "heatmap-control-panel hcp-opacity-collapsed" in html
         assert 'aria-expanded="false"' in html
+
+    def test_html_contains_save_as_png_button(self):
+        """The panel offers a static image export: a Save as PNG button plus the
+        status line it reports progress and failures in.
+
+        The button sits in its own section after the view actions so it reads as
+        the primary action rather than another view control.
+        """
+        html = build_control_panel_html()
+        match = re.search(r'<button[^>]*id="hcp-export-png".*?</button>', html, re.DOTALL)
+        assert match, "no Save as PNG button in the panel markup"
+        assert "Save as PNG" in match.group(0)
+        assert 'id="hcp-export-status"' in html
+        # What the export captures is not obvious from the label, so this one
+        # button does carry an explanation (unlike Fit map / Reset / Legend).
+        assert "data-hcp-help=" in match.group(0)
+        assert "hcp-info" in match.group(0)
+        # It comes after the Fit/reset/legend action row.
+        assert html.index("hcp-actions") < html.index('id="hcp-export-png"')
+
+    def test_script_contains_png_export_logic(self):
+        """panel.js must wire the Save as PNG button to the html2canvas export."""
+        script = control_panel_script()
+        assert "hcp-export-png" in script
+        assert "hcp-export-status" in script
+        assert "exportMapPng" in script
+        assert "html2canvas" in script
+        assert "useCORS" in script
+        # The library is fetched lazily, and the export requests the tiles with
+        # CORS so the canvas can be written out at all.
+        assert "cdn.jsdelivr.net/npm/html2canvas" in script
+        assert "crossOrigin: true" in script
+
+    def test_script_renders_a_still_map_without_the_home_marker(self):
+        """The export must capture a map that is not moving, and must leave the
+        home marker out of the picture.
+
+        Tiles shifting mid-capture smear the image, so the exporter waits for
+        the map to settle and holds it still while rendering; the home marker
+        (a personal location that reads as an artefact in a shared image) is
+        filtered out by the class ScalableHomeMarker puts on it.
+        """
+        script = control_panel_script()
+        # Wait for / enforce a still map.
+        assert "mapIsMoving" in script
+        assert "whenMapSettled" in script
+        assert "freezeMapInteractions" in script
+        assert "thawMapInteractions" in script
+        assert "_animatingZoom" in script
+        assert "hcp-exporting" in script
+        # Leave the home marker out of the render.
+        assert "ignoreElements" in script
+        assert '"hcp-home-marker"' in script
+
+    def test_export_disables_map_controls_while_rendering(self):
+        """The interaction handlers that could move the map mid-capture are
+        switched off for the duration of the export."""
+        script = control_panel_script()
+        for handler in ("dragging", "touchZoom", "doubleClickZoom", "scrollWheelZoom"):
+            assert f'"{handler}"' in script, f"{handler} is not frozen during export"
+        # The zoom control's stylesheet hook lives in the panel CSS.
+        assert ".folium-map.hcp-exporting .leaflet-control-zoom" in controls_css()
 
     def test_html_contains_advanced_section(self):
         """The Advanced section is its own collapsible menu (like Layer opacity)

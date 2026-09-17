@@ -110,7 +110,10 @@ class ScalableHomeMarker(MacroElement):
                     fillColor: "#fc4c02",
                     fillOpacity: 1,
                     interactive: true,
-                    homeMarker: true
+                    homeMarker: true,
+                    // Names the SVG path so the control panel's "Save as PNG"
+                    // export can leave the home marker out of the picture.
+                    className: "hcp-home-marker"
                 }
             ).addTo({{ this._parent.get_name() }});
             {{ this.get_name() }}.bindTooltip("Home");
@@ -207,6 +210,13 @@ def build_map(
         control=False,
         show=True,
         max_zoom=20,
+        # Request the tiles with CORS so the control panel's "Save as PNG"
+        # export can read them back out of a canvas; without it the canvas
+        # would be tainted and no image could be written. CARTO serves the
+        # tiles with `Access-Control-Allow-Origin: *`. Note the option name is
+        # Leaflet's (camelCase) — Folium passes unknown kwargs straight through
+        # to the JS options object.
+        crossOrigin=True,
     ).add_to(m)
 
     # Add a zoom-responsive marker for the home location so it is visually

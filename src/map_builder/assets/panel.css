@@ -328,6 +328,63 @@
   background: rgba(255, 255, 255, 0.12);
 }
 
+/* ------------------------------------------------------- Save as PNG export */
+/* A single primary action, with a status line underneath that reports what is
+   happening (rendering, saved, or why it failed). */
+.heatmap-control-panel .hcp-export {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  width: 100%;
+  background: var(--hcp-accent);
+  border: 1px solid var(--hcp-accent);
+  border-radius: 6px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  padding: 7px 8px;
+  cursor: pointer;
+}
+
+.heatmap-control-panel .hcp-export:hover:not(:disabled) {
+  filter: brightness(1.12);
+}
+
+/* While the image is being built the button is disabled; a plain "busy"
+   cursor and a slight fade make it clear a second click does nothing. */
+.heatmap-control-panel .hcp-export:disabled {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+/* The muted badge colours would disappear on the accent background. */
+.heatmap-control-panel .hcp-export .hcp-info {
+  border-color: rgba(255, 255, 255, 0.65);
+  color: #fff;
+}
+
+.heatmap-control-panel .hcp-export-status {
+  margin-top: 5px;
+  color: var(--hcp-text-muted);
+  font-size: 10.5px;
+  line-height: 1.3;
+}
+
+.heatmap-control-panel .hcp-export-status-error {
+  color: #ff9a75;
+}
+
+/* While a PNG is being rendered the map has to hold still: a zoom or pan
+   part-way through the capture smears the tiles across the image. Drag, wheel,
+   pinch and keyboard input are switched off through Leaflet's own handlers
+   (panel.js); the zoom buttons are neutralised here. pointer-events is used
+   rather than a dimmed look so the exported picture stays identical to what was
+   on screen. */
+.folium-map.hcp-exporting .leaflet-control-zoom {
+  pointer-events: none;
+}
+
 /* ---------------------------------------------------------- Heatmap legend */
 
 /* Match by id and/or class so the legend can never fall back to an
