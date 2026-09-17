@@ -93,19 +93,25 @@ configuration:
 
 ## Optional configuration
 
-Most users do not need a config file. Create a partial `config.json` only when
+Most users do not need a config file. Create a partial `config.toml` only when
 you want to override a setting; unspecified values keep the automatic defaults.
+TOML is the primary configuration format. Existing JSON configuration files
+continue to work for compatibility and can still be passed with `--config`.
+The complete `example_configs/config.toml` file lists every available option.
 
-```json
-{
-  "ACTIVITY_TYPES": ["Run", "Ride"],
-  "DATE_FROM": "2024-01-01",
-  "METERS_PER_PIXEL": 5,
-  "OUTPUT_HTML": "my_heatmap.html"
-}
+```toml
+ACTIVITY_TYPES = ["Run", "Ride"]
+DATE_FROM = "2024-01-01"
+METERS_PER_PIXEL = 5
+OUTPUT_HTML = "my_heatmap.html"
 ```
 
-Pass a different file with `--config path/to/config.json`. Use
+Copy `example_configs/config.toml` when you want a starting point containing
+every option, then remove or change the values you do not need.
+
+When no `--config` is supplied, `config.toml` is loaded if present. An existing
+`config.json` is still used as a compatibility fallback. Pass a different file
+with `--config path/to/config.toml` (or a legacy `.json` file). Use
 `strava-heatmap validate` to check the export and effective settings.
 
 ## Configuration
@@ -174,17 +180,17 @@ The CLI defaults to `generate` when no subcommand is supplied. `--config` and
 
 ```bash
 # Generate (default); --dry-run validates and prints the activity count
-strava-heatmap generate --config config.json --dry-run
+strava-heatmap generate --config config.toml --dry-run
 
-# Validate config.json, the activities directory, and activities.csv
-strava-heatmap validate --config config.json
+# Validate config.toml, the activities directory, and activities.csv
+strava-heatmap validate --config config.toml
 
 # Re-export filtered tracks without rebuilding the map
-strava-heatmap export-gpx --config config.json --output runs.gpx
+strava-heatmap export-gpx --config config.toml --output runs.gpx
 
 # Equivalent global-option forms
-strava-heatmap --config config.json --dry-run
-strava-heatmap validate --config config.json --dev
+strava-heatmap --config config.toml --dry-run
+strava-heatmap validate --config config.toml --dev
 ```
 
 `--no-open` prevents generated maps from opening automatically in a browser.
@@ -300,8 +306,8 @@ intrusive. Keep `EMBED_ATTRIBUTION` enabled.
 ## Schema, caching, and technical notes
 
 `config.schema.json` is generated from the Pydantic model in
-`src/config_schema.py`. It provides IDE completion and validation for
-`config.json` and `example_configs/*.json` through `.vscode/settings.json`.
+`src/config_schema.py`. It remains available for tools that validate legacy
+JSON configuration files; TOML is the primary format documented above.
 
 ```bash
 uv run python scripts/generate_schema.py

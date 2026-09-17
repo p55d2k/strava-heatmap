@@ -79,7 +79,7 @@ class TestConfigSchema:
         assert set(METRIC_LAYER_ALIASES.values()) == set(METRIC_LAYER_NAMES)
 
     def test_config_model_validates_example_config(self):
-        """Should validate the example config.json files."""
+        """Should validate representative configuration values."""
         # Create a temporary directory for the activities directory
         with tempfile.TemporaryDirectory() as tmpdir:
             activities_dir = Path(tmpdir) / "strava_export"
@@ -109,7 +109,7 @@ class TestConfigSchema:
                 "DECAY_FACTOR": 0.5,
             }
 
-            # ConfigModel uses aliases to match config.json keys
+            # ConfigModel uses aliases to match the uppercase config keys.
             model = ConfigModel(**config_data)
             assert model.activities_dir == str(activities_dir)
             assert model.activity_types == ["Run"]

@@ -9,6 +9,7 @@ import json
 from pathlib import Path
 
 import pandas as pd
+import tomllib
 
 from src.config_schema import ConfigModel, normalize_activity_type
 
@@ -16,20 +17,22 @@ __all__ = ["Config", "normalize_activity_type"]
 
 
 class Config:
-    """Configuration container loaded from an optional config.json.
+    """Configuration container loaded from an optional config.toml.
 
     This class wraps ConfigModel (Pydantic) to provide validation,
-    IDE support, and path handling while maintaining the same interface
-    as the original Config class.
+    IDE support, and path handling. JSON remains supported for compatibility.
     """
 
     def __init__(self, config_path: Path | None = None):
         """Load optional configuration and infer safe values from the export."""
         requested_path = config_path
-        config_path = config_path or Path("config.json")
+        if config_path is None:
+            config_path = next(
+                (path for path in (Path("config.toml"), Path("config.json")) if path.exists()),
+                Path("config.toml"),
+            )
         if config_path.exists():
-            with open(config_path) as f:
-                cfg = json.load(f)
+            cfg = _load_config_file(config_path)
             base_dir = config_path.parent.resolve()
         elif requested_path is not None:
             raise FileNotFoundError(
@@ -107,6 +110,14 @@ class Config:
         log.info(f"Source:  {self.activities_dir}/")
         log.info(f"Types:   {', '.join(self.activity_types)}")
         log.info(f"Output:  {self.output_html}")
+
+
+def _load_config_file(config_path: Path) -> dict:
+    """Load a TOML config, or a JSON config for backward compatibility."""
+    with open(config_path, "rb") as file:
+        if config_path.suffix.lower() == ".toml":
+            return tomllib.load(file)
+        return json.load(file)
 
 
 def _resolve_relative_paths(cfg: dict, base_dir: Path) -> dict:

@@ -19,7 +19,7 @@ class TestConfig:
         self.temp_dir = tempfile.mkdtemp()
         self.config_path = Path(self.temp_dir) / "config.json"
 
-        # Create a valid config.json
+        # Create a valid legacy config.json
         self.valid_config = {
             "ACTIVITIES_DIR": self.temp_dir,
             "ACTIVITY_TYPES": ["Run", "Ride"],
@@ -50,7 +50,7 @@ class TestConfig:
         shutil.rmtree(self.temp_dir, ignore_errors=True)
 
     def test_loads_all_config_values(self):
-        """Should load all configuration values from JSON."""
+        """Should load all configuration values from the legacy JSON format."""
         config = Config(self.config_path)
 
         assert config.activities_dir == Path(self.temp_dir)
@@ -74,6 +74,35 @@ class TestConfig:
         assert config.auto_range_pct == 5
         assert config.max_consecutive_same_cell == 3
         assert config.coverage_normalization == "pct"  # default when omitted
+
+    def test_loads_toml_config(self):
+        """Should load TOML configuration using the same uppercase keys."""
+        toml_path = Path(self.temp_dir) / "config.toml"
+        toml_path.write_text(
+            f'ACTIVITIES_DIR = "{self.temp_dir}"\n'
+            'ACTIVITY_TYPES = ["Run", "Ride"]\n'
+            "METERS_PER_PIXEL = 5\n"
+            "MAP_OPACITY = 0.6\n"
+        )
+
+        config = Config(toml_path)
+
+        assert config.activities_dir == Path(self.temp_dir)
+        assert config.activity_types == {"Run", "Ride"}
+        assert config.meters_per_pixel == 5
+        assert config.map_opacity == 0.6
+
+    def test_prefers_config_toml_when_no_path_is_given(self, monkeypatch):
+        """The implicit config should prefer TOML while retaining JSON fallback."""
+        monkeypatch.chdir(self.temp_dir)
+        Path("config.toml").write_text(
+            f'ACTIVITIES_DIR = "{self.temp_dir}"\nMETERS_PER_PIXEL = 5\n'
+        )
+        Path("config.json").write_text('{"METERS_PER_PIXEL": 10}')
+
+        config = Config()
+
+        assert config.meters_per_pixel == 5
 
     def test_creates_cache_and_output_dirs(self):
         """Should create cache and output directories."""
@@ -192,7 +221,7 @@ class TestConfig:
         assert config.embed_tracks is False
 
     def test_uses_configured_embed_options(self):
-        """Embed widget name and content flags should follow config.json."""
+        """Embed widget name and content flags should follow the config."""
         custom_config = self.valid_config.copy()
         custom_config.update(
             {

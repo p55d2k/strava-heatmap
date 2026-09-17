@@ -1,6 +1,0 @@
-{
-  "ACTIVITY_TYPES": ["Ride"],
-  "METERS_PER_PIXEL": 10,
-  "DECAY_FACTOR": 0.5,
-  "COVERAGE_NORMALIZATION": "pct"
-}

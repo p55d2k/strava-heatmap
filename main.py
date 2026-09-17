@@ -124,7 +124,7 @@ def parse_args() -> argparse.Namespace:
         "--config",
         type=Path,
         default=argparse.SUPPRESS,
-        help="Optional config file; omitted to auto-detect the Strava export",
+        help="Optional config.toml (JSON also supported); omitted to auto-detect",
     )
     common.add_argument(
         "--dev",
@@ -154,7 +154,7 @@ def parse_args() -> argparse.Namespace:
         "--config",
         type=Path,
         default=None,
-        help="Optional config file; omitted to auto-detect the Strava export",
+        help="Optional config.toml (JSON also supported); omitted to auto-detect",
     )
     parser.add_argument(
         "--dev",
@@ -199,7 +199,7 @@ def parse_args() -> argparse.Namespace:
     subparsers.add_parser(
         "validate",
         parents=[parent],
-        help="Validate config.json file",
+        help="Validate config.toml file (JSON also supported)",
     )
 
     # Export command: re-export the filtered tracks as GPX, without building the map
@@ -238,7 +238,7 @@ def gpx_title(config: Config) -> str:
 
 
 def run_validate(args: argparse.Namespace) -> None:
-    """Validate config.json file."""
+    """Validate config.toml file (JSON also supported)."""
     # Setup logging based on dev flag
     setup_logging(args.dev)
 
@@ -251,7 +251,7 @@ def run_validate(args: argparse.Namespace) -> None:
         if not config.activities_csv.exists():
             raise FileNotFoundError(
                 f"Activities CSV not found: {config.activities_csv}\n"
-                f"  → Check ACTIVITIES_CSV in config.json matches the file in ACTIVITIES_DIR"
+                f"  → Check ACTIVITIES_CSV in your config file matches the file in ACTIVITIES_DIR"
             )
 
         print_success("Config validation passed!")

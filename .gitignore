@@ -226,5 +226,7 @@ strava_export_2/
 strava_export_3/
 
 config.json
+config.toml
+!example_configs/*.toml
 
 .DS_Store

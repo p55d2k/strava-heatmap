@@ -1,5 +1,5 @@
 """
-JSON Schema generation for config.json using Pydantic.
+JSON Schema generation for the configuration model using Pydantic.
 
 This module defines Pydantic models that match the configuration structure
 and provides a function to generate the JSON Schema.
@@ -225,7 +225,7 @@ def normalize_metric_layer(raw: str) -> str:
 
     Raises:
         ValueError: If the entry names no known metric layer, so a typo in
-            ``config.json`` fails loudly instead of silently dropping a layer.
+            ``config.toml`` fails loudly instead of silently dropping a layer.
     """
     key = str(raw).strip().lower()
     canonical = {name.lower(): name for name in METRIC_LAYER_ALIASES.values()}
@@ -240,7 +240,7 @@ def normalize_metric_layer(raw: str) -> str:
 class ConfigModel(BaseModel):
     """Pydantic model for Strava Heatmap configuration.
 
-    Uses alias mapping to accept the UPPERCASE keys from config.json
+    Uses alias mapping to accept the UPPERCASE keys from config.toml
     and populate the snake_case model fields.
     """
 
@@ -578,7 +578,7 @@ class ConfigModel(BaseModel):
         if not activities_dir.exists():
             raise FileNotFoundError(
                 f"Activities directory not found: {activities_dir}\n"
-                f"  → Check ACTIVITIES_DIR in config.json points to your Strava export folder\n"
+                f"  → Check ACTIVITIES_DIR in config.toml points to your Strava export folder\n"
                 f"  → The folder should contain activities.csv and .fit.gz/.gpx files"
             )
         if not activities_dir.is_dir():

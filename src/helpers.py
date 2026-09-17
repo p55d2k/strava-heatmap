@@ -186,7 +186,7 @@ def detect_home(df_gps: pd.DataFrame) -> tuple:
         raise ValueError(
             "Cannot auto-detect home location: no GPS data available\n"
             "  → Make sure your activities have valid GPS tracks (.fit.gz or .gpx files)\n"
-            "  → Or set HOME_LAT and HOME_LON manually in config.json"
+            "  → Or set HOME_LAT and HOME_LON manually in config.toml"
         )
 
     cell_lats, cell_lons = {}, {}

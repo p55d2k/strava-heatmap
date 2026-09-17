@@ -68,7 +68,7 @@ def load_and_filter_activities(config) -> pd.DataFrame:
         raise ValueError(
             f"No activities found matching configured types: {sorted(config.activity_types)}\n"
             f"  → Available types in your export: {available_types}\n"
-            f"  → Check ACTIVITY_TYPES in config.json (use names like 'Run', 'Ride', 'Hike', etc.)"
+            f"  → Check ACTIVITY_TYPES in config.toml (use names like 'Run', 'Ride', 'Hike', etc.)"
         )
 
     date_from = pd.Timestamp(config.date_from) if config.date_from else pd.Timestamp.min
@@ -82,7 +82,7 @@ def load_and_filter_activities(config) -> pd.DataFrame:
         raise ValueError(
             f"No activities in date range {date_from.date()} – {date_to.date()}\n"
             f"  → Your export covers: {min_date} to {max_date}\n"
-            f"  → Adjust DATE_FROM / DATE_TO in config.json"
+            f"  → Adjust DATE_FROM / DATE_TO in config.toml"
         )
 
     # Load unified cache
@@ -115,7 +115,7 @@ def load_and_filter_activities(config) -> pd.DataFrame:
             f"No activities with valid GPS data after filtering\n"
             f"  → {len(rows)} activities had GPS files, but {len(rows) - total_with_gps} had no GPS data\n"
             f"  → {total_with_gps - len(runs)} activities had GPS spread < {config.gps_spread_min_m}m (likely indoor)\n"
-            f"  → Try lowering GPS_SPREAD_MIN_M in config.json (current: {config.gps_spread_min_m}m)"
+            f"  → Try lowering GPS_SPREAD_MIN_M in config.toml (current: {config.gps_spread_min_m}m)"
         )
 
     return runs
@@ -154,7 +154,7 @@ def filter_by_home_radius(
         raise ValueError(
             f"No activities within {radius_km} km of home location ({home_lat:.4f}, {home_lon:.4f})\n"
             f"  → All {original_count} activities were outside this radius\n"
-            f"  → Try increasing RADIUS_KM in config.json (current: {radius_km} km)\n"
+            f"  → Try increasing RADIUS_KM in config.toml (current: {radius_km} km)\n"
             f"  → Or check your HOME_LAT/HOME_LON coordinates"
         )
 

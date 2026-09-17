@@ -1,0 +1,52 @@
+# Full Strava Heatmap configuration. Copy this file to config.toml and adjust
+# the values you want. TOML has no null value; omit optional settings to use
+# automatic defaults or disable an optional filter.
+
+# Strava export and activity selection
+ACTIVITIES_DIR = "strava_export"
+ACTIVITY_TYPES = ["Run", "Ride"]
+DATE_FROM = "2024-01-01"
+DATE_TO = "2024-12-31"
+
+# Home location and geographic filtering
+HOME_LAT = 45.0
+HOME_LON = -122.0
+RADIUS_KM = 20.0
+GPS_SPREAD_MIN_M = 200
+TRACK_CLIP_RADIUS_KM = 50.0
+
+# Raster and visual settings
+METERS_PER_PIXEL = 3.0
+PADDING_M = 500.0
+BLUR_SIGMA_PX = 2.0
+MAP_OPACITY = 0.85
+CARTO_STYLE = "dark_all"
+DECAY_FACTOR = 0.5
+RASTER_MODE = "decay"
+COVERAGE_NORMALIZATION = "pct"
+MAX_CONSECUTIVE_SAME_CELL = 3
+
+# Optional speed and heart-rate filters
+SPEED_MIN_MS = 2.0
+SPEED_MAX_MS = 8.0
+HR_MIN_BPM = 100
+HR_MAX_BPM = 200
+AUTO_RANGE_PCT = 5
+
+# Input, cache, and output filenames
+ACTIVITIES_CSV = "activities.csv"
+CACHE_DIR = "cache"
+CACHE_FILE = "cache.pkl"
+OUTPUT_DIR = "outputs"
+OUTPUT_HTML = "heatmap.html"
+OUTPUT_GPX = "tracks.gpx"
+
+# Embeddable widget
+EMBED_ENABLED = false
+EMBED_HTML = "heatmap_embed.html"
+EMBED_LEGEND = true
+EMBED_ATTRIBUTION = true
+EMBED_HOME_MARKER = true
+EMBED_TRACKS = false
+EMBED_DEMO = true
+EMBED_METRICS = ["pace", "heart_rate"]
