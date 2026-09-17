@@ -271,7 +271,7 @@ the initial view is framed to the data bounds.
 | `EMBED_ENABLED` | `false` | Build the widget on every run; `--embed` enables it once |
 | `EMBED_HTML` | `heatmap_embed.html` | Widget filename in `OUTPUT_DIR` |
 | `EMBED_LEGEND` | `true` | Include the colour legend |
-| `EMBED_ATTRIBUTION` | `true` | Include tile attribution; required by CARTO/OpenStreetMap terms |
+| `EMBED_ATTRIBUTION` | `true` | Legacy setting; attribution is always shown as required by CARTO/OpenStreetMap terms |
 | `EMBED_HOME_MARKER` | `true` | Include the home marker |
 | `EMBED_TRACKS` | `false` | Draw raw GPS tracks |
 | `EMBED_METRICS` | `[]` | Metric layers to include and show: full names or `pace`, `heart_rate`, `gradient`, `elev_change` |
@@ -301,7 +301,8 @@ This leaves `outputs/heatmap.html` unchanged and adds
 
 Give the iframe a sensible fixed size. Because it zooms on scroll, consider
 `scrolling="no"` or a click-to-activate overlay if wheel scrolling is
-intrusive. Keep `EMBED_ATTRIBUTION` enabled.
+intrusive. Attribution remains visible in the widget because the tile terms
+require it; `EMBED_ATTRIBUTION` is retained only for configuration compatibility.
 
 ## Schema, caching, and technical notes
 

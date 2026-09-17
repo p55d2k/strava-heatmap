@@ -506,8 +506,8 @@ class ConfigModel(BaseModel):
         default=True,
         alias="EMBED_ATTRIBUTION",
         description=(
-            "Show the map tile attribution in the embeddable widget. Keep this "
-            "on: the CARTO / OpenStreetMap tile terms require it."
+            "Legacy setting retained for compatibility; tile attribution is "
+            "always shown because the CARTO / OpenStreetMap tile terms require it."
         ),
     )
     embed_home_marker: bool = Field(

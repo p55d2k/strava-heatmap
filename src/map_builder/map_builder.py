@@ -64,7 +64,7 @@ def build_tile_url(style: str = DEFAULT_CARTO_STYLE) -> str:
     key = get_carto_api_key()
     if key:
         return f"https://basemaps.cartocdn.com/rastertiles/{style}/{{z}}/{{x}}/{{y}}.png?key={key}"
-    return "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+    return "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
 
 
 # Home marker sizing — Google-Maps style: the marker should shrink as you zoom
@@ -156,14 +156,10 @@ def _new_map(location: list[float], *, embed: bool, show_attribution: bool = Tru
 
     Both maps stay fully interactive — the widget can still be panned, zoomed
     and scrolled, it just carries no heatmap control panel (and no scale bar).
-    The only option that changes is the browser-level attribution control, which
-    the tile terms require and which ``show_attribution=False`` drops.
+    Tile attribution is always enabled because it is required by the basemap
+    terms, regardless of the legacy ``show_attribution`` argument.
     """
     options: dict = {}
-    if not show_attribution:
-        # Leaflet's camelCase option name: Folium forwards unknown kwargs
-        # straight through to the JS options object.
-        options["attributionControl"] = False
     return folium.Map(
         location=location,
         zoom_start=14,
@@ -257,6 +253,7 @@ def build_map(
     """
     map_location = home if home is not None else centre
     m = _new_map(map_location, embed=embed, show_attribution=embed_attribution)
+    uses_carto = bool(get_carto_api_key())
     folium.TileLayer(
         tiles=build_tile_url(carto_style),
         attr=CARTO_ATTRIBUTION,
@@ -264,13 +261,11 @@ def build_map(
         control=False,
         show=True,
         max_zoom=20,
-        # Request the tiles with CORS so the control panel's "Save as PNG"
-        # export can read them back out of a canvas; without it the canvas
-        # would be tainted and no image could be written. CARTO serves the
-        # tiles with `Access-Control-Allow-Origin: *`. Note the option name is
-        # Leaflet's (camelCase) — Folium passes unknown kwargs straight through
-        # to the JS options object.
-        crossOrigin=True,
+        keep_buffer=0,
+        # CARTO serves tiles with CORS, which is needed by the PNG export.
+        # OSM does not promise CORS, so leave its requests as normal browser
+        # image requests.
+        crossOrigin=uses_carto,
     ).add_to(m)
 
     # Add a zoom-responsive marker for the home location so it is visually

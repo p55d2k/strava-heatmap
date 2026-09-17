@@ -770,6 +770,7 @@ class TestBuildMap:
         assert "?key=default_public_testkey" in url
         assert "{z}/{x}/{y}" in url
         assert tile_kwargs["max_zoom"] == 20
+        assert tile_kwargs["keep_buffer"] == 0
         assert "carto.com/attributions" in tile_kwargs["attr"]
         # Tiles must be requested with CORS (Leaflet's camelCase option name) so
         # the control panel's "Save as PNG" export can read them off a canvas.
@@ -1834,6 +1835,11 @@ class TestLayerGroupConfig:
         assert url.startswith("https://basemaps.cartocdn.com/rastertiles/light_all/")
         assert url.endswith("?key=default_public_testkey")
 
+    def test_build_tile_url_uses_single_official_osm_endpoint_without_key(self, monkeypatch):
+        """The keyless fallback must use OSM's single official tile endpoint."""
+        monkeypatch.delenv("CARTO_API_KEY", raising=False)
+        assert build_tile_url() == "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+
 
 class TestConstants:
     """Tests for module constants."""
@@ -2002,10 +2008,10 @@ class TestEmbedMap:
         # Attribution stays on unless explicitly dropped.
         assert "attributionControl" not in kwargs
 
-    def test_attribution_control_can_be_dropped(self):
-        """EMBED_ATTRIBUTION=False should be forwarded to Leaflet."""
+    def test_attribution_control_cannot_be_dropped(self):
+        """Legacy EMBED_ATTRIBUTION=False must not hide required attribution."""
         kwargs = self._build(embed_attribution=False)["map"].call_args[1]
-        assert kwargs["attributionControl"] is False
+        assert "attributionControl" not in kwargs
 
     def test_frames_the_data_bounds_on_load(self):
         """The initial view frames the data; the visitor can move on from there."""

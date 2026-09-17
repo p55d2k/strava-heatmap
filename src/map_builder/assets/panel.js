@@ -121,6 +121,7 @@
     return L.tileLayer(url, {
       maxZoom: 20,
       maxNativeZoom: 20,
+      keepBuffer: 0,
       attribution: attribution,
       // Ask for the tiles with CORS so "Save as PNG" can read them back out of
       // the canvas; a tile loaded without it would taint the canvas and make
