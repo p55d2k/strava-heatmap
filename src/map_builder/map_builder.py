@@ -202,9 +202,10 @@ def build_map(
         raster_mode: Rasterization mode pre-selected in the control panel's
             Advanced dropdown (decides which GPS Density layer is visible at
             first paint).
-        geojson: Minified GeoJSON of the rasterized grids, embedded in the page
-            for the control panel's "Export GeoJSON" button. Omit to leave it
-            out (the button then reports that no grid data is available).
+        geojson: The GeoJSON grid export, compressed by
+            :func:`src.map_builder.embed.encode_for_embedding`, embedded in the
+            page for the control panel's "Export GeoJSON" button. Omit to leave
+            it out (the button then reports that no grid data is available).
         gpx: The GPX track export, compressed by
             :func:`src.map_builder.embed.encode_for_embedding`, embedded in the
             page for the control panel's "Export GPX" button. Omit to leave it

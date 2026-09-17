@@ -262,16 +262,15 @@ class ControlPanel(MacroElement):
     emits into the map's body and script fragments respectively. The styling
     comes from the separate :func:`controls_css` stylesheet.
 
-    The GeoJSON is embedded as an inert ``<script type="application/geo+json">``
-    block: the browser never parses or executes it, so the map still loads
-    quickly, and the panel's "Export GeoJSON" button reads its text and hands it
-    to the browser as a download.
-
-    The GPX track export rides along the same way, in a
-    ``<script type="application/gpx+xml">`` block, but *compressed* (see
-    :mod:`src.map_builder.embed`) because the document is an order of magnitude
-    smaller that way; the "Export GPX" button inflates it in the browser before
-    handing it over, so what the user gets is the file on disk, byte for byte.
+    Both exports are embedded as inert ``<script>`` blocks — the GeoJSON grid
+    export in ``<script type="application/geo+json">`` and the GPX track export
+    in ``<script type="application/gpx+xml">`` — and both are *compressed* (see
+    :mod:`src.map_builder.embed`) because the documents are repetitive plain
+    text that shrinks roughly tenfold; a dense grid would otherwise add tens of
+    MB to the page. The browser never parses or executes either payload at load,
+    so the map still loads quickly, and the panel's "Export GeoJSON" / "Export
+    GPX" buttons inflate the payload in the browser before handing it over, so
+    what the user gets is the document the build produced, byte for byte.
 
     ``_template`` must be a **class-level** ``Template`` so that Folium's
     ``MacroElement`` rendering pipeline can invoke its ``html``/``script``
@@ -339,9 +338,10 @@ class ControlPanel(MacroElement):
                 see :func:`build_layer_group_config`.
             advanced: ``advanced`` config for the collapsible Advanced section
                 (rasterization-mode dropdown); see :func:`build_advanced_config`.
-            geojson: Minified GeoJSON string of the rasterized grids, embedded
-                in the page for the "Export GeoJSON" button to download. Omit
-                (or pass an empty string) to leave the block out.
+            geojson: The GeoJSON grid export, already run through
+                :func:`src.map_builder.embed.encode_for_embedding`, embedded in
+                the page for the "Export GeoJSON" button to inflate and
+                download. Omit (or pass an empty string) to leave the block out.
             gpx: The GPX track export, already run through
                 :func:`src.map_builder.embed.encode_for_embedding`, embedded in
                 the page for the "Export GPX" button to inflate and download.

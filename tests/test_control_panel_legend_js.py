@@ -51,8 +51,10 @@ from src.map_builder.embed import encode_for_embedding
 # Not bound to a legend row (raw GPS tracks); used as a negative case.
 _RAW_TRACKS = "Raw GPS tracks"
 
-# Stand-in for the GeoJSON the control panel embeds (a real build writes the
-# rasterized grids here). Kept tiny — the harness only checks pass-through.
+# Stand-in for the GeoJSON document the control panel embeds (a real build
+# writes the rasterized grids here). The harness inflates the compressed payload
+# with the browser's own decompressor and checks the bytes come back unchanged,
+# so the sample is written to survive that exactly.
 _GEOJSON_SAMPLE = (
     '{"type":"FeatureCollection","name":"strava-heatmap-grids","cell_size_m":10.0,"features":[]}'
 )
@@ -292,7 +294,7 @@ global[mapVar] = map; // the exclusive script's `var map = <name>;`
 
 // Stub the browser download primitives so the GeoJSON and GPX exports can run
 // headless; the harness records exactly what would have been handed to the
-// browser. Only Blob/URL are stubbed — the GPX export inflates with the real
+// browser. Only Blob/URL are stubbed — both exports inflate with the real
 // DecompressionStream, so the decompression itself is exercised for real.
 const blobs = [];
 global.Blob = function (parts, options) {
@@ -329,14 +331,16 @@ const cfg = Object.assign({}, config);
 delete cfg.__legendIdByLayer; delete cfg.__layerNames;
 delete cfg.__panelIds; delete cfg.__mapVar; delete cfg.__registryKey;
 delete cfg.__defaultDensityLayer; delete cfg.__geojsonData;
+delete cfg.__geojsonText;
 delete cfg.__gpxData; delete cfg.__gpxText;
 cfg.map = map;
 windowObj.initHeatmapControlPanel(cfg);
 
 const delay = (ms) => new Promise((r) => setTimeout(r, ms));
 
-// Poll until `pred()` holds (the GPX export resolves asynchronously) or the
-// deadline passes, so a slow decompressor never turns into a flaky failure.
+// Poll until `pred()` holds (the GeoJSON and GPX exports resolve asynchronously)
+// or the deadline passes, so a slow decompressor never turns into a flaky
+// failure.
 async function waitFor(pred, ms) {
   const deadline = Date.now() + ms;
   while (Date.now() < deadline) {
@@ -710,40 +714,61 @@ function toggle(layerName, checked) {
   ok(exportBtn.disabled === false,
      "the Save as PNG button is re-enabled after the export attempt");
 
-  // Scenario Q - "Export GeoJSON" hands the rasterized grids embedded in the
-  // page to the browser as a heatmap.geojson download. First with no embedded
-  // data (the button must report that, not throw), then with the real payload.
+  // Scenario Q - "Export GeoJSON" inflates the rasterized grids embedded in the
+  // page and hands them to the browser as a heatmap.geojson download. The grids
+  // travel compressed (zlib + base64), so the chain is checked end to end: base64
+  // decode, the browser's own DecompressionStream, and a download whose bytes are
+  // the GeoJSON document the build produced. Like the GPX export it is
+  // asynchronous, so the button reports progress and stays disabled until the
+  // file is ready. First with no embedded data (the button must report that, not
+  // throw), then with the real compressed payload.
   const geojsonBtn = byId.get("hcp-export-geojson");
   assert.ok(geojsonBtn, "Export GeoJSON button exists");
 
   geojsonBtn.dispatch("click");
+  await delay(20);
   ok(exportStatus.classList.contains("hcp-export-status-error") === true &&
      exportStatus.textContent.indexOf("No grid data") !== -1,
      "missing grid data is reported instead of throwing");
+  ok(geojsonBtn.disabled === false, "the button is usable again after reporting");
 
   const dataEl = makeEl("script", "hcp-geojson-data");
   dataEl.textContent = config.__geojsonData;
   byId.set("hcp-geojson-data", dataEl);
+  const blobsBeforeGeojson = blobs.length;
   geojsonBtn.dispatch("click");
+  ok(geojsonBtn.disabled === true, "the button is disabled while the grids are unpacked");
 
+  const geojsonSaved = await waitFor(
+    () => exportStatus.textContent.indexOf("Saved as") === 0, 5000
+  );
+  ok(geojsonSaved, "the embedded grids unpack into a download: " + exportStatus.textContent);
   ok(exportStatus.classList.contains("hcp-export-status-error") === false,
-     "a successful export clears the error state");
+     "unpacking the compressed grids does not report an error");
   ok(exportStatus.textContent === "Saved as heatmap.geojson.",
      "the status line reports the exported filename");
-  const geojsonLinks = createdEls.filter((e) => e.tagName === "A" && e.download);
-  ok(geojsonLinks.length === 1 && geojsonLinks[0].download === "heatmap.geojson",
-     "the download is offered as heatmap.geojson");
-  ok(blobs.length === 1 && blobs[0].type === "application/geo+json" &&
-     blobs[0].parts.join("") === config.__geojsonData,
-     "the embedded grid GeoJSON is downloaded verbatim");
+  ok(geojsonBtn.disabled === false,
+     "the button is usable again once the file is ready");
+
+  const geojsonLinks = createdEls.filter(
+    (e) => e.tagName === "A" && e.download === "heatmap.geojson"
+  );
+  ok(geojsonLinks.length === 1, "the download is offered as heatmap.geojson");
+
+  const geojsonBlobs = blobs
+    .slice(blobsBeforeGeojson)
+    .filter((b) => b.type === "application/geo+json");
+  ok(geojsonBlobs.length === 1, "exactly one GeoJSON file is handed to the browser");
+  ok(geojsonBlobs[0].parts.join("") === config.__geojsonText,
+     "the inflated download is the embedded grid GeoJSON, byte for byte");
 
   // Scenario R - "Export GPX" downloads the raw tracks. The GPX document is
   // embedded compressed (zlib + base64) because it is an order of magnitude
   // bigger raw, so this checks the whole chain end to end: base64 decode, the
   // browser's own DecompressionStream, and a download whose bytes are the
-  // document the build wrote to OUTPUT_GPX. It is asynchronous (unlike the
-  // GeoJSON pass-through), so the button reports progress and stays disabled
-  // until the file is ready.
+  // document the build wrote to OUTPUT_GPX. Like the GeoJSON export it is
+  // asynchronous, so the button reports progress and stays disabled until the
+  // file is ready.
   const gpxBtn = byId.get("hcp-export-gpx");
   assert.ok(gpxBtn, "Export GPX button exists");
 
@@ -822,7 +847,8 @@ def _write_harness(tmp: Path, panel_cfg: dict) -> None:
     config["__densityLayers"] = list(DENSITY_LAYER_NAMES)
     config["__defaultDensityLayer"] = DENSITY_MODE_LAYERS[DEFAULT_RASTER_MODE]
     config["__activeMode"] = DEFAULT_RASTER_MODE
-    config["__geojsonData"] = _GEOJSON_SAMPLE
+    config["__geojsonText"] = _GEOJSON_SAMPLE
+    config["__geojsonData"] = encode_for_embedding(_GEOJSON_SAMPLE)
     config["__gpxText"] = _GPX_SAMPLE
     config["__gpxData"] = encode_for_embedding(_GPX_SAMPLE)
     config["__modeLayers"] = [

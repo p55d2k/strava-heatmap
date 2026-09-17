@@ -64,6 +64,13 @@ def print_info(label: str, value: str) -> None:
     print(f"  {label}: {value}")
 
 
+def format_embed_size(n_chars: int) -> str:
+    """Format an embedded payload's size for the stage output."""
+    if n_chars >= 1_000_000:
+        return f"{n_chars / 1e6:.1f} MB"
+    return f"{n_chars / 1000:.0f} KB"
+
+
 def print_success(message: str) -> None:
     """Print a success message."""
     print(f"  ✓ {message}")
@@ -266,13 +273,10 @@ def run_generate(args: argparse.Namespace) -> None:
         gpx_text = config.output_gpx.read_text(encoding="utf-8")
         gpx_embed = encode_for_embedding(gpx_text)
         del gpx_text  # the compressed copy is all the rest of the run needs
-        embed_size = len(gpx_embed)
-        shown_size = (
-            f"{embed_size / 1e6:.1f} MB"
-            if embed_size >= 1_000_000
-            else f"{embed_size / 1000:.0f} KB"
+        print_info(
+            "GPX embedded for the panel's Export GPX button",
+            format_embed_size(len(gpx_embed)),
         )
-        print_info("GPX embedded for the panel's Export GPX button", shown_size)
 
         # Stage 3: Rasterizing Tracks (has progress bar)
         print_stage("Stage 3: Rasterizing Tracks")
@@ -342,6 +346,16 @@ def run_generate(args: argparse.Namespace) -> None:
         print_success(f"Created {len(layers)} map layers")
         print_success(f"GeoJSON export: {geojson_feature_count(geojson)} grid cells")
 
+        # The grid export is repetitive plain text, so — like the GPX track
+        # export above — it rides with the page compressed: a dense grid would
+        # otherwise add tens of MB to the HTML.
+        geojson_embed = encode_for_embedding(geojson)
+        del geojson  # the compressed copy is all the rest of the run needs
+        print_info(
+            "GeoJSON embedded for the panel's Export GeoJSON button",
+            format_embed_size(len(geojson_embed)),
+        )
+
         # Stage 6: Building Interactive Map (4 steps: bounds/centre, legend, build_map (3 sub-steps))
         print_stage("Stage 6: Building Interactive Map")
         with tqdm(total=4, desc="Building map", unit="step", disable=not args.dev) as pbar:
@@ -372,7 +386,7 @@ def run_generate(args: argparse.Namespace) -> None:
                 metric_layer_names=INDEPENDENT_LAYER_NAMES,
                 legend_ids=legend_builder.legend_ids,
                 home=[home_lat, home_lon],
-                geojson=geojson,
+                geojson=geojson_embed,
                 gpx=gpx_embed,
                 gpx_filename=config.output_gpx.name,
                 progress_callback=pbar.update,

@@ -948,22 +948,29 @@ class TestControlPanel:
         assert html.index('id="hcp-export-geojson"') < html.index('id="hcp-export-status"')
 
     def test_script_contains_geojson_export_logic(self):
-        """panel.js must hand the embedded grids to the browser as a download."""
+        """panel.js must inflate the embedded grids and hand them to the browser."""
         script = control_panel_script()
         assert "hcp-export-geojson" in script
         assert "hcp-geojson-data" in script
         assert "heatmap.geojson" in script
         assert "application/geo+json" in script
         assert "exportGeojsonData" in script
+        # The grids are embedded compressed too, so the button has to inflate
+        # them with the browser's own decompressor before offering the download.
+        assert "DecompressionStream" in script
+        assert "deflate" in script
 
     def test_control_panel_embeds_geojson_for_the_download(self):
-        """ControlPanel should inline the grids in an inert script block."""
+        """ControlPanel should inline the compressed grids in an inert block."""
         geojson = '{"type":"FeatureCollection","features":[]}'
-        panel = ControlPanel(centre=[1.0, 2.0], geojson=geojson)
+        payload = encode_for_embedding(geojson)
+        panel = ControlPanel(centre=[1.0, 2.0], geojson=payload)
         html = panel._template.module.html(panel, {})
         assert 'id="hcp-geojson-data"' in html
         assert 'type="application/geo+json"' in html
-        assert geojson in html
+        assert payload in html
+        # The document travels compressed, not verbatim.
+        assert geojson not in html
         # Without grids the block is left out entirely; the button then reports
         # that there is nothing to export.
         bare = ControlPanel(centre=[1.0, 2.0])
@@ -1449,6 +1456,7 @@ class TestBuildMapControlPanel:
         mock_exclusive_control.return_value = MagicMock()
         mock_panel.return_value = MagicMock()
         geojson = '{"type":"FeatureCollection","features":[]}'
+        payload = encode_for_embedding(geojson)
 
         build_map(
             self.tracks,
@@ -1458,11 +1466,11 @@ class TestBuildMapControlPanel:
             self.legend_html,
             self.output_path,
             self.map_opacity,
-            geojson=geojson,
+            geojson=payload,
         )
 
         mock_panel.assert_called_once()
-        assert mock_panel.call_args[1]["geojson"] == geojson
+        assert mock_panel.call_args[1]["geojson"] == payload
 
     @patch("src.map_builder.map_builder.folium.Map")
     @patch("src.map_builder.map_builder.folium.TileLayer")

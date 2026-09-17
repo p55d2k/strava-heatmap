@@ -9,8 +9,10 @@ converted from the Web Mercator grid with the same transformer the map uses;
 that is the only CRS RFC 7946 allows.
 
 The GeoJSON is embedded in the generated HTML (see
-``src/map_builder/control.py``) and downloaded by the control panel's
-"Export GeoJSON" button, so no companion file is needed.
+``src/map_builder/control.py``), zlib-compressed and base64-encoded by
+``src/map_builder/embed.py`` — a dense grid is tens of MB of repetitive text,
+which shrinks roughly tenfold — and inflated in the browser when the control
+panel's "Export GeoJSON" button is clicked, so no companion file is needed.
 """
 
 import json

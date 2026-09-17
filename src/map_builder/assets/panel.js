@@ -20,9 +20,9 @@
  *   - Save as PNG              (static image export of the current view; the
  *                               html2canvas library it needs is fetched on the
  *                               first click, never at page load)
- *   - Export GeoJSON            (hands the rasterized grids — embedded in the
- *                               page as an inert script block — to the browser
- *                               as a .geojson download for QGIS / Mapbox)
+ *   - Export GeoJSON            (inflates the compressed rasterized grids
+ *                               embedded in the page and downloads them as a
+ *                               .geojson file for QGIS / Mapbox)
  *   - Export GPX                (inflates the compressed GPX track document
  *                               embedded in the page and downloads it for
  *                               Garmin Connect / QGIS / any other GPX tool)
@@ -817,8 +817,11 @@
     "https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js";
 
   // The rasterized grids travel with the page as an inert
-  // <script type="application/geo+json"> block (written by ControlPanel), so
-  // the GeoJSON button only has to hand that text to the browser as a download.
+  // <script type="application/geo+json"> block (written by ControlPanel). Like
+  // the GPX document below they are zlib-compressed and base64-encoded, because
+  // a dense grid is tens of MB of highly repetitive text that compresses
+  // roughly tenfold. The button inflates the payload in the browser before
+  // handing the text to the browser as a download.
   var GEOJSON_DATA_ID = "hcp-geojson-data";
   var GEOJSON_FILENAME = "heatmap.geojson";
   var GEOJSON_MIME = "application/geo+json";
@@ -961,32 +964,36 @@
   /* ---- Export GeoJSON (rasterized grids) -------------------------------- */
 
   // Download the embedded rasterized grids as a GeoJSON file. The grids are
-  // stored as text in the page (never parsed by the browser at load), so this
-  // only has to wrap that text in a Blob and trigger the download. Throws a
-  // readable Error when the page carries no grid data.
+  // stored compressed in the page (never parsed by the browser at load), so this
+  // inflates the payload and wraps the resulting text in a Blob. Resolves once
+  // the file has been handed to the browser; rejects with a readable Error when
+  // the page carries no grid data (the button then reports that instead of
+  // failing silently).
   function exportGeojsonData() {
     var el = document.getElementById(GEOJSON_DATA_ID);
-    var text = el && el.textContent ? el.textContent : "";
-    if (!text) throw new Error("No grid data is available to export.");
+    var payload = el && el.textContent ? el.textContent.replace(/\s+/g, "") : "";
+    if (!payload) throw new Error("No grid data is available to export.");
 
-    if (
-      typeof Blob === "undefined" ||
-      typeof URL === "undefined" ||
-      typeof URL.createObjectURL !== "function"
-    ) {
-      // Fallback for browsers without Blob/object URLs: a (large) data URI.
-      triggerDownloadFile(
-        "data:" + GEOJSON_MIME + ";charset=utf-8," + encodeURIComponent(text),
-        GEOJSON_FILENAME
-      );
-      return;
-    }
+    return inflateZlib(decodeBase64Bytes(payload)).then(function (text) {
+      if (
+        typeof Blob === "undefined" ||
+        typeof URL === "undefined" ||
+        typeof URL.createObjectURL !== "function"
+      ) {
+        // Fallback for browsers without Blob/object URLs: a (large) data URI.
+        triggerDownloadFile(
+          "data:" + GEOJSON_MIME + ";charset=utf-8," + encodeURIComponent(text),
+          GEOJSON_FILENAME
+        );
+        return;
+      }
 
-    var url = URL.createObjectURL(new Blob([text], { type: GEOJSON_MIME }));
-    triggerDownloadFile(url, GEOJSON_FILENAME);
-    setTimeout(function () {
-      URL.revokeObjectURL(url);
-    }, 1000);
+      var url = URL.createObjectURL(new Blob([text], { type: GEOJSON_MIME }));
+      triggerDownloadFile(url, GEOJSON_FILENAME);
+      setTimeout(function () {
+        URL.revokeObjectURL(url);
+      }, 1000);
+    });
   }
 
   /* ---- Export GPX (raw tracks) ------------------------------------------ */
@@ -995,7 +1002,7 @@
   // URL because this has to work just as well from a file:// page.
   function decodeBase64Bytes(payload) {
     if (typeof atob !== "function") {
-      throw new Error("This browser cannot unpack the GPX file.");
+      throw new Error("This browser cannot unpack the embedded file.");
     }
     var binary = atob(payload);
     var bytes = new Uint8Array(binary.length);
@@ -1011,7 +1018,7 @@
   function inflateZlib(bytes) {
     if (typeof DecompressionStream === "undefined" || typeof Response === "undefined") {
       return Promise.reject(
-        new Error("This browser cannot unpack the GPX file. Try a newer browser.")
+        new Error("This browser cannot unpack the embedded file. Try a newer browser.")
       );
     }
     var stream = new Response(bytes).body.pipeThrough(new DecompressionStream("deflate"));
@@ -1409,22 +1416,34 @@
     }
 
     /* --- Export GeoJSON -------------------------------------------------- */
-    // Hands the rasterized grids (embedded in the page) to the browser as a
-    // .geojson download. Assembling the blob is synchronous, so the button has
-    // no busy state to manage — it just reports the outcome on the shared
-    // export status line.
+    // Hands the rasterized grids (embedded in the page, compressed) to the
+    // browser as a .geojson download. Inflating takes a moment on a large
+    // export, so the button is disabled while it works and reports the outcome
+    // on the shared export status line.
     var geojsonBtn = panel.querySelector("#hcp-export-geojson");
     if (geojsonBtn) {
       geojsonBtn.addEventListener("click", function () {
-        try {
-          exportGeojsonData();
-          setExportStatus("Saved as " + GEOJSON_FILENAME + ".", false);
-        } catch (error) {
-          setExportStatus(
-            error && error.message ? error.message : "The GeoJSON file could not be saved.",
-            true
-          );
-        }
+        if (geojsonBtn.disabled) return;
+        geojsonBtn.disabled = true;
+        setExportStatus("Unpacking the GeoJSON file\u2026", false);
+        Promise.resolve()
+          .then(function () {
+            return exportGeojsonData();
+          })
+          .then(function () {
+            setExportStatus("Saved as " + GEOJSON_FILENAME + ".", false);
+          })
+          .catch(function (error) {
+            setExportStatus(
+              error && error.message
+                ? error.message
+                : "The GeoJSON file could not be saved.",
+              true
+            );
+          })
+          .then(function () {
+            geojsonBtn.disabled = false;
+          });
       });
     }
 

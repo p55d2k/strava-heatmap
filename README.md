@@ -83,12 +83,12 @@ with no samples in a cell is left out of that feature's properties entirely
 rather than written as a misleading zero.
 
 The grids are embedded in the HTML as an inert
-`<script type="application/geo+json">` block: the browser never parses it on
-load, so the map still opens quickly, and the button simply hands that text to
-the browser as a download. That keeps the output a single self-contained file,
-at the cost of the HTML growing with the exported data — roughly 0.3 KB per
-populated cell (tens of MB for a dense city-wide grid at a fine
-`METERS_PER_PIXEL`).
+`<script type="application/geo+json">` block, zlib-compressed and base64-encoded
+(the same treatment the GPX export below gets): the browser never parses it on
+load, so the map still opens quickly, and the button inflates it in the browser
+and hands the text over as a download. That keeps the output a single
+self-contained file, and the compression keeps a dense city-wide grid at a fine
+`METERS_PER_PIXEL` from adding tens of MB to the HTML.
 
 The **GPX track export** goes the other way: instead of the rasterized grid it
 writes the activities themselves back out as a single GPX file
