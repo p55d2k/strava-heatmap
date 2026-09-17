@@ -364,6 +364,25 @@
   color: #fff;
 }
 
+/* Secondary export action (Export GeoJSON) sits under Save as PNG and uses the
+   plain control styling so the accent stays reserved for the primary action. */
+.heatmap-control-panel .hcp-export.hcp-export-alt {
+  margin-top: 6px;
+  background: var(--hcp-control-bg);
+  border-color: var(--hcp-control-border);
+  color: var(--hcp-text-strong);
+}
+
+.heatmap-control-panel .hcp-export.hcp-export-alt:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  filter: none;
+}
+
+.heatmap-control-panel .hcp-export.hcp-export-alt .hcp-info {
+  border-color: var(--hcp-control-border);
+  color: var(--hcp-text-muted);
+}
+
 .heatmap-control-panel .hcp-export-status {
   margin-top: 5px;
   color: var(--hcp-text-muted);

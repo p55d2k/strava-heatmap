@@ -4,7 +4,7 @@ A custom fork of the original Strava Activity Heatmap project by [Sam Wilson](ht
 
 Turns a Strava data export into an interactive heatmap. No API needed just for the data - just the zip file Strava lets you download. (A free CARTO maps key is required for the basemap tiles.)
 
-The output is a single HTML file with eight layers — three GPS-density views (one per raster mode, swapped by the panel's **Advanced** dropdown), a coverage layer, and four metrics:
+The output is a single HTML file with eight layers — three GPS-density views (one per raster mode, swapped by the panel's **Advanced** dropdown), a coverage layer, and four metrics — plus a **Save as PNG** and an **Export GeoJSON** button (see below):
 
 | Layer                      | Colour         | Shows                                              |
 | -------------------------- | -------------- | -------------------------------------------------- |
@@ -57,10 +57,38 @@ Two details keep the exported picture clean:
 the image, so a zoom or pan that is already in flight is waited out (the status
 line says so), any glide is cancelled, and drag / wheel / pinch / keyboard input
 and the zoom buttons are switched off until the render finishes — then
-everything is released again.
-- **The home marker is left out.** It points at a personal location and reads as
-a stray dot in a shared still image, so the export filters it out (it stays on
-the interactive map).
+everything is released again.- **The home marker is left out.** It points at a personal location and reads as
+  a stray dot in a shared still image, so the export filters it out (it stays on
+  the interactive map).
+
+The **Export GeoJSON** button downloads the rasterized grids themselves as a
+GeoJSON `FeatureCollection` (`heatmap.geojson`) for QGIS, Mapbox or any other
+mapping tool. Every populated grid cell becomes one polygon in WGS84 lon/lat
+(as RFC 7946 requires), carrying the data as properties:
+
+| Property               | Meaning                                                            |
+| ---------------------- | ------------------------------------------------------------------ |
+| `passes_time_spent`    | Time Spent density: decay-weighted pass count per cell             |
+| `passes_raw`           | Raw Passes: every GPS sample counted                               |
+| `visits_unique`        | Unique Visits: activities that visited the cell (max 1 per activity) |
+| `coverage_pct`         | Percentage of all activities that visited the cell                 |
+| `pace_mps`             | Average speed, metres per second                                   |
+| `heart_rate_bpm`       | Average heart rate, beats per minute                               |
+| `gradient`             | Average absolute gradient (rise / run)                             |
+| `elev_change_norm`     | Elevation change, normalized to −1…1 (negative = descending)       |
+
+Density and metric values are the same Gaussian-blurred values the map paints,
+so each cell reflects its surroundings rather than a single sample. A metric
+with no samples in a cell is left out of that feature's properties entirely
+rather than written as a misleading zero.
+
+The grids are embedded in the HTML as an inert
+`<script type="application/geo+json">` block: the browser never parses it on
+load, so the map still opens quickly, and the button simply hands that text to
+the browser as a download. That keeps the output a single self-contained file,
+at the cost of the HTML growing with the exported data — roughly 0.3 KB per
+populated cell (tens of MB for a dense city-wide grid at a fine
+`METERS_PER_PIXEL`).
 
 ## Setup
 

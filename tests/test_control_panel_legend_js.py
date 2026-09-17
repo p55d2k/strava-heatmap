@@ -50,6 +50,12 @@ from src.map_builder.control import (
 # Not bound to a legend row (raw GPS tracks); used as a negative case.
 _RAW_TRACKS = "Raw GPS tracks"
 
+# Stand-in for the GeoJSON the control panel embeds (a real build writes the
+# rasterized grids here). Kept tiny — the harness only checks pass-through.
+_GEOJSON_SAMPLE = (
+    '{"type":"FeatureCollection","name":"strava-heatmap-grids","cell_size_m":10.0,"features":[]}'
+)
+
 # ---------------------------------------------------------------------------
 # Node harness (see the module docstring). Kept as a plain string so nothing is
 # interpolated by Python; all runtime data flows in via config.json.
@@ -117,6 +123,12 @@ function makeEl(tag, id) {
     setAttribute(k, v) { this.attributes[k] = String(v); },
     getAttribute(k) { return k in this.attributes ? this.attributes[k] : null; },
     appendChild(c) { c.parentNode = this; this.children.push(c); return c; },
+    removeChild(c) {
+      const i = this.children.indexOf(c);
+      if (i !== -1) this.children.splice(i, 1);
+      return c;
+    },
+    click() { this._clicked = true; },
     addEventListener(evt, fn) { (this._listeners[evt] = this._listeners[evt] || []).push(fn); },
     dispatch(evt, detail) { (this._listeners[evt] || []).forEach((f) => f(detail || {})); },
     querySelector(sel) { return querySelectorIn(this, sel); },
@@ -142,12 +154,20 @@ function makeEl(tag, id) {
 }
 
 const byId = new Map();
+// Every element created via document.createElement is recorded so a test can
+// inspect the download links the export produces (they are removed from the
+// DOM again as soon as the click is dispatched).
+const createdEls = [];
 const documentObj = {
   readyState: "complete",
   // The info-tooltip card is appended to <body>, so the fake document needs one.
   body: makeEl("body"),
   getElementById: (id) => byId.get(id) || null,
-  createElement: (tag) => makeEl(tag),
+  createElement(tag) {
+    const el = makeEl(tag);
+    createdEls.push(el);
+    return el;
+  },
 };
 
 // Legend rows: one stub element per legend id the ExclusiveLayerControl knows.
@@ -252,6 +272,19 @@ global.window = windowObj;
 global.document = documentObj;
 global[mapVar] = map; // the exclusive script's `var map = <name>;`
 
+// Stub the browser download primitives so the GeoJSON export can run headless;
+// the harness records exactly what would have been handed to the browser.
+const blobs = [];
+global.Blob = function (parts, options) {
+  this.parts = parts;
+  this.type = options && options.type;
+  blobs.push(this);
+};
+global.URL = {
+  createObjectURL() { return "blob:harness"; },
+  revokeObjectURL() {},
+};
+
 // Mirror Folium's first paint: the default mode's density layer is on the map.
 map.addLayer(overlays[config.__defaultDensityLayer]);
 
@@ -275,7 +308,7 @@ eval(fs.readFileSync(path.join(DIR, "panel.js"), "utf8"));
 const cfg = Object.assign({}, config);
 delete cfg.__legendIdByLayer; delete cfg.__layerNames;
 delete cfg.__panelIds; delete cfg.__mapVar; delete cfg.__registryKey;
-delete cfg.__defaultDensityLayer;
+delete cfg.__defaultDensityLayer; delete cfg.__geojsonData;
 cfg.map = map;
 windowObj.initHeatmapControlPanel(cfg);
 
@@ -645,6 +678,33 @@ function toggle(layerName, checked) {
   ok(exportBtn.disabled === false,
      "the Save as PNG button is re-enabled after the export attempt");
 
+  // Scenario Q - "Export GeoJSON" hands the rasterized grids embedded in the
+  // page to the browser as a heatmap.geojson download. First with no embedded
+  // data (the button must report that, not throw), then with the real payload.
+  const geojsonBtn = byId.get("hcp-export-geojson");
+  assert.ok(geojsonBtn, "Export GeoJSON button exists");
+
+  geojsonBtn.dispatch("click");
+  ok(exportStatus.classList.contains("hcp-export-status-error") === true &&
+     exportStatus.textContent.indexOf("No grid data") !== -1,
+     "missing grid data is reported instead of throwing");
+
+  const dataEl = makeEl("script", "hcp-geojson-data");
+  dataEl.textContent = config.__geojsonData;
+  byId.set("hcp-geojson-data", dataEl);
+  geojsonBtn.dispatch("click");
+
+  ok(exportStatus.classList.contains("hcp-export-status-error") === false,
+     "a successful export clears the error state");
+  ok(exportStatus.textContent === "Saved as heatmap.geojson.",
+     "the status line reports the exported filename");
+  const geojsonLinks = createdEls.filter((e) => e.tagName === "A" && e.download);
+  ok(geojsonLinks.length === 1 && geojsonLinks[0].download === "heatmap.geojson",
+     "the download is offered as heatmap.geojson");
+  ok(blobs.length === 1 && blobs[0].type === "application/geo+json" &&
+     blobs[0].parts.join("") === config.__geojsonData,
+     "the embedded grid GeoJSON is downloaded verbatim");
+
   console.log("ALL_PASS");
   process.exit(0);
 })().catch((err) => {
@@ -690,6 +750,7 @@ def _write_harness(tmp: Path, panel_cfg: dict) -> None:
     config["__densityLayers"] = list(DENSITY_LAYER_NAMES)
     config["__defaultDensityLayer"] = DENSITY_MODE_LAYERS[DEFAULT_RASTER_MODE]
     config["__activeMode"] = DEFAULT_RASTER_MODE
+    config["__geojsonData"] = _GEOJSON_SAMPLE
     config["__modeLayers"] = [
         {"mode": mode, "layer": layer} for mode, layer in DENSITY_MODE_LAYERS.items()
     ]

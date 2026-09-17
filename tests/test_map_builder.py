@@ -930,6 +930,44 @@ class TestControlPanel:
         assert "cdn.jsdelivr.net/npm/html2canvas" in script
         assert "crossOrigin: true" in script
 
+    def test_html_contains_export_geojson_button(self):
+        """The panel offers a GeoJSON download of the rasterized grids.
+
+        Like Save as PNG it is a primary action, so it lives in the export
+        section (below the view actions) and carries an explanation.
+        """
+        html = build_control_panel_html()
+        match = re.search(r'<button[^>]*id="hcp-export-geojson".*?</button>', html, re.DOTALL)
+        assert match, "no Export GeoJSON button in the panel markup"
+        assert "Export GeoJSON" in match.group(0)
+        assert "data-hcp-help=" in match.group(0)
+        assert "hcp-info" in match.group(0)
+        # Shares the export section (and its status line) with Save as PNG.
+        assert html.index('id="hcp-export-png"') < html.index('id="hcp-export-geojson"')
+        assert html.index('id="hcp-export-geojson"') < html.index('id="hcp-export-status"')
+
+    def test_script_contains_geojson_export_logic(self):
+        """panel.js must hand the embedded grids to the browser as a download."""
+        script = control_panel_script()
+        assert "hcp-export-geojson" in script
+        assert "hcp-geojson-data" in script
+        assert "heatmap.geojson" in script
+        assert "application/geo+json" in script
+        assert "exportGeojsonData" in script
+
+    def test_control_panel_embeds_geojson_for_the_download(self):
+        """ControlPanel should inline the grids in an inert script block."""
+        geojson = '{"type":"FeatureCollection","features":[]}'
+        panel = ControlPanel(centre=[1.0, 2.0], geojson=geojson)
+        html = panel._template.module.html(panel, {})
+        assert 'id="hcp-geojson-data"' in html
+        assert 'type="application/geo+json"' in html
+        assert geojson in html
+        # Without grids the block is left out entirely; the button then reports
+        # that there is nothing to export.
+        bare = ControlPanel(centre=[1.0, 2.0])
+        assert "hcp-geojson-data" not in bare._template.module.html(bare, {})
+
     def test_script_renders_a_still_map_without_the_home_marker(self):
         """The export must capture a map that is not moving, and must leave the
         home marker out of the picture.
@@ -1329,6 +1367,50 @@ class TestBuildMapControlPanel:
 
         mock_panel.assert_called_once()
         assert mock_panel.call_args[1]["home"] == [45.01, -122.01]
+
+    @patch("src.map_builder.map_builder.folium.Map")
+    @patch("src.map_builder.map_builder.folium.TileLayer")
+    @patch("src.map_builder.map_builder.folium.FeatureGroup")
+    @patch("src.map_builder.map_builder.folium.PolyLine")
+    @patch("src.map_builder.map_builder.folium.raster_layers.ImageOverlay")
+    @patch("src.map_builder.map_builder.folium.LayerControl")
+    @patch("src.map_builder.map_builder.ExclusiveLayerControl")
+    @patch("src.map_builder.map_builder.ControlPanel")
+    def test_forwards_geojson_to_control_panel(
+        self,
+        mock_panel,
+        mock_exclusive_control,
+        mock_layer_control,
+        mock_image_overlay,
+        mock_polyline,
+        mock_feature_group,
+        mock_tile_layer,
+        mock_map,
+    ):
+        """build_map should hand the GeoJSON grids to the panel for embedding."""
+        mock_map.return_value = MagicMock()
+        mock_tile_layer.return_value = MagicMock()
+        mock_feature_group.return_value = MagicMock()
+        mock_polyline.return_value = MagicMock()
+        mock_image_overlay.return_value = MagicMock()
+        mock_layer_control.return_value = MagicMock()
+        mock_exclusive_control.return_value = MagicMock()
+        mock_panel.return_value = MagicMock()
+        geojson = '{"type":"FeatureCollection","features":[]}'
+
+        build_map(
+            self.tracks,
+            self.layers,
+            self.bounds,
+            self.centre,
+            self.legend_html,
+            self.output_path,
+            self.map_opacity,
+            geojson=geojson,
+        )
+
+        mock_panel.assert_called_once()
+        assert mock_panel.call_args[1]["geojson"] == geojson
 
     @patch("src.map_builder.map_builder.folium.Map")
     @patch("src.map_builder.map_builder.folium.TileLayer")

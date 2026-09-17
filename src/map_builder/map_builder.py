@@ -168,6 +168,7 @@ def build_map(
     home: list[float] | None = None,
     control_panel: bool = True,
     raster_mode: str = DEFAULT_RASTER_MODE,
+    geojson: str | None = None,
     progress_callback=None,
 ) -> None:
     """Build and save the Folium map.
@@ -199,6 +200,9 @@ def build_map(
         raster_mode: Rasterization mode pre-selected in the control panel's
             Advanced dropdown (decides which GPS Density layer is visible at
             first paint).
+        geojson: Minified GeoJSON of the rasterized grids, embedded in the page
+            for the control panel's "Export GeoJSON" button. Omit to leave it
+            out (the button then reports that no grid data is available).
         progress_callback: Optional callable invoked with a step count.
     """
     map_location = home if home is not None else centre
@@ -287,6 +291,7 @@ def build_map(
                 overlay_layers=layers,
                 default_opacity=map_opacity,
             ),
+            geojson=geojson,
         ).add_to(m)
 
     if progress_callback:

@@ -20,6 +20,9 @@
  *   - Save as PNG              (static image export of the current view; the
  *                               html2canvas library it needs is fetched on the
  *                               first click, never at page load)
+ *   - Export GeoJSON            (hands the rasterized grids — embedded in the
+ *                               page as an inert script block — to the browser
+ *                               as a .geojson download for QGIS / Mapbox)
  *   - Info tooltips             (every control carries plain-language help
  *                               text, shown in a floating card on hover or
  *                               keyboard focus)
@@ -809,6 +812,13 @@
   var HTML2CANVAS_URL =
     "https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js";
 
+  // The rasterized grids travel with the page as an inert
+  // <script type="application/geo+json"> block (written by ControlPanel), so
+  // the GeoJSON button only has to hand that text to the browser as a download.
+  var GEOJSON_DATA_ID = "hcp-geojson-data";
+  var GEOJSON_FILENAME = "heatmap.geojson";
+  var GEOJSON_MIME = "application/geo+json";
+
   // Render at 2x so the exported picture stays sharp on high-density screens.
   var EXPORT_SCALE = 2;
   var EXPORT_FILENAME = "heatmap.png";
@@ -903,19 +913,21 @@
     });
   }
 
+  // Hand a URL (a blob: URL or a data: URI) to the browser as a file download.
+  // Shared by the PNG and GeoJSON exports.
+  function triggerDownloadFile(href, filename) {
+    var link = document.createElement("a");
+    link.href = href;
+    link.download = filename;
+    document.body.appendChild(link);
+    if (typeof link.click === "function") link.click();
+    document.body.removeChild(link);
+  }
+
   // Hand a finished canvas to the browser as a file download. toBlob keeps
   // memory use sane for the large canvases the map produces; the data-URL path
   // is a fallback for browsers without it.
   function saveCanvasAsPng(canvas, filename) {
-    function triggerDownload(href) {
-      var link = document.createElement("a");
-      link.href = href;
-      link.download = filename;
-      document.body.appendChild(link);
-      if (typeof link.click === "function") link.click();
-      document.body.removeChild(link);
-    }
-
     if (
       typeof canvas.toBlob === "function" &&
       typeof URL !== "undefined" &&
@@ -924,14 +936,45 @@
       canvas.toBlob(function (blob) {
         if (!blob) return;
         var url = URL.createObjectURL(blob);
-        triggerDownload(url);
+        triggerDownloadFile(url, filename);
         setTimeout(function () {
           URL.revokeObjectURL(url);
         }, 1000);
       }, "image/png");
       return;
     }
-    triggerDownload(canvas.toDataURL("image/png"));
+    triggerDownloadFile(canvas.toDataURL("image/png"), filename);
+  }
+
+  /* ---- Export GeoJSON (rasterized grids) -------------------------------- */
+
+  // Download the embedded rasterized grids as a GeoJSON file. The grids are
+  // stored as text in the page (never parsed by the browser at load), so this
+  // only has to wrap that text in a Blob and trigger the download. Throws a
+  // readable Error when the page carries no grid data.
+  function exportGeojsonData() {
+    var el = document.getElementById(GEOJSON_DATA_ID);
+    var text = el && el.textContent ? el.textContent : "";
+    if (!text) throw new Error("No grid data is available to export.");
+
+    if (
+      typeof Blob === "undefined" ||
+      typeof URL === "undefined" ||
+      typeof URL.createObjectURL !== "function"
+    ) {
+      // Fallback for browsers without Blob/object URLs: a (large) data URI.
+      triggerDownloadFile(
+        "data:" + GEOJSON_MIME + ";charset=utf-8," + encodeURIComponent(text),
+        GEOJSON_FILENAME
+      );
+      return;
+    }
+
+    var url = URL.createObjectURL(new Blob([text], { type: GEOJSON_MIME }));
+    triggerDownloadFile(url, GEOJSON_FILENAME);
+    setTimeout(function () {
+      URL.revokeObjectURL(url);
+    }, 1000);
   }
 
   // Is the map mid-movement? Leaflet keeps no single "am I moving?" flag, so
@@ -1292,6 +1335,26 @@
           .then(function () {
             exportBtn.disabled = false;
           });
+      });
+    }
+
+    /* --- Export GeoJSON -------------------------------------------------- */
+    // Hands the rasterized grids (embedded in the page) to the browser as a
+    // .geojson download. Assembling the blob is synchronous, so the button has
+    // no busy state to manage — it just reports the outcome on the shared
+    // export status line.
+    var geojsonBtn = panel.querySelector("#hcp-export-geojson");
+    if (geojsonBtn) {
+      geojsonBtn.addEventListener("click", function () {
+        try {
+          exportGeojsonData();
+          setExportStatus("Saved as " + GEOJSON_FILENAME + ".", false);
+        } catch (error) {
+          setExportStatus(
+            error && error.message ? error.message : "The GeoJSON file could not be saved.",
+            true
+          );
+        }
       });
     }
 

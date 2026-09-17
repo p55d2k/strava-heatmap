@@ -252,10 +252,16 @@ def _validate_raster_mode_choice(raster_mode: str, mode_keys: list[str]) -> None
 class ControlPanel(MacroElement):
     """Inlines a unified control panel into the generated heatmap HTML.
 
-    The element renders an ``html`` macro (the panel markup) and a ``script``
-    macro (the inlined ``assets/panel.js`` logic plus the runtime config),
-    which Folium emits into the map's body and script fragments respectively.
-    The styling comes from the separate :func:`controls_css` stylesheet.
+    The element renders an ``html`` macro (the panel markup plus the embedded
+    GeoJSON grid export) and a ``script`` macro (the inlined ``assets/panel.js``
+    logic plus the runtime config), which Folium emits into the map's body and
+    script fragments respectively. The styling comes from the separate
+    :func:`controls_css` stylesheet.
+
+    The GeoJSON is embedded as an inert ``<script type="application/geo+json">``
+    block: the browser never parses or executes it, so the map still loads
+    quickly, and the panel's "Export GeoJSON" button reads its text and hands it
+    to the browser as a download.
 
     ``_template`` must be a **class-level** ``Template`` so that Folium's
     ``MacroElement`` rendering pipeline can invoke its ``html``/``script``
@@ -268,6 +274,9 @@ class ControlPanel(MacroElement):
         """
     {% macro html(this, kwargs) %}
     {{ this.html }}
+    {% if this.geojson %}
+    <script type="application/geo+json" id="hcp-geojson-data">{{ this.geojson }}</script>
+    {% endif %}
     {% endmacro %}
     {% macro script(this, kwargs) %}
     (function() {
@@ -295,6 +304,7 @@ class ControlPanel(MacroElement):
         legend_id: str = "heatmap-legend",
         layer_groups: list[dict] | None = None,
         advanced: dict | None = None,
+        geojson: str | None = None,
     ):
         """Initialize the ControlPanel.
 
@@ -314,11 +324,15 @@ class ControlPanel(MacroElement):
                 see :func:`build_layer_group_config`.
             advanced: ``advanced`` config for the collapsible Advanced section
                 (rasterization-mode dropdown); see :func:`build_advanced_config`.
+            geojson: Minified GeoJSON string of the rasterized grids, embedded
+                in the page for the "Export GeoJSON" button to download. Omit
+                (or pass an empty string) to leave the block out.
         """
         super().__init__()
         self._name = "ControlPanel"
         self.html = build_control_panel_html()
         self.script_code = control_panel_script()
+        self.geojson = geojson or ""
         config = {
             "panelId": panel_id,
             "basemapStyles": carto_basemap_choices(styles),

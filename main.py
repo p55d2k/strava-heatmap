@@ -26,6 +26,7 @@ from src.data_loader import (
     load_and_filter_activities,
     load_tracks,
 )
+from src.geojson_export import build_geojson, geojson_feature_count
 from src.map_builder import (
     INDEPENDENT_LAYER_NAMES,
     LegendBuilder,
@@ -269,10 +270,22 @@ def run_generate(args: argparse.Namespace) -> None:
             )
         print_success("Grid normalization complete")
 
-        # Stage 5: Generating Map Layers (1 colormap step + 8 layer steps: one GPS density layer per raster mode + Coverage + four metrics)
+        # Stage 5: Generating Map Layers and the GeoJSON export (1 colormap step
+        # + 1 GeoJSON step + 8 layer steps: one GPS density layer per raster mode
+        # + Coverage + four metrics)
         print_stage("Stage 5: Generating Map Layers")
-        with tqdm(total=8, desc="Generating layers", unit="layer", disable=not args.dev) as pbar:
+        with tqdm(total=9, desc="Generating layers", unit="step", disable=not args.dev) as pbar:
             colormaps = create_colormaps()
+            pbar.update(1)
+            # One polygon per populated cell, for the panel's GeoJSON download.
+            geojson = build_geojson(
+                normalized,
+                grids,
+                x_min_wm,
+                y_max_wm,
+                config.meters_per_pixel,
+                from_wm,
+            )
             pbar.update(1)
             layers = generate_layer_uris(
                 normalized,
@@ -282,6 +295,7 @@ def run_generate(args: argparse.Namespace) -> None:
                 progress_callback=pbar.update,
             )
         print_success(f"Created {len(layers)} map layers")
+        print_success(f"GeoJSON export: {geojson_feature_count(geojson)} grid cells")
 
         # Stage 6: Building Interactive Map (4 steps: bounds/centre, legend, build_map (3 sub-steps))
         print_stage("Stage 6: Building Interactive Map")
@@ -313,6 +327,7 @@ def run_generate(args: argparse.Namespace) -> None:
                 metric_layer_names=INDEPENDENT_LAYER_NAMES,
                 legend_ids=legend_builder.legend_ids,
                 home=[home_lat, home_lon],
+                geojson=geojson,
                 progress_callback=pbar.update,
             )
             pbar.update(1)
