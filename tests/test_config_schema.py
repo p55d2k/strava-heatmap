@@ -58,6 +58,7 @@ class TestConfigSchema:
             "ACTIVITIES_CSV",
             "CACHE_FILE",
             "OUTPUT_HTML",
+            "OUTPUT_GPX",
         }
         assert expected_fields.issubset(set(schema["properties"].keys()))
 

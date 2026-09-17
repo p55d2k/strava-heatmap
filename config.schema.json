@@ -376,6 +376,16 @@
       ],
       "title": "Output Html",
       "type": "string"
+    },
+    "OUTPUT_GPX": {
+      "default": "tracks.gpx",
+      "description": "Name of the GPX track export in OUTPUT_DIR. Every generate run rewrites it with the filtered activities (one GPX track each) so the same rides/runs can be opened in other tools.",
+      "examples": [
+        "tracks.gpx",
+        "runs.gpx"
+      ],
+      "title": "Output Gpx",
+      "type": "string"
     }
   },
   "required": [

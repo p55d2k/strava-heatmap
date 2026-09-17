@@ -414,6 +414,16 @@ class ConfigModel(BaseModel):
         description="Name of the output HTML file in OUTPUT_DIR.",
         examples=["heatmap.html", "my_heatmap.html"],
     )
+    output_gpx: str = Field(
+        default="tracks.gpx",
+        alias="OUTPUT_GPX",
+        description=(
+            "Name of the GPX track export in OUTPUT_DIR. Every generate run "
+            "rewrites it with the filtered activities (one GPX track each) so "
+            "the same rides/runs can be opened in other tools."
+        ),
+        examples=["tracks.gpx", "runs.gpx"],
+    )
 
     @field_validator("activity_types", mode="before")
     @classmethod

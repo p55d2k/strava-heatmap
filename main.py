@@ -27,6 +27,7 @@ from src.data_loader import (
     load_tracks,
 )
 from src.geojson_export import build_geojson, geojson_feature_count
+from src.gpx_export import write_gpx
 from src.map_builder import (
     INDEPENDENT_LAYER_NAMES,
     LegendBuilder,
@@ -81,20 +82,21 @@ def print_debug(dev: bool, message: str) -> None:
 def parse_args() -> argparse.Namespace:
     """Parse command line arguments."""
     parser = argparse.ArgumentParser(description="Strava Activity Heatmap Generator")
-    # Shared options available at top level for backward compatibility
-    # (e.g. `python main.py --config config.json`) and on each subcommand.
-    parent = argparse.ArgumentParser(add_help=False)
-    parent.add_argument(
+    # Options every subcommand accepts.
+    common = argparse.ArgumentParser(add_help=False)
+    common.add_argument(
         "--config",
         type=Path,
         default=Path("config.json"),
         help="Path to config.json file (default: config.json)",
     )
-    parent.add_argument(
+    common.add_argument(
         "--dev",
         action="store_true",
         help="Enable verbose/debug logging for development",
     )
+    # The map-building subcommands additionally open the result in a browser.
+    parent = argparse.ArgumentParser(add_help=False, parents=[common])
     parent.add_argument(
         "--no-open",
         action="store_true",
@@ -148,6 +150,24 @@ def parse_args() -> argparse.Namespace:
         help="Validate config.json file",
     )
 
+    # Export command: re-export the filtered tracks as GPX, without building the map
+    export_parser = subparsers.add_parser(
+        "export-gpx",
+        parents=[common],
+        help="Re-export the filtered GPS tracks as a single GPX file",
+        description=(
+            "Apply the same type / date / home-radius filters as `generate` and "
+            "write the surviving tracks to one GPX file (one track per activity), "
+            "ready for Garmin Connect, QGIS or any other GPX tool."
+        ),
+    )
+    export_parser.add_argument(
+        "--output",
+        type=Path,
+        default=None,
+        help="Destination file (default: OUTPUT_GPX in OUTPUT_DIR, e.g. outputs/tracks.gpx)",
+    )
+
     # If no subcommand is provided, default to 'generate'
     args = parser.parse_args()
     if args.command is None:
@@ -158,6 +178,11 @@ def parse_args() -> argparse.Namespace:
 def print_error(message: str) -> None:
     """Print an error message."""
     print(f"  ✗ {message}")
+
+
+def gpx_title(config: Config) -> str:
+    """Return the ``<metadata><name>`` written into the GPX track export."""
+    return f"Strava {'/'.join(sorted(config.activity_types))} tracks"
 
 
 def run_validate(args: argparse.Namespace) -> None:
@@ -225,9 +250,14 @@ def run_generate(args: argparse.Namespace) -> None:
             print_success("Dry run complete. Exiting without generating map.")
             return
 
-        # Stage 2: Loading GPS Tracks (has progress bar)
+        # Stage 2: Loading GPS Tracks (has progress bar), then re-exporting the
+        # same filtered tracks as GPX for other tools.
         print_stage("Stage 2: Loading GPS Tracks")
         tracks = load_tracks(config, runs)
+        n_gpx_tracks, n_gpx_points = write_gpx(tracks, config.output_gpx, gpx_title(config))
+        print_success(
+            f"Re-exported {n_gpx_tracks} tracks ({n_gpx_points:,} points) to {config.output_gpx}"
+        )
 
         # Stage 3: Rasterizing Tracks (has progress bar)
         print_stage("Stage 3: Rasterizing Tracks")
@@ -335,6 +365,7 @@ def run_generate(args: argparse.Namespace) -> None:
             pbar.update(1)
 
         print_success(f"Heatmap saved to: {config.output_html}")
+        print_info("GPX track export", str(config.output_gpx))
 
         if not args.no_open:
             file_url = f"file://{config.output_html.absolute()}"
@@ -359,12 +390,53 @@ def run_generate(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def run_export_gpx(args: argparse.Namespace) -> None:
+    """Re-export the filtered GPS tracks as a single GPX file (no map build)."""
+    setup_logging(args.dev)
+
+    try:
+        config = Config(args.config)
+        config.log_summary()
+
+        # Deliberately the same filters as `generate`, so the GPX always matches
+        # the set of activities baked into the heatmap.
+        print_stage("Filtering Activities")
+        runs = load_and_filter_activities(config)
+        home_lat, home_lon = determine_home_location(config, runs)
+        runs = filter_by_home_radius(runs, home_lat, home_lon, config.radius_km)
+        print_info("Activities after all filters", str(len(runs)))
+
+        print_stage("Loading GPS Tracks")
+        tracks = load_tracks(config, runs)
+
+        output_path = Path(args.output) if args.output else config.output_gpx
+        n_tracks, n_points = write_gpx(tracks, output_path, gpx_title(config))
+        print_success(f"Exported {n_tracks} tracks ({n_points:,} points) to {output_path}")
+
+    except (FileNotFoundError, NotADirectoryError, ValueError) as e:
+        print_error(str(e))
+        if args.dev:
+            import traceback
+
+            traceback.print_exc()
+        sys.exit(1)
+    except Exception as e:
+        print_error(f"Unexpected error: {e}")
+        if args.dev:
+            import traceback
+
+            traceback.print_exc()
+        sys.exit(1)
+
+
 def main():
     """Main entry point that routes to the appropriate subcommand."""
     args = parse_args()
 
     if args.command == "validate":
         run_validate(args)
+    elif args.command == "export-gpx":
+        run_export_gpx(args)
     else:
         run_generate(args)
 

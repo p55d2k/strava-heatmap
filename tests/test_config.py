@@ -158,6 +158,24 @@ class TestConfig:
         expected = (Path(self.temp_dir) / "outputs" / "my_heatmap.html").resolve()
         assert config.output_html == expected
 
+    def test_sets_default_output_gpx(self):
+        """Should set default GPX track export path."""
+        config = Config(self.config_path)
+
+        expected = (Path(self.temp_dir) / "outputs" / "tracks.gpx").resolve()
+        assert config.output_gpx == expected
+
+    def test_uses_custom_output_gpx(self):
+        """Should use custom GPX track export path when specified."""
+        custom_config = self.valid_config.copy()
+        custom_config["OUTPUT_GPX"] = "my_runs.gpx"
+        self.config_path.write_text(json.dumps(custom_config))
+
+        config = Config(self.config_path)
+
+        expected = (Path(self.temp_dir) / "outputs" / "my_runs.gpx").resolve()
+        assert config.output_gpx == expected
+
     def test_raises_on_missing_config_file(self):
         """Should raise FileNotFoundError for missing config file."""
         missing_path = Path(self.temp_dir) / "missing.json"

@@ -4,7 +4,7 @@ A custom fork of the original Strava Activity Heatmap project by [Sam Wilson](ht
 
 Turns a Strava data export into an interactive heatmap. No API needed just for the data - just the zip file Strava lets you download. (A free CARTO maps key is required for the basemap tiles.)
 
-The output is a single HTML file with eight layers — three GPS-density views (one per raster mode, swapped by the panel's **Advanced** dropdown), a coverage layer, and four metrics — plus a **Save as PNG** and an **Export GeoJSON** button (see below):
+The output is a single HTML file with eight layers — three GPS-density views (one per raster mode, swapped by the panel's **Advanced** dropdown), a coverage layer, and four metrics — plus a **Save as PNG** and an **Export GeoJSON** button — and the filtered tracks re-exported as GPX (see below):
 
 | Layer                      | Colour         | Shows                                              |
 | -------------------------- | -------------- | -------------------------------------------------- |
@@ -90,6 +90,28 @@ at the cost of the HTML growing with the exported data — roughly 0.3 KB per
 populated cell (tens of MB for a dense city-wide grid at a fine
 `METERS_PER_PIXEL`).
 
+The **GPX track export** goes the other way: instead of the rasterized grid it
+writes the activities themselves back out as a single GPX file
+(`outputs/tracks.gpx`) — one `<trk>` per activity, named from its date and
+activity name — so the exact rides/runs the heatmap was built from can be opened
+in Garmin Connect, QGIS, OsmAnd or any other GPX tool. The file is rewritten on every `generate` run (its
+name comes from `OUTPUT_GPX`), and can also be produced on its own, without
+rebuilding the map:
+
+```bash
+uv run python main.py export-gpx --output runs.gpx
+```
+
+The export re-applies the same `ACTIVITY_TYPES`, `DATE_FROM` / `DATE_TO`,
+`GPS_SPREAD_MIN_M` and `RADIUS_KM` filters as the map, so the tracks always match
+the heatmap you are looking at. Each point carries latitude, longitude and
+elevation; Strava's export files keep no per-point timestamps, so there are no
+`<time>` elements, and heart rate and speed ride in Garmin's
+`TrackPointExtension` — the de-facto place for them, since GPX 1.1 has no element
+for either — so tools that understand the extension show them and the rest
+ignore it. (Re-importing this file *into this project* loses HR and speed,
+because the GPX loader here reads geometry and elevation only.)
+
 ## Setup
 
 ```bash
@@ -166,6 +188,7 @@ Key settings:
   generated and selectable in the panel; `RASTER_MODE` only decides which one is
   visible at first paint.
 - `COVERAGE_NORMALIZATION`: How the **Coverage (Places Visited)** layer is scaled. `"pct"` (default) = each cell shows the percentage of all activities that visited it; `"max"` = each cell is scaled relative to the most-visited cell (legacy behavior). Default: `"pct"`.
+- `OUTPUT_GPX`: Name of the GPX track export written into `OUTPUT_DIR` on every run (default `tracks.gpx`). See the GPX section above.
 The three GPS Density layers and the Coverage layer are shown as mutually-exclusive radio toggles in the control panel (only one density view at a time).
 
 4. Run:
@@ -188,6 +211,14 @@ The CLI supports subcommands. If no subcommand is given, it defaults to `generat
   `activities.csv` exist, and print a summary of the resolved settings:
   ```bash
 uv run python main.py validate --config config.json
+  ```
+
+- `export-gpx` — re-export the filtered tracks as one GPX file without building the
+  map. Applies the same filters as `generate` and writes to `OUTPUT_GPX` (or
+  `--output`, including a path outside `OUTPUT_DIR`). Useful for handing your
+  activities to another tool, or for re-exporting after only changing a filter:
+  ```bash
+uv run python main.py export-gpx --config config.json --output runs.gpx
   ```
 
 Common options (`--config`, `--dev`) can be passed at the top level or on a subcommand:

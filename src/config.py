@@ -77,6 +77,7 @@ class Config:
         self.activities_csv = self.activities_dir / model.activities_csv
         self.cache_file = self.cache_dir / model.cache_file
         self.output_html = self.output_dir / model.output_html
+        self.output_gpx = self.output_dir / model.output_gpx
 
     def log_summary(self):
         import logging
