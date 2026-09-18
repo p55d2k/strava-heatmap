@@ -1,9 +1,9 @@
 # Strava Activity Heatmap
 
 Turn a Strava data export into a self-contained, interactive activity heatmap.
-No Strava API access is needed: the input is the ZIP file Strava provides. A
-Basemap tiles work out of the box with OpenStreetMap. An optional
-[CARTO maps key](https://carto.com/developers/tiles) enables the CARTO styles.
+No Strava API access is needed: the input is the ZIP file Strava provides.
+Basemap tiles are served by [CARTO](https://carto.com/developers/tiles), so a
+free CARTO API key is required.
 
 This is a custom fork of [Sam Wilson's original project](https://github.com/moresamwilson/running-heatmap).
 
@@ -49,10 +49,11 @@ This installs the `strava-heatmap` command and its dependencies in an isolated
 tool environment. If the command is not found afterward, run `uv tool update-shell`
 and restart your shell.
 
-### Optional CARTO basemap key
+### CARTO basemap key (required)
 
-This step is optional. Without a key, OpenStreetMap tiles are used. To use
-CARTO basemaps, copy the ignored environment-file template and add a key:
+CARTO is the only basemap provider: the generator needs a key and will stop with
+a clear error if one is missing. Copy the ignored environment-file template and
+add your key:
 
 ```bash
 cp .env.example .env
@@ -63,6 +64,24 @@ CARTO_API_KEY = your_key_here
 ```
 
 Get a free key at <https://carto.com/developers/tiles>.
+
+The key is read, in order, from the `CARTO_API_KEY` environment variable, from a
+`.env` file in the working directory or any parent of it, and from a `.env` next
+to an explicit `--config` file. An exported variable always wins over a file, so
+`CARTO_API_KEY=... strava-heatmap generate` overrides `.env` for a single run.
+Because the installed `strava-heatmap` command lives outside this project, run it
+from the project directory (or keep the key exported) so the `.env` file is
+found. `strava-heatmap validate` reports the key it resolved, masked.
+
+### Attribution
+
+CARTO's tiles are a rendering of OpenStreetMap data, so every map carries the
+required credit — `© OpenStreetMap contributors © CARTO` — in the bottom-right
+corner, and exported PNGs include it too. It is styled to stay out of the way
+(small, low-contrast text) rather than sitting on a bright white bar, but it is
+never hidden: dropping the credit would put the map outside the tile licence.
+The credit lives in the shared stylesheet, so the embeddable widget gets the
+same treatment.
 
 ## Quick start
 
@@ -130,6 +149,7 @@ with `--config path/to/config.toml` (or a legacy `.json` file). Use
 | `BLUR_SIGMA_PX` | Gaussian blur radius in pixels. |
 | `MAP_OPACITY` | Heatmap opacity from `0` to `1`. |
 | `CARTO_STYLE` | `dark_all` (default), `light_all`, or `voyager`. |
+| `CARTO_API_KEY` | Not a config-file setting: set it in `.env` or the environment. Required — CARTO is the only basemap provider. |
 | `SPEED_MIN_MS` / `SPEED_MAX_MS` | Speed filters in metres per second, or `null`. |
 | `HR_MIN_BPM` / `HR_MAX_BPM` | Heart-rate filters in BPM, or `null`. |
 | `AUTO_RANGE_PCT` | Percentile used for automatic colour ranges; lower values increase contrast. |
@@ -201,7 +221,8 @@ strava-heatmap validate --config config.toml --dev
 ### PNG
 
 **Save as PNG** captures the current map view to `heatmap.png`, including the
-basemap, enabled layers, attribution, and legend. It runs in the browser and
+basemap, enabled layers, the required basemap credit, and legend. It runs in the
+browser and
 loads `html2canvas` from a CDN on the first click. CARTO tiles use CORS so they
 remain readable in the canvas.
 
@@ -271,7 +292,7 @@ the initial view is framed to the data bounds.
 | `EMBED_ENABLED` | `false` | Build the widget on every run; `--embed` enables it once |
 | `EMBED_HTML` | `heatmap_embed.html` | Widget filename in `OUTPUT_DIR` |
 | `EMBED_LEGEND` | `true` | Include the colour legend |
-| `EMBED_ATTRIBUTION` | `true` | Legacy setting; attribution is always shown as required by CARTO/OpenStreetMap terms |
+| `EMBED_ATTRIBUTION` | `true` | Legacy setting; the required basemap credit is always shown (small and muted, but never hidden) |
 | `EMBED_HOME_MARKER` | `true` | Include the home marker |
 | `EMBED_TRACKS` | `false` | Draw raw GPS tracks |
 | `EMBED_METRICS` | `[]` | Metric layers to include and show: full names or `pace`, `heart_rate`, `gradient`, `elev_change` |

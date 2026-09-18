@@ -13,12 +13,12 @@ import pytest
 
 @pytest.fixture(autouse=True)
 def carto_api_key(monkeypatch):
-    """Set a fake CARTO_API_KEY for tests (basemap tile layer requires one).
+    """Set a fake CARTO_API_KEY for tests (CARTO is the only basemap provider).
 
     Autouse so that any test exercising ``build_map`` runs in isolation without
     needing a real CARTO key (e.g. on CI, where ``.env`` is not available and
     secrets must not be committed). Tests that intentionally verify the
-    missing/blank-key behaviour delete/blank the variable themselves.
+    missing-key behaviour delete/blank the variable themselves.
     """
     monkeypatch.setenv("CARTO_API_KEY", "default_public_testkey")
     return "default_public_testkey"

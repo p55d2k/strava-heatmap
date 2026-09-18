@@ -506,8 +506,9 @@ class ConfigModel(BaseModel):
         default=True,
         alias="EMBED_ATTRIBUTION",
         description=(
-            "Legacy setting retained for compatibility; tile attribution is "
-            "always shown because the CARTO / OpenStreetMap tile terms require it."
+            "Legacy setting retained for compatibility; the required basemap "
+            "credit is always shown (styled minimally, never hidden) because "
+            "the CARTO tile terms require it."
         ),
     )
     embed_home_marker: bool = Field(

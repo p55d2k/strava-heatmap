@@ -57,11 +57,14 @@ from src.map_builder.legend import (
     pace_str,
 )
 from src.map_builder.map_builder import (
+    CartoApiKeyMissingError,
     ScalableHomeMarker,
     build_map,
     build_tile_url,
     get_carto_api_key,
     home_marker_radius,
+    load_env_files,
+    require_carto_api_key,
 )
 from src.map_builder.utils import (
     cmap_to_css,
@@ -112,6 +115,9 @@ __all__ = [
     "build_map",
     "build_tile_url",
     "get_carto_api_key",
+    "load_env_files",
+    "require_carto_api_key",
+    "CartoApiKeyMissingError",
     "home_marker_radius",
     # Utils
     "cmap_to_css",

@@ -36,6 +36,8 @@ from src.map_builder import (
     build_embed_demo_html,
     build_map,
     encode_for_embedding,
+    load_env_files,
+    require_carto_api_key,
 )
 from src.rasterizer import (
     compute_grid_bounds,
@@ -237,6 +239,24 @@ def gpx_title(config: Config) -> str:
     return f"Strava {'/'.join(sorted(config.activity_types))} tracks"
 
 
+def mask_secret(secret: str) -> str:
+    """Show enough of a secret to confirm which key is configured, no more."""
+    if len(secret) <= 8:
+        return "…"
+    return f"{secret[:4]}…{secret[-4:]}"
+
+
+def print_carto_key_status() -> str:
+    """Validate the CARTO basemap key and return it.
+
+    CARTO is the only basemap provider, so no key means no map. Checking it here
+    reports the problem before the data loading / rasterization stages run.
+    """
+    key = require_carto_api_key()
+    print_info("CARTO basemap key", f"configured ({mask_secret(key)})")
+    return key
+
+
 def run_validate(args: argparse.Namespace) -> None:
     """Validate config.toml file (JSON also supported)."""
     # Setup logging based on dev flag
@@ -246,6 +266,9 @@ def run_validate(args: argparse.Namespace) -> None:
         # Load and validate configuration
         config = Config(args.config)
         config.log_summary()
+
+        # CARTO is the only basemap, so a missing key is a configuration error.
+        print_carto_key_status()
 
         # Also validate that activities.csv exists and can be read
         if not config.activities_csv.exists():
@@ -291,6 +314,10 @@ def run_generate(args: argparse.Namespace) -> None:
         # Load configuration
         config = Config(args.config)
         config.log_summary()
+
+        # Fail fast: CARTO is the only basemap, so no key means no map. Checking
+        # here avoids running the whole pipeline before hitting that error.
+        print_carto_key_status()
 
         # Stage 1: Data loading & filtering
         print_stage("Stage 1: Loading & Filtering Activities")
@@ -568,9 +595,22 @@ def run_export_gpx(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def load_config_env(config_path: Path | None) -> None:
+    """Load `.env` from the config file's directory, when one was given.
+
+    The package already loads `.env` from the working directory and the project
+    root (see ``load_env_files``). Loading it next to an explicit ``--config``
+    file as well means ``strava-heatmap generate --config /path/to/config.toml``
+    finds ``/path/to/.env``, so the CARTO key travels with the configuration.
+    """
+    if config_path is not None:
+        load_env_files(config_path.parent)
+
+
 def main():
     """Main entry point that routes to the appropriate subcommand."""
     args = parse_args()
+    load_config_env(getattr(args, "config", None))
 
     if args.command == "validate":
         run_validate(args)

@@ -60,9 +60,10 @@
  *     `<layer_control>_layers = { base_layers, overlays }`. Because it is a
  *     top-level `var` it is visible on `window`, so we can walk `window` to
  *     locate the overlays map (same technique as ExclusiveLayerControl).
- *   * Basemap: the configured CARTO tile layer is already on the map; we
- *     switch styles by creating a new L.tileLayer for the target style and
- *     removing any existing tile layers whose URL matches the CARTO domain.
+ *   * Basemap: CARTO is the only basemap provider. The configured CARTO tile
+ *     layer is already on the map; we switch styles by creating a new
+ *     L.tileLayer for the target style (with the embedded API key) and removing
+ *     any existing tile layers whose URL matches the CARTO domain.
  */
 (function (global) {
   "use strict";
@@ -112,6 +113,11 @@
   }
 
   function makeTileLayer(style, apiKey) {
+    // CARTO is the only basemap provider, so a page without a key cannot show a
+    // basemap at all. Fail loudly instead of requesting keyless tiles.
+    if (!apiKey) {
+      throw new Error("No CARTO API key was embedded in this page.");
+    }
     var url =
       "https://basemaps.cartocdn.com/rastertiles/" + style +
       "/{z}/{x}/{y}.png?key=" + encodeURIComponent(apiKey);

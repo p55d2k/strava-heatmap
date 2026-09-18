@@ -14,6 +14,7 @@ from folium import MacroElement
 from jinja2 import Template
 
 from src.map_builder.constants import (
+    CARTO_STYLES,
     DEFAULT_CARTO_STYLE,
     DEFAULT_RASTER_MODE,
     INDEPENDENT_LAYER_NAMES,
@@ -30,25 +31,104 @@ from src.map_builder.control import (
     legend_css,
 )
 
-# Load variables from .env (without overriding already-set environment variables).
-load_dotenv()
+# Project root, used as a fallback location for `.env` (src/map_builder/ -> ..).
+_PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
+
+def _walk_up_for_env(start: Path) -> Path | None:
+    """Return the first ``.env`` found in ``start`` or any parent directory."""
+    for directory in (start, *start.parents):
+        candidate = directory / ".env"
+        if candidate.is_file():
+            return candidate
+    return None
+
+
+def load_env_files(start_dir: Path | None = None) -> list[Path]:
+    """Load ``.env`` files into the process environment and report what was used.
+
+    The search starts in ``start_dir`` (the working directory by default — where
+    the CLI is run and where ``config.toml`` is discovered), then falls back to
+    the project root next to this package.
+
+    This must be done explicitly rather than with a bare ``load_dotenv()``:
+    python-dotenv resolves the file relative to the *module* that calls it, so an
+    installed copy (``uv tool install .``) would look inside site-packages and
+    never find the project's ``.env``. Variables already set in the real
+    environment always win over the file.
+
+    Returns:
+        The ``.env`` paths that were loaded, in order (deduplicated).
+    """
+    start = (start_dir or Path.cwd()).resolve()
+    candidates = [_walk_up_for_env(start), _PROJECT_ROOT / ".env"]
+
+    loaded: list[Path] = []
+    seen: set[Path] = set()
+    for candidate in candidates:
+        if candidate is None or candidate in seen or not candidate.is_file():
+            continue
+        seen.add(candidate)
+        load_dotenv(candidate, override=False)
+        loaded.append(candidate)
+    return loaded
+
+
+# Run at import so every entry point (CLI, tests, direct build_map use) sees the
+# project's environment variables.
+load_env_files()
+
+# CARTO is the only basemap provider. It renders from OpenStreetMap data, so its
+# terms require crediting both in the visible attribution — that credit is not an
+# OpenStreetMap *tile* reference; the tiles themselves always come from CARTO.
 CARTO_ATTRIBUTION = (
     '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> '
     'contributors &copy; <a href="https://carto.com/attributions">CARTO</a>'
 )
+
+# Where to get a key, quoted in the error raised when one is missing.
+CARTO_KEY_SETUP_URL = "https://carto.com/developers/tiles"
+
+# Values that look like a key but are really the un-edited .env.example
+# placeholder; treated as "no key" so copying the template without filling it in
+# fails with the setup message instead of a silent wall of broken tiles.
+CARTO_KEY_PLACEHOLDERS = {"your_key_here"}
+
+
+class CartoApiKeyMissingError(ValueError):
+    """Raised when CARTO basemaps are requested without a configured API key."""
 
 
 def get_carto_api_key() -> str:
     """Return the CARTO API key from the `CARTO_API_KEY` environment variable.
 
     The key can be provided via a `.env` file (see ``.env.example``) or the
-    exported `CARTO_API_KEY` environment variable.
-
-    Returns an empty string when no key is configured. The caller then uses
-    the keyless OpenStreetMap fallback.
+    exported `CARTO_API_KEY` environment variable. Returns an empty string when
+    no key is configured; callers that actually need tiles should use
+    :func:`require_carto_api_key` instead.
     """
     key = os.getenv("CARTO_API_KEY", "").strip()
+    return key
+
+
+def require_carto_api_key() -> str:
+    """Return the configured CARTO API key, or raise with setup instructions.
+
+    CARTO is the only basemap provider, so every map build needs a key. Failing
+    here (rather than rendering a basemap-less map) means the problem is reported
+    before the expensive rasterization stage runs.
+
+    Raises:
+        CartoApiKeyMissingError: If ``CARTO_API_KEY`` is unset or blank.
+    """
+    key = get_carto_api_key()
+    if not key or key.lower() in CARTO_KEY_PLACEHOLDERS:
+        raise CartoApiKeyMissingError(
+            "CARTO_API_KEY is not set, and CARTO is now the only basemap provider.\n"
+            "  -> Copy .env.example to .env and set CARTO_API_KEY=<your key>\n"
+            f"  -> Get a free key at {CARTO_KEY_SETUP_URL}\n"
+            "  -> Alternatively export CARTO_API_KEY in your shell before running"
+        )
     return key
 
 
@@ -60,11 +140,17 @@ def build_tile_url(style: str = DEFAULT_CARTO_STYLE) -> str:
 
     Returns:
         A tile URL template with {z}/{x}/{y} placeholders and the API key.
+
+    Raises:
+        CartoApiKeyMissingError: If no CARTO API key is configured.
+        ValueError: If ``style`` is not a supported CARTO style.
     """
-    key = get_carto_api_key()
-    if key:
-        return f"https://basemaps.cartocdn.com/rastertiles/{style}/{{z}}/{{x}}/{{y}}.png?key={key}"
-    return "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+    if style not in CARTO_STYLES:
+        raise ValueError(
+            f"Unknown CARTO style: {style!r}. Expected one of: {', '.join(CARTO_STYLES)}"
+        )
+    key = require_carto_api_key()
+    return f"https://basemaps.cartocdn.com/rastertiles/{style}/{{z}}/{{x}}/{{y}}.png?key={key}"
 
 
 # Home marker sizing — Google-Maps style: the marker should shrink as you zoom
@@ -156,8 +242,10 @@ def _new_map(location: list[float], *, embed: bool, show_attribution: bool = Tru
 
     Both maps stay fully interactive — the widget can still be panned, zoomed
     and scrolled, it just carries no heatmap control panel (and no scale bar).
-    Tile attribution is always enabled because it is required by the basemap
-    terms, regardless of the legacy ``show_attribution`` argument.
+    Tile attribution is always enabled because it is required by the CARTO tile
+    terms, regardless of the legacy ``show_attribution`` argument. It is styled
+    down rather than removed (see ``assets/legend.css``): small and low-contrast
+    in the corner, but always legible and on the map.
     """
     options: dict = {}
     return folium.Map(
@@ -241,8 +329,9 @@ def build_map(
             and the GeoJSON / GPX payloads (which exist for panel buttons) are
             left out, keeping the file small enough to drop into an ``<iframe>``.
         embed_legend: Keep the colour legend in the widget.
-        embed_attribution: Keep the tile attribution control in the widget.
-            The tile terms require it, so it defaults on.
+        embed_attribution: Legacy flag; the required basemap credit is always
+            kept in the widget (styled minimally), since the CARTO tile terms
+            require it.
         embed_home_marker: Keep the home marker in the widget.
         embed_tracks: Draw the raw GPS tracks in the widget.
         embed_metrics: Metric layer names to bake into the widget and show
@@ -253,7 +342,9 @@ def build_map(
     """
     map_location = home if home is not None else centre
     m = _new_map(map_location, embed=embed, show_attribution=embed_attribution)
-    uses_carto = bool(get_carto_api_key())
+    # Fail fast: every build needs the CARTO key for both the initial basemap
+    # and the panel's style switcher.
+    api_key = require_carto_api_key()
     folium.TileLayer(
         tiles=build_tile_url(carto_style),
         attr=CARTO_ATTRIBUTION,
@@ -262,10 +353,9 @@ def build_map(
         show=True,
         max_zoom=20,
         keep_buffer=0,
-        # CARTO serves tiles with CORS, which is needed by the PNG export.
-        # OSM does not promise CORS, so leave its requests as normal browser
-        # image requests.
-        crossOrigin=uses_carto,
+        # CARTO serves tiles with CORS, which the PNG export needs to read them
+        # back off a canvas, so request them with it.
+        crossOrigin=True,
     ).add_to(m)
 
     # Add a zoom-responsive marker for the home location so it is visually
@@ -349,7 +439,7 @@ def build_map(
             ControlPanel(
                 map_opacity=map_opacity,
                 carto_style=carto_style,
-                api_key=get_carto_api_key(),
+                api_key=api_key,
                 bounds=bounds,
                 centre=centre,
                 home=home,

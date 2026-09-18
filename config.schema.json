@@ -433,7 +433,7 @@
     },
     "EMBED_ATTRIBUTION": {
       "default": true,
-      "description": "Legacy setting retained for compatibility; tile attribution is always shown because the CARTO / OpenStreetMap tile terms require it.",
+      "description": "Legacy setting retained for compatibility; the required basemap credit is always shown (styled minimally, never hidden) because the CARTO tile terms require it.",
       "title": "Embed Attribution",
       "type": "boolean"
     },

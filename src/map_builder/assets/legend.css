@@ -1,11 +1,11 @@
 /* ================================================================
-   Shared legend stylesheet — the colour / typography custom
-   properties and the legend card itself.
+   Shared map-chrome stylesheet — the colour / typography custom
+   properties, the legend card, and the basemap attribution control.
 
-   Kept separate from panel.css so the embeddable widget (which has no
-   control panel) can pull in just the legend without also dragging in
-   the full-height sidebar layout, which would otherwise offset the map
-   beside a sidebar the widget does not have.
+   Everything here is rendered by BOTH the full page and the embeddable
+   widget, so it lives in this file rather than panel.css. panel.css is
+   the full-height sidebar layout, which the widget must not pull in (it
+   would offset the map beside a sidebar the widget does not have).
    ================================================================ */
 
 :root {
@@ -77,4 +77,33 @@
   margin-top: 3px;
   color: var(--hcp-text-muted);
   font-size: 11px;
+}
+
+/* ------------------------------------------------- Basemap attribution */
+
+/* The basemap credit ("© OpenStreetMap contributors © CARTO") is required by
+   the tile licence — the tiles are CARTO's rendering of OpenStreetMap data —
+   so it is always shown, including in exported PNGs. It is deliberately kept
+   visually minimal so the map, not the credit, is what you notice.
+
+   Minimal, never hidden: no display:none / visibility:hidden / clipping, and
+   the text stays legible (Leaflet's default is 11px on a white bar) rather
+   than being shrunk or faded into something unreadable. */
+.leaflet-control-attribution {
+  background: rgba(0, 0, 0, 0.55) !important;
+  color: rgba(255, 255, 255, 0.8) !important;
+  font-size: 10px !important;
+  line-height: 1.35 !important;
+  padding: 1px 6px !important;
+  border-radius: 4px 0 0 0 !important;
+  box-shadow: none !important;
+}
+
+.leaflet-control-attribution a {
+  color: rgba(255, 255, 255, 0.88) !important;
+  text-decoration: none !important;
+}
+
+.leaflet-control-attribution a:hover {
+  text-decoration: underline !important;
 }

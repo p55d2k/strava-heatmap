@@ -3,6 +3,7 @@ Unit tests for src/map_builder.py - map building and HTML output functions.
 """
 
 import json
+import os
 import re
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -17,6 +18,7 @@ from src.map_builder import (
     INDEPENDENT_LAYER_NAMES,
     METRIC_LAYER_NAMES,
     RASTER_MODES,
+    CartoApiKeyMissingError,
     ControlPanel,
     ExclusiveLayerControl,
     LegendBuilder,
@@ -38,7 +40,9 @@ from src.map_builder import (
     home_marker_radius,
     legend_css,
     legend_row,
+    load_env_files,
     pace_str,
+    require_carto_api_key,
 )
 from src.map_builder.constants import (
     COVERAGE_LAYER,
@@ -775,6 +779,20 @@ class TestBuildMap:
         # Tiles must be requested with CORS (Leaflet's camelCase option name) so
         # the control panel's "Save as PNG" export can read them off a canvas.
         assert tile_kwargs["crossOrigin"] is True
+
+    def test_build_map_requires_carto_api_key(self, monkeypatch):
+        """build_map refuses to render without a key instead of falling back."""
+        monkeypatch.delenv("CARTO_API_KEY", raising=False)
+        with pytest.raises(CartoApiKeyMissingError):
+            build_map(
+                self.tracks,
+                self.layers,
+                self.bounds,
+                self.centre,
+                self.legend_html,
+                self.output_path,
+                self.map_opacity,
+            )
 
     @patch("src.map_builder.map_builder.folium.Map")
     @patch("src.map_builder.map_builder.folium.TileLayer")
@@ -1813,15 +1831,57 @@ class TestLayerGroupConfig:
         """Should return the key from the environment."""
         assert get_carto_api_key() == "default_public_testkey"
 
-    def test_get_carto_api_key_is_optional(self, monkeypatch):
-        """A missing key selects the keyless OpenStreetMap fallback."""
-        monkeypatch.delenv("CARTO_API_KEY", raising=False)
-        assert get_carto_api_key() == ""
-
-    def test_get_carto_api_key_ignores_blank(self, monkeypatch):
-        """A blank key also selects the keyless OpenStreetMap fallback."""
+    def test_get_carto_api_key_blank_reads_as_unset(self, monkeypatch):
+        """A blank key is reported as unset rather than as whitespace."""
         monkeypatch.setenv("CARTO_API_KEY", "   ")
         assert get_carto_api_key() == ""
+
+    def test_require_carto_api_key_raises_when_missing(self, monkeypatch):
+        """CARTO is the only basemap, so a missing key is a hard error."""
+        monkeypatch.delenv("CARTO_API_KEY", raising=False)
+        with pytest.raises(CartoApiKeyMissingError):
+            require_carto_api_key()
+
+    def test_require_carto_api_key_raises_when_blank(self, monkeypatch):
+        """A whitespace-only key is treated as missing too."""
+        monkeypatch.setenv("CARTO_API_KEY", "   ")
+        with pytest.raises(CartoApiKeyMissingError):
+            require_carto_api_key()
+
+    def test_require_carto_api_key_rejects_env_example_placeholder(self, monkeypatch):
+        """An unfilled .env copied from the template is not a usable key."""
+        monkeypatch.setenv("CARTO_API_KEY", "your_key_here")
+        with pytest.raises(CartoApiKeyMissingError):
+            require_carto_api_key()
+
+    def test_require_carto_api_key_returns_configured_key(self, carto_api_key):
+        """A configured key is returned unchanged."""
+        assert require_carto_api_key() == "default_public_testkey"
+
+    def test_load_env_files_reads_from_the_given_directory(self, tmp_path, monkeypatch):
+        """`.env` is resolved from the search directory, not this module.
+
+        Regression: a bare ``load_dotenv()`` resolves the file relative to the
+        calling module, so the ``uv tool install .`` CLI (whose copy lives in
+        site-packages) never saw the project's ``.env``.
+        """
+        monkeypatch.setenv("CARTO_TEST_KEY", "placeholder")
+        monkeypatch.delenv("CARTO_TEST_KEY")
+        (tmp_path / ".env").write_text("CARTO_TEST_KEY=from_env_file\n")
+
+        loaded = load_env_files(tmp_path)
+
+        assert (tmp_path / ".env").resolve() in [path.resolve() for path in loaded]
+        assert os.environ["CARTO_TEST_KEY"] == "from_env_file"
+
+    def test_load_env_files_lets_the_real_environment_win(self, tmp_path, monkeypatch):
+        """An exported variable is not overwritten by the file."""
+        monkeypatch.setenv("CARTO_TEST_KEY", "from_shell")
+        (tmp_path / ".env").write_text("CARTO_TEST_KEY=from_env_file\n")
+
+        load_env_files(tmp_path)
+
+        assert os.environ["CARTO_TEST_KEY"] == "from_shell"
 
     def test_build_tile_url_contains_key(self, carto_api_key):
         """build_tile_url should embed the API key and default style."""
@@ -1835,10 +1895,16 @@ class TestLayerGroupConfig:
         assert url.startswith("https://basemaps.cartocdn.com/rastertiles/light_all/")
         assert url.endswith("?key=default_public_testkey")
 
-    def test_build_tile_url_uses_single_official_osm_endpoint_without_key(self, monkeypatch):
-        """The keyless fallback must use OSM's single official tile endpoint."""
+    def test_build_tile_url_requires_api_key(self, monkeypatch):
+        """Without a key there is no tile URL: CARTO is the only provider."""
         monkeypatch.delenv("CARTO_API_KEY", raising=False)
-        assert build_tile_url() == "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+        with pytest.raises(CartoApiKeyMissingError):
+            build_tile_url()
+
+    def test_build_tile_url_rejects_unknown_style(self, carto_api_key):
+        """Only the supported CARTO styles may be requested."""
+        with pytest.raises(ValueError):
+            build_tile_url("rainbow")
 
 
 class TestConstants:
@@ -1868,6 +1934,26 @@ class TestConstants:
         assert ".folium-map" not in css
         assert "leaflet-control-layers" not in css
         assert css.count(":root") == 1
+
+    def test_attribution_is_minimal_but_not_hidden(self):
+        """The basemap credit is styled down, never hidden.
+
+        The credit is required by the tile licence (CARTO tiles are a rendering
+        of OpenStreetMap data), so the stylesheet may shrink and mute it but
+        must not contain any rule that removes it from view.
+        """
+        css = legend_css()
+        assert ".leaflet-control-attribution" in css
+        # Shrunk and muted...
+        assert "font-size: 10px" in css
+        # ...but never taken off the map.
+        assert "display: none" not in css
+        assert "visibility: hidden" not in css
+
+    def test_attribution_styling_ships_to_both_pages(self):
+        """Full page and widget both show attribution, so both get the styling."""
+        assert ".leaflet-control-attribution" in legend_css()
+        assert ".leaflet-control-attribution" in controls_css()
 
     def test_folium_map_sizing_beats_folium_id_rule(self):
         """The sidebar map-offset sizing must survive Folium's #map_<hash> rule.
