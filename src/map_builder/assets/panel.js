@@ -1178,6 +1178,417 @@
       );
   }
 
+  /* ---- Activity tooltips (click near a route) --------------------------- */
+
+  // Clicking the map opens a popup listing the activities whose route passes
+  // near the click: date, name, average pace, average heart rate and a link
+  // back to Strava when the export carried an activity id. The click tolerance
+  // (ACTIVITY_SEARCH_RADIUS_PX, below) is what makes this usable — a route is
+  // a thin line, so a pixel-perfect hit would rarely succeed. The data is the
+  // per-cell index embedded by ControlPanel (see src/activity_index.py) —
+  // zlib-compressed and base64-encoded like the export payloads — and it is
+  // inflated lazily on the first click, never at page load.
+  var ACTIVITY_DATA_ID = "hcp-activity-data";
+  // Cap how many rows a single popup renders. A well-used junction can be
+  // visited by hundreds of activities; the popup then says how many more.
+  var ACTIVITY_MAX_LISTED = 50;
+  // Click tolerance, in screen pixels. A route is a thin line that rarely sits
+  // under the exact pixel clicked, and the painted heatmap is blurred wider
+  // than the raw data cells, so requiring a pixel-perfect hit mostly returns
+  // "nothing here". Instead the click gathers every cell whose centre falls
+  // within this many pixels, which also picks up the far side of a road.
+  // Defining it in screen pixels (rather than cells or metres) keeps the
+  // gesture feeling the same at every zoom level.
+  var ACTIVITY_SEARCH_RADIUS_PX = 14;
+  // Used only when the map cannot report its zoom (a minimal shim): a modest
+  // fixed number of cells keeps the search useful without a huge scan.
+  var ACTIVITY_SEARCH_RADIUS_CELLS_FALLBACK = 6;
+  // Hard ceiling on the search radius in cells, so a world-zoom view cannot
+  // ask for a scan of millions of cells. 40 cells is a generous click area at
+  // any realistic map zoom.
+  var ACTIVITY_MAX_SEARCH_RADIUS_CELLS = 40;
+
+  // Web Mercator (EPSG:3857) helpers. The index is keyed on the same raster grid
+  // the heatmap is painted from, whose geometry is stored in metres in that
+  // projection, while Leaflet hands us WGS84 lat/lng — so a click has to be
+  // converted before it can be looked up. The formulas mirror Leaflet's own
+  // spherical Mercator (and pyproj's EPSG:3857).
+  var EARTH_HALF_CIRCUMFERENCE = 20037508.342789244;
+
+  function lonToMercator(lon) {
+    return (lon * EARTH_HALF_CIRCUMFERENCE) / 180;
+  }
+
+  function latToMercator(lat) {
+    var clamped = Math.max(-89.999999, Math.min(89.999999, lat));
+    var y = Math.log(Math.tan(((90 + clamped) * Math.PI) / 360)) / (Math.PI / 180);
+    return (y * EARTH_HALF_CIRCUMFERENCE) / 180;
+  }
+
+  // How many grid cells make up the click tolerance at the current zoom. The
+  // tolerance is defined in screen pixels, so it is converted through the map's
+  // own Web Mercator scale (the EPSG:3857 world is 2 * EARTH_HALF_CIRCUMFERENCE
+  // metres across 256 * 2^zoom pixels) and clamped so a zoomed-out view cannot
+  // ask for an enormous scan.
+  function activitySearchRadiusCells(map, index) {
+    if (!index || !index.cellSize) return ACTIVITY_SEARCH_RADIUS_CELLS_FALLBACK;
+    var zoom = map && typeof map.getZoom === "function" ? map.getZoom() : null;
+    if (zoom === null || !isFinite(zoom)) return ACTIVITY_SEARCH_RADIUS_CELLS_FALLBACK;
+    var metresPerPixel = (2 * EARTH_HALF_CIRCUMFERENCE) / (256 * Math.pow(2, zoom));
+    var cells = (ACTIVITY_SEARCH_RADIUS_PX * metresPerPixel) / index.cellSize;
+    return Math.max(1, Math.min(ACTIVITY_MAX_SEARCH_RADIUS_CELLS, Math.round(cells)));
+  }
+
+  // Every activity whose route passes within the click tolerance, nearest
+  // first, each as ``{ id, distance }`` with ``distance`` in ground metres so
+  // the popup can say how far the route is (which is how you tell routes apart
+  // when a click catches more than one — a junction, or both sides of a road).
+  //
+  // The exact clicked cell follows the rasterizer's "nearest cell" convention
+  // (round to the closest bin centre); cells are then walked in a square around
+  // it and an activity seen in several cells keeps its smallest distance, so a
+  // route is listed once, at its closest approach to the click.
+  //
+  // Returns ``null`` for a click that is off the data entirely (outside the
+  // grid with nothing nearby), and the possibly-empty list otherwise.
+  function activitiesNear(index, latlng, map) {
+    if (!index || !index.cells || !latlng) return null;
+    var col = Math.round((lonToMercator(latlng.lng) - index.xMin) / index.cellSize);
+    var row = Math.round((index.yMax - latToMercator(latlng.lat)) / index.cellSize);
+    var inside = col >= 0 && col < index.cols && row >= 0 && row < index.rows;
+    var radius = activitySearchRadiusCells(map, index);
+
+    // Nearest squared cell distance seen so far, per activity id.
+    var nearest = {};
+    var ids = [];
+    for (var dr = -radius; dr <= radius; dr++) {
+      var r = row + dr;
+      if (r < 0 || r >= index.rows) continue;
+      for (var dc = -radius; dc <= radius; dc++) {
+        var c = col + dc;
+        if (c < 0 || c >= index.cols) continue;
+        var members = index.cells[String(r * index.cols + c)];
+        if (!members) continue;
+        var distance = dr * dr + dc * dc;
+        for (var i = 0; i < members.length; i++) {
+          var id = members[i];
+          if (nearest[id] === undefined) {
+            nearest[id] = distance;
+            ids.push(id);
+          } else if (distance < nearest[id]) {
+            nearest[id] = distance;
+          }
+        }
+      }
+    }
+    if (!ids.length && !inside) return null;
+
+    // Cell distances are Web Mercator metres (the projection is conformal, so
+    // one of those corresponds to cos(latitude) ground metres).
+    var latRadians = (Math.max(-89.999999, Math.min(89.999999, latlng.lat)) * Math.PI) / 180;
+    var groundMetresPerCell = index.cellSize * Math.cos(latRadians);
+    var results = ids.map(function (id) {
+      return { id: id, distance: Math.sqrt(nearest[id]) * groundMetresPerCell };
+    });
+    results.sort(function (a, b) {
+      return a.distance - b.distance || a.id - b.id;
+    });
+    return results;
+  }
+
+  // A short, readable distance from the click to the route.
+  function formatDistance(metres) {
+    if (typeof metres !== "number" || !isFinite(metres)) return "";
+    if (metres < 1000) return Math.round(metres) + " m";
+    return (metres / 1000).toFixed(1) + " km";
+  }
+
+  var activityIndexPromise = null;
+
+  // Inflate the embedded index once, on demand. A page with no index (an older
+  // build, or a hand-made page) resolves to null and the click is ignored.
+  function loadActivityIndex() {
+    if (activityIndexPromise) return activityIndexPromise;
+    var el = document.getElementById(ACTIVITY_DATA_ID);
+    var payload = el && el.textContent ? el.textContent.replace(/\s+/g, "") : "";
+    if (!payload) {
+      activityIndexPromise = Promise.resolve(null);
+      return activityIndexPromise;
+    }
+    activityIndexPromise = inflateZlib(decodeBase64Bytes(payload)).then(function (text) {
+      return JSON.parse(text);
+    });
+    return activityIndexPromise;
+  }
+
+  // One muted metadata line: whatever of date / type / pace / heart rate is
+  // known. The type is what the filter chips act on, so it is worth showing.
+  function activityMetaLine(activity) {
+    var parts = [];
+    if (activity[0]) parts.push(activity[0]);
+    if (activity[5]) parts.push(activity[5]);
+    if (activity[2]) parts.push(activity[2]);
+    if (typeof activity[3] === "number") parts.push(activity[3] + " bpm");
+    return parts.join(" \u00b7 ");
+  }
+
+  // Build one row of the list, as DOM nodes rather than an HTML string:
+  // activity names come from the export and must never be treated as markup.
+  function buildActivityRow(activity, distanceMetres) {
+    var item = document.createElement("li");
+    item.className = "hcp-activity";
+
+    // Name on the left, how far the route is on the right.
+    var head = document.createElement("div");
+    head.className = "hcp-activity-head";
+
+    var name = document.createElement("div");
+    name.className = "hcp-activity-name";
+    name.textContent = activity[1] || "Activity";
+    head.appendChild(name);
+
+    var distance = document.createElement("span");
+    distance.className = "hcp-activity-distance";
+    distance.textContent = formatDistance(distanceMetres);
+    head.appendChild(distance);
+    item.appendChild(head);
+
+    var meta = document.createElement("div");
+    meta.className = "hcp-activity-meta";
+    meta.textContent = activityMetaLine(activity);
+    item.appendChild(meta);
+
+    if (activity[4]) {
+      var link = document.createElement("a");
+      link.className = "hcp-activity-link";
+      link.href = activity[4];
+      link.target = "_blank";
+      link.rel = "noopener noreferrer";
+      link.textContent = "View on Strava";
+      item.appendChild(link);
+    }
+    return item;
+  }
+
+  // The distinct activity types (and dates) among a result set, in nearest-first
+  // order. A filter is only offered when it would actually do something, so a
+  // popup listing one type and one date stays uncluttered.
+  function distinctActivityValues(results, activities) {
+    var types = [];
+    var dates = [];
+    results.forEach(function (result) {
+      var activity = activities[result.id];
+      if (!activity) return;
+      var type = activity[5] || "";
+      if (types.indexOf(type) === -1) types.push(type);
+      var date = activity[0] || "";
+      if (date && dates.indexOf(date) === -1) dates.push(date);
+    });
+    return { types: types, dates: dates };
+  }
+
+  // Build the popup body. ``results`` is the output of activitiesNear (nearest
+  // first) and every row carries the distance from the click so several routes
+  // in one popup stay tellable apart. When the result set spans more than one
+  // activity type, or more than one date, a compact filter bar is added so the
+  // list can be narrowed without moving the map.
+  function buildActivityPopup(index, results) {
+    var activities = index.activities || [];
+    var root = document.createElement("div");
+    root.className = "hcp-activities";
+
+    var title = document.createElement("div");
+    title.className = "hcp-activities-title";
+    root.appendChild(title);
+
+    var list = document.createElement("ul");
+    list.className = "hcp-activities-list";
+
+    var notice = document.createElement("div");
+    notice.className = "hcp-activities-more";
+
+    // Filter state. No type selected and no date bounds means "everything".
+    var selectedType = null;
+    var dateFrom = "";
+    var dateTo = "";
+
+    function filtersActive() {
+      return selectedType !== null || Boolean(dateFrom) || Boolean(dateTo);
+    }
+
+    function matches(activity) {
+      if (!activity) return false;
+      if (selectedType !== null && (activity[5] || "") !== selectedType) return false;
+      // ISO dates compare correctly as plain strings.
+      var date = activity[0] || "";
+      if (dateFrom && date < dateFrom) return false;
+      if (dateTo && date > dateTo) return false;
+      return true;
+    }
+
+    // Rebuild the rows for the current filters. The controls below mutate the
+    // state and call this again, so the open popup updates in place.
+    function render() {
+      var matching = results.filter(function (result) {
+        return matches(activities[result.id]);
+      });
+
+      title.textContent = filtersActive()
+        ? matching.length + " of " + results.length + " activities shown"
+        : results.length === 1
+          ? "1 activity near here"
+          : results.length + " activities near here";
+
+      list.innerHTML = "";
+      var shown = Math.min(matching.length, ACTIVITY_MAX_LISTED);
+      for (var i = 0; i < shown; i++) {
+        list.appendChild(
+          buildActivityRow(activities[matching[i].id], matching[i].distance)
+        );
+      }
+
+      if (matching.length > shown) {
+        notice.textContent = "+" + (matching.length - shown) + " more";
+      } else if (matching.length === 0) {
+        notice.textContent = "No activities match these filters.";
+      } else {
+        notice.textContent = "";
+      }
+    }
+
+    var present = distinctActivityValues(results, activities);
+
+    // Type chips: one per distinct type, plus "All". Only worth showing when
+    // there is actually a choice to make.
+    if (present.types.length > 1) {
+      var filters = document.createElement("div");
+      filters.className = "hcp-activities-filters";
+
+      var typeBox = document.createElement("div");
+      typeBox.className = "hcp-filter-types";
+      var chips = [];
+      var chipDefs = [{ label: "All", value: null }];
+      present.types.forEach(function (type) {
+        chipDefs.push({ label: type || "Other", value: type });
+      });
+      chipDefs.forEach(function (def) {
+        var chip = document.createElement("button");
+        chip.type = "button";
+        chip.className =
+          "hcp-filter-chip" + (def.value === null ? " hcp-filter-chip-active" : "");
+        chip.textContent = def.label;
+        chip.addEventListener("click", function () {
+          selectedType = def.value;
+          chips.forEach(function (other) {
+            other.classList.toggle("hcp-filter-chip-active", other === chip);
+          });
+          render();
+        });
+        chips.push(chip);
+        typeBox.appendChild(chip);
+      });
+      filters.appendChild(typeBox);
+
+      // Date bounds: a from/to pair, again only when the dates differ.
+      if (present.dates.length > 1) {
+        var dateBox = document.createElement("div");
+        dateBox.className = "hcp-filter-dates";
+        var addDateBound = function (bound, labelText) {
+          var label = document.createElement("label");
+          label.className = "hcp-filter-date";
+          label.textContent = labelText;
+          var input = document.createElement("input");
+          input.type = "date";
+          input.className = "hcp-filter-date-input";
+          input.setAttribute("data-bound", bound);
+          input.addEventListener("change", function () {
+            if (bound === "from") dateFrom = input.value || "";
+            else dateTo = input.value || "";
+            render();
+          });
+          label.appendChild(input);
+          dateBox.appendChild(label);
+        };
+        addDateBound("from", "From ");
+        addDateBound("to", "To ");
+        filters.appendChild(dateBox);
+      }
+
+      root.appendChild(filters);
+    }
+
+    root.appendChild(list);
+    root.appendChild(notice);
+    render();
+    return root;
+  }
+
+  function buildEmptyActivityPopup() {
+    var root = document.createElement("div");
+    root.className = "hcp-activities hcp-activities-empty";
+    root.textContent = "No activities recorded near here.";
+    return root;
+  }
+
+  // Open a popup at the click. Leaflet's own ``map.openPopup`` is preferred;
+  // the explicit L.popup path covers a map shim that only exposes the factory.
+  function openActivityPopup(map, latlng, node) {
+    var options = { className: "hcp-activity-popup", maxWidth: 340, autoPan: true };
+    if (map && typeof map.openPopup === "function") {
+      map.openPopup(node, latlng, options);
+      return;
+    }
+    if (global.L && typeof global.L.popup === "function") {
+      global.L.popup(options).setLatLng(latlng).setContent(node).openOn(map);
+    }
+  }
+
+  // Ring the click at exactly the search tolerance, so it is visible why the
+  // listed activities count as "near here" (the click is not pixel-perfect and
+  // may sit beside the route it found). Only the most recent ring is kept.
+  var activityHighlight = null;
+
+  function highlightSearchArea(map, latlng) {
+    if (!map || !global.L || typeof global.L.circleMarker !== "function") return;
+    if (activityHighlight && typeof map.removeLayer === "function") {
+      map.removeLayer(activityHighlight);
+    }
+    activityHighlight = global.L.circleMarker(latlng, {
+      radius: ACTIVITY_SEARCH_RADIUS_PX,
+      color: "#fc4c02",
+      weight: 1,
+      opacity: 0.9,
+      fillColor: "#fc4c02",
+      fillOpacity: 0.12,
+      interactive: false,
+    });
+    if (typeof activityHighlight.addTo === "function") activityHighlight.addTo(map);
+  }
+
+  function installActivityTooltips(map) {
+    if (!map || typeof map.on !== "function") return;
+    // No embedded index means nothing to show; leave clicks alone entirely.
+    if (!document.getElementById(ACTIVITY_DATA_ID)) return;
+    map.on("click", function (event) {
+      if (!event || !event.latlng) return;
+      loadActivityIndex()
+        .then(function (index) {
+          if (!index) return;
+          var results = activitiesNear(index, event.latlng, map);
+          if (results === null) return;
+          var node = results.length
+            ? buildActivityPopup(index, results)
+            : buildEmptyActivityPopup();
+          highlightSearchArea(map, event.latlng);
+          openActivityPopup(map, event.latlng, node);
+        })
+        .catch(function () {
+          // A corrupt or undecodable payload must not break the rest of the
+          // panel; the click simply produces no popup.
+        });
+    });
+  }
+
   /* ---- Init ------------------------------------------------------------- */
 
   function init(config) {
@@ -1517,6 +1928,11 @@
     map.on("zoomend", function () {
       redrawVisibleOverlays(map);
     });
+
+    /* --- Activity click tooltips ----------------------------------------- */
+    // Clicking a painted pixel lists the activities behind it (see
+    // installActivityTooltips). A no-op on a page built without the index.
+    installActivityTooltips(map);
   }
 
   global.initHeatmapControlPanel = init;

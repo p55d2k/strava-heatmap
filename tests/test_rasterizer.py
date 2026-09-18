@@ -636,6 +636,101 @@ class TestRasterizeTracks:
         assert count == 2
 
 
+class TestRasterizeTracksCellActivities:
+    """The optional cell_activities collector behind the map's click tooltips."""
+
+    def setup_method(self):
+        """Set up transformers/grids over a 1000 x 1000 m area at 10 m/pixel."""
+        self.to_wm = MagicMock()
+        self.to_utm = MagicMock()
+        self.x_min_wm = -13500000.0
+        self.y_max_wm = 5700000.0
+        self.grids = create_grids(
+            self.x_min_wm, self.x_min_wm + 1000, self.y_max_wm - 1000, self.y_max_wm, 10.0
+        )
+
+    def _rasterize(self, cells):
+        tracks = [
+            ("activity-a", [[45.0, -122.0, 5.0, 150, 100.0]]),
+            ("activity-b", [[45.0, -122.0, 5.0, 150, 100.0]]),
+        ]
+        rasterize_tracks(
+            tracks,
+            self.to_wm,
+            self.to_utm,
+            500000.0,
+            5000000.0,
+            clip_m=None,
+            x_min_wm=self.x_min_wm,
+            y_max_wm=self.y_max_wm,
+            meters_per_pixel=10.0,
+            max_consecutive_same_cell=3,
+            grids=self.grids,
+            cell_activities=cells,
+        )
+
+    def test_records_each_activity_under_its_cell(self):
+        """Every activity is mapped to the cell its points were counted in."""
+        # Each track is transformed once, so the mock answers per track:
+        # track 0 -> cell (row 5, col 5); track 1 -> cell (row 10, col 10).
+        self.to_utm.transform.side_effect = [
+            (np.array([500000.0]), np.array([5000000.0])),
+            (np.array([500000.0]), np.array([5000000.0])),
+        ]
+        self.to_wm.transform.side_effect = [
+            (np.array([-13499950.0]), np.array([5699950.0])),
+            (np.array([-13499900.0]), np.array([5699900.0])),
+        ]
+
+        cells: dict = {}
+        self._rasterize(cells)
+
+        assert cells == {(5, 5): {0}, (10, 10): {1}}
+
+    def test_same_cell_keeps_every_visiting_activity(self):
+        """Activities sharing a cell are both listed against it."""
+        self.to_utm.transform.side_effect = [
+            (np.array([500000.0]), np.array([5000000.0])),
+            (np.array([500000.0]), np.array([5000000.0])),
+        ]
+        # Both tracks land in the same cell (row 5, col 5).
+        self.to_wm.transform.side_effect = [
+            (np.array([-13499950.0]), np.array([5699950.0])),
+            (np.array([-13499950.0]), np.array([5699950.0])),
+        ]
+
+        cells: dict = {}
+        self._rasterize(cells)
+
+        assert cells == {(5, 5): {0, 1}}
+
+    def test_collection_is_optional(self):
+        """Omitting the collector leaves rasterize_tracks unchanged."""
+        self.to_utm.transform.return_value = (
+            np.array([500000.0]),
+            np.array([5000000.0]),
+        )
+        self.to_wm.transform.return_value = (
+            np.array([-13499950.0]),
+            np.array([5699950.0]),
+        )
+        rasterize_tracks(
+            [("a", [[45.0, -122.0, 5.0, 150, 100.0]])],
+            self.to_wm,
+            self.to_utm,
+            500000.0,
+            5000000.0,
+            clip_m=None,
+            x_min_wm=self.x_min_wm,
+            y_max_wm=self.y_max_wm,
+            meters_per_pixel=10.0,
+            max_consecutive_same_cell=3,
+            grids=self.grids,
+        )
+        # No error, and the count grid still holds the visit.
+        assert np.sum(self.grids[2]) > 0
+
+
 class TestRasterModes:
     """Tests for raster_mode selection (raw-count / decay / binary-per-activity)."""
 

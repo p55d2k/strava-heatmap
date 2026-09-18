@@ -179,6 +179,8 @@ def _rasterize_track_points(
     unique_grid: np.ndarray,
     max_consecutive_same_cell: int,
     decay_factor: float = 0.5,
+    cell_activities: dict[tuple[int, int], set[int]] | None = None,
+    activity_index: int | None = None,
 ) -> int:
     """Rasterize a single track's points onto the strategy count grids.
 
@@ -196,6 +198,14 @@ def _rasterize_track_points(
     while deriving all three strategies from the same visit counts. The consecutive
     cap prevents a stationary stretch (e.g. a forgotten stop) from dominating, and
     the decay resets per activity so genuine multi-day coverage is unaffected.
+
+    When ``cell_activities`` and ``activity_index`` are supplied, every cell the
+    activity was counted in is recorded as ``cell_activities[(row, col)]``
+    gaining ``activity_index``. That index is what the map's click tooltips
+    query to list the activities behind a painted pixel (see
+    :mod:`src.activity_index`); collecting it here keeps it in exact step with
+    the heatmap, because it reuses the same counted visits rather than
+    re-walking the track.
 
     Returns:
         ``1`` if the activity contributed at least one cell to the coverage
@@ -221,6 +231,9 @@ def _rasterize_track_points(
 
     if not cell_visits:
         return 0
+    if cell_activities is not None and activity_index is not None:
+        for xi, yi in cell_visits:
+            cell_activities.setdefault((yi, xi), set()).add(activity_index)
     for (xi, yi), n_visits in cell_visits.items():
         count_raw_grid[yi, xi] += n_visits
         unique_grid[yi, xi] += 1
@@ -278,6 +291,7 @@ def rasterize_tracks(
     grids: tuple,
     decay_factor: float = 0.5,
     raster_mode: str = DEFAULT_RASTER_MODE,
+    cell_activities: dict[tuple[int, int], set[int]] | None = None,
 ) -> int:
     """Rasterize all tracks onto the grids.
 
@@ -306,6 +320,11 @@ def rasterize_tracks(
     painting itself is identical for every mode. It is validated here so an
     invalid mode fails fast before any rasterization work is done.
 
+    When ``cell_activities`` is supplied it is filled with ``(row, col) ->``
+    the set of track indices that were counted in that cell, using the same
+    clipped points and bounds as the painting. The map's click tooltips read it
+    to list the activities behind a painted pixel.
+
     Returns:
         The number of activities that contributed at least one counted cell.
         This is the denominator for the percentage-of-activities coverage
@@ -332,7 +351,9 @@ def rasterize_tracks(
 
     rasterized_count = 0
 
-    for _, track_pts in tqdm(tracks, desc="Rasterizing tracks", unit="track"):
+    for activity_index, (_, track_pts) in enumerate(
+        tqdm(tracks, desc="Rasterizing tracks", unit="track")
+    ):
         lats_a = np.array([p[0] for p in track_pts])
         lons_a = np.array([p[1] for p in track_pts])
         xs_utm, ys_utm = to_utm.transform(lons_a, lats_a)
@@ -362,6 +383,8 @@ def rasterize_tracks(
             unique_grid,
             max_consecutive_same_cell,
             decay_factor,
+            cell_activities,
+            activity_index,
         )
 
         for i in range(len(track_pts) - 1):

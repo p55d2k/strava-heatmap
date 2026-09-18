@@ -661,6 +661,46 @@ class TestBuildMap:
     @patch("src.map_builder.map_builder.folium.PolyLine")
     @patch("src.map_builder.map_builder.folium.raster_layers.ImageOverlay")
     @patch("src.map_builder.map_builder.folium.LayerControl")
+    @patch("src.map_builder.map_builder.ControlPanel")
+    def test_forwards_tooltips_payload(
+        self,
+        mock_control_panel,
+        mock_layer_control,
+        mock_image_overlay,
+        mock_polyline,
+        mock_feature_group,
+        mock_tile_layer,
+        mock_map,
+    ):
+        """build_map should hand the activity index to the control panel."""
+        mock_map.return_value = MagicMock()
+        mock_tile_layer.return_value = MagicMock()
+        mock_feature_group.return_value = MagicMock()
+        mock_polyline.return_value = MagicMock()
+        mock_image_overlay.return_value = MagicMock()
+        mock_layer_control.return_value = MagicMock()
+        mock_control_panel.return_value = MagicMock()
+
+        build_map(
+            self.tracks,
+            self.layers,
+            self.bounds,
+            self.centre,
+            self.legend_html,
+            self.output_path,
+            self.map_opacity,
+            tooltips="encoded-activity-index",
+        )
+
+        mock_control_panel.assert_called_once()
+        assert mock_control_panel.call_args[1]["tooltips"] == "encoded-activity-index"
+
+    @patch("src.map_builder.map_builder.folium.Map")
+    @patch("src.map_builder.map_builder.folium.TileLayer")
+    @patch("src.map_builder.map_builder.folium.FeatureGroup")
+    @patch("src.map_builder.map_builder.folium.PolyLine")
+    @patch("src.map_builder.map_builder.folium.raster_layers.ImageOverlay")
+    @patch("src.map_builder.map_builder.folium.LayerControl")
     def test_layer_visibility_matches_input(
         self,
         mock_layer_control,
@@ -1055,6 +1095,53 @@ class TestControlPanel:
         # that there is nothing to export.
         bare = ControlPanel(centre=[1.0, 2.0])
         assert "hcp-gpx-data" not in bare._template.module.html(bare, {})
+
+    def test_control_panel_embeds_activity_index_for_click_tooltips(self):
+        """ControlPanel should inline the compressed per-cell activity index."""
+        payload = encode_for_embedding(
+            '{"cellSize":10.0,"xMin":0.0,"yMax":0.0,"cols":1,"rows":1,'
+            '"activities":[["2024-01-01","Run","5:00/km",150,""]],"cells":{"0":[0]}}'
+        )
+        panel = ControlPanel(centre=[1.0, 2.0], tooltips=payload)
+        html = panel._template.module.html(panel, {})
+        assert 'id="hcp-activity-data"' in html
+        assert 'type="application/json"' in html
+        assert payload in html
+        # Without an index the block is left out; clicks then do nothing.
+        bare = ControlPanel(centre=[1.0, 2.0])
+        assert "hcp-activity-data" not in bare._template.module.html(bare, {})
+
+    def test_script_contains_activity_tooltip_logic(self):
+        """panel.js must inflate the index and list activities on a map click."""
+        script = control_panel_script()
+        assert "hcp-activity-data" in script
+        assert "installActivityTooltips" in script
+        assert "buildActivityPopup" in script
+        # A click gathers activities from a neighbourhood, not just one cell, so
+        # a route beside the clicked pixel is still found.
+        assert "activitiesNear" in script
+        assert "ACTIVITY_SEARCH_RADIUS_PX" in script
+        # Each row reports how far the route is, so several routes caught by one
+        # click stay tellable apart.
+        assert "hcp-activity-distance" in script
+        assert "formatDistance" in script
+        # The list can be narrowed in place, by activity type and date range.
+        assert "hcp-filter-chip" in script
+        assert "hcp-filter-date-input" in script
+        # The index travels compressed, so the click has to inflate it with the
+        # browser's own decompressor (lazily — see the constant + guard).
+        assert "DecompressionStream" in script
+        assert "inflateZlib" in script
+
+    def test_css_styles_activity_popup(self):
+        """The popup is dark-themed to match the rest of the map chrome."""
+        css = controls_css()
+        assert ".hcp-activity-popup" in css
+        assert ".hcp-activity-name" in css
+        assert ".hcp-activity-distance" in css
+        assert ".hcp-activity-link" in css
+        assert ".hcp-filter-chip" in css
+        assert ".hcp-filter-date" in css
 
     def test_gpx_download_is_named_after_output_gpx(self):
         """The panel offers the download under the configured OUTPUT_GPX name."""

@@ -408,6 +408,175 @@
   pointer-events: none;
 }
 
+/* ---------------------------------------------- Activity click tooltips */
+/* Clicking a painted heatmap pixel opens a Leaflet popup listing the
+   activities that passed through that cell (date, name, pace, heart rate and a
+   Strava link). The popup belongs to the map, not the sidebar, so these rules
+   are deliberately NOT scoped under .heatmap-control-panel. The popup carries
+   the ``hcp-activity-popup`` class (set in assets/panel.js), which both themes
+   the Leaflet chrome and anchors the rules below. */
+.hcp-activity-popup .leaflet-popup-content-wrapper {
+  background: var(--hcp-bg);
+  color: var(--hcp-text);
+  border: 1px solid var(--hcp-border);
+  border-radius: var(--hcp-radius);
+  box-shadow: var(--hcp-shadow);
+  font-family: var(--hcp-font);
+}
+
+.hcp-activity-popup .leaflet-popup-content {
+  margin: 10px 12px;
+  font-size: 11.5px;
+  line-height: 1.4;
+}
+
+/* The little arrow is drawn as a bordered triangle; colouring it to match the
+   card keeps it from showing as a white notch on the dark popup. */
+.hcp-activity-popup .leaflet-popup-tip {
+  background: var(--hcp-bg);
+  border: 1px solid var(--hcp-border);
+}
+
+.hcp-activity-popup .leaflet-popup-close-button {
+  color: var(--hcp-text-muted) !important;
+}
+
+.hcp-activities-title {
+  font-weight: 600;
+  color: var(--hcp-text-strong);
+  margin-bottom: 4px;
+}
+
+/* Filter bar: type chips plus optional from/to date bounds. Only rendered when
+   the listed activities actually span more than one type or date, so a plain
+   popup stays uncluttered. */
+.hcp-activities-filters {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.hcp-filter-types {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.hcp-filter-chip {
+  background: var(--hcp-control-bg);
+  border: 1px solid var(--hcp-control-border);
+  border-radius: 999px;
+  color: var(--hcp-text);
+  font-family: inherit;
+  font-size: 10.5px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.hcp-filter-chip:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.hcp-filter-chip-active {
+  background: var(--hcp-accent);
+  border-color: var(--hcp-accent);
+  color: #fff;
+}
+
+.hcp-filter-dates {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.hcp-filter-date {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--hcp-text-muted);
+  font-size: 10.5px;
+}
+
+.hcp-filter-date input[type="date"] {
+  background: var(--hcp-control-bg);
+  border: 1px solid var(--hcp-control-border);
+  border-radius: 4px;
+  color: var(--hcp-text);
+  font-family: inherit;
+  font-size: 10.5px;
+  padding: 1px 4px;
+}
+
+/* Cap the list so a much-visited junction cannot grow a popup taller than the
+   screen; it scrolls instead, and reports any activities past the cap. */
+.hcp-activities-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.hcp-activity {
+  padding: 6px 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.hcp-activity:first-child {
+  border-top: none;
+}
+
+/* Name and distance share a row: the name can wrap, the distance stays put on
+   the right so the figures line up and stay scannable down the list. */
+.hcp-activity-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.hcp-activity-name {
+  color: var(--hcp-text-strong);
+  font-weight: 600;
+}
+
+.hcp-activity-distance {
+  flex: none;
+  color: var(--hcp-text-muted);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.hcp-activity-meta {
+  color: var(--hcp-text-muted);
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+}
+
+.hcp-activity-link {
+  display: inline-block;
+  margin-top: 3px;
+  color: var(--hcp-accent);
+  font-size: 10.5px;
+  text-decoration: none;
+}
+
+.hcp-activity-link:hover {
+  text-decoration: underline;
+}
+
+.hcp-activities-more {
+  margin-top: 6px;
+  color: var(--hcp-text-muted);
+  font-size: 10.5px;
+}
+
+.hcp-activities-empty {
+  color: var(--hcp-text-muted);
+}
+
 /* ---------------------------------------------------------- Heatmap legend */
 /* The legend card itself is styled in legend.css (shared with the embeddable
    widget); only the panel-specific rules below live here. */

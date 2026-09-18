@@ -356,6 +356,11 @@ class ControlPanel(MacroElement):
     GPX" buttons inflate the payload in the browser before handing it over, so
     what the user gets is the document the build produced, byte for byte.
 
+    The click-tooltip index (``tooltips``) rides along the same way, as an inert
+    ``<script type="application/json">`` block. It is inflated on the first map
+    click rather than at load, so the extra payload costs nothing until a
+    visitor actually asks which activities passed through a pixel.
+
     ``_template`` must be a **class-level** ``Template`` so that Folium's
     ``MacroElement`` rendering pipeline can invoke its ``html``/``script``
     macros at render time. Instance attributes are referenced inside the
@@ -372,6 +377,9 @@ class ControlPanel(MacroElement):
     {% endif %}
     {% if this.gpx %}
     <script type="application/gpx+xml" id="hcp-gpx-data">{{ this.gpx }}</script>
+    {% endif %}
+    {% if this.tooltips %}
+    <script type="application/json" id="hcp-activity-data">{{ this.tooltips }}</script>
     {% endif %}
     {% endmacro %}
     {% macro script(this, kwargs) %}
@@ -403,6 +411,7 @@ class ControlPanel(MacroElement):
         geojson: str | None = None,
         gpx: str | None = None,
         gpx_filename: str | None = None,
+        tooltips: str | None = None,
     ):
         """Initialize the ControlPanel.
 
@@ -433,6 +442,11 @@ class ControlPanel(MacroElement):
             gpx_filename: Filename offered for the GPX download. Defaults to
                 :data:`DEFAULT_GPX_FILENAME`; ``main`` passes the configured
                 ``OUTPUT_GPX`` name so the download matches the file on disk.
+            tooltips: The per-cell activity index, already run through
+                :func:`src.map_builder.embed.encode_for_embedding`, embedded in
+                the page for the map's click tooltips to inflate on demand.
+                Omit (or pass an empty string) to leave the block out, which
+                switches the click behaviour off.
         """
         super().__init__()
         self._name = "ControlPanel"
@@ -440,6 +454,7 @@ class ControlPanel(MacroElement):
         self.script_code = control_panel_script()
         self.geojson = geojson or ""
         self.gpx = gpx or ""
+        self.tooltips = tooltips or ""
         config = {
             "panelId": panel_id,
             "basemapStyles": carto_basemap_choices(styles),

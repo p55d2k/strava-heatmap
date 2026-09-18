@@ -30,7 +30,9 @@ from pathlib import Path
 
 import folium
 import pytest
+from pyproj import Transformer
 
+from src.activity_index import build_activity_index
 from src.map_builder.constants import (
     COVERAGE_LAYER,
     DEFAULT_RASTER_MODE,
@@ -77,6 +79,56 @@ _GPX_SAMPLE = (
     "<gpxtpx:speed>5.000</gpxtpx:speed></gpxtpx:TrackPointExtension></extensions></trkpt>\n"
     "    </trkseg>\n  </trk>\n</gpx>\n"
 )
+
+# Stand-in for the per-cell activity index behind the click tooltips (a real
+# build writes it in src/activity_index.py). The grid is anchored so that a
+# click at (45.0, 0.0) lands on the one cell that holds an activity; an empty
+# cell and an out-of-grid click exercise the other two branches.
+_ACTIVITY_URL = "https://www.strava.com/activities/42"
+_ACTIVITY_URL_2 = "https://www.strava.com/activities/43"
+# Two routes a few cells apart, so one click catches both and the popup can be
+# checked for nearest-first ordering and its per-row distance figures.
+_ACTIVITY_TRACKS = [
+    ("2024-01-01 Morning Run", [[45.0, -122.0, 5.0, 150, 100.0]]),
+    ("2024-01-02 Evening Ride", [[45.0, -122.0, 4.0, 140, 100.0]]),
+]
+# Distinct types and dates, so the popup's filter bar is offered.
+_ACTIVITY_TYPES = {"2024-01-01 Morning Run": "Run", "2024-01-02 Evening Ride": "Ride"}
+_ACTIVITY_HIT = {"lat": 45.0, "lng": 0.0}
+# A few cells to the left of the routes: still within the click tolerance, so
+# both must be found without a pixel-perfect hit.
+_ACTIVITY_NEAR = {"lat": 45.0, "lng": -0.0008}
+_ACTIVITY_EMPTY = {"lat": 45.0, "lng": -0.002}
+_ACTIVITY_OUTSIDE = {"lat": 89.9, "lng": 0.0}
+_ACTIVITY_HIT_CELL = 50 * 100 + 50  # row * cols + col for the anchor above
+_ACTIVITY_SECOND_CELL = 50 * 100 + 45  # the second route's cell
+# For the click at _ACTIVITY_NEAR the second route is the closer one, so it
+# must head the list.
+_ACTIVITY_NEAR_NAME = "Evening Ride"
+
+
+def _activity_index_data() -> str:
+    """Return the encoded activity index and leave a known activity in one cell."""
+    transformer = Transformer.from_crs("EPSG:4326", "EPSG:3857", always_xy=True)
+    x, y = transformer.transform(0.0, 45.0)
+    payload = build_activity_index(
+        _ACTIVITY_TRACKS,
+        {(50, 50): {0}, (50, 45): {1}},
+        x_min_wm=x - 500.0,  # a click at lon 0 is 50 cells in
+        y_max_wm=y + 500.0,  # a click at lat 45 is 50 cells down
+        meters_per_pixel=10.0,
+        grid_w=100,
+        grid_h=100,
+        links={
+            "2024-01-01 Morning Run": _ACTIVITY_URL,
+            "2024-01-02 Evening Ride": _ACTIVITY_URL_2,
+        },
+        types=_ACTIVITY_TYPES,
+    )
+    assert f'"{_ACTIVITY_HIT_CELL}"' in payload
+    assert f'"{_ACTIVITY_SECOND_CELL}"' in payload
+    return encode_for_embedding(payload)
+
 
 # ---------------------------------------------------------------------------
 # Node harness (see the module docstring). Kept as a plain string so nothing is
@@ -276,6 +328,17 @@ function makeMap() {
     // re-centres on the home location.
     views: [],
     setView(centre, zoom) { map.views.push([centre, zoom]); },
+    // Record popups so the click-tooltip scenario can inspect what a click
+    // opened (and how many clicks were answered).
+    popups: [],
+    openPopup(content, latlng, opts) {
+      map.popups.push({ content, latlng, opts: opts || {} });
+      return map;
+    },
+    // The click tolerance is defined in screen pixels and converted through the
+    // zoom, so the tooltip logic needs a zoom level. 14 matches a typical
+    // data-framed map.
+    getZoom() { return 14; },
   };
   return map;
 }
@@ -287,10 +350,33 @@ for (const nm of layerNames) {
   overlays[nm] = nm === "Raw GPS tracks" ? makeVectorOverlay(nm) : makeOverlay(nm);
 }
 
+// A minimal Leaflet namespace: the click tooltip rings the click with a circle
+// whose radius is the search tolerance, and prefers the L factory when the map
+// does not expose openPopup itself. Only circleMarker is needed here.
+const circleMarkers = [];
+const leafletStub = {
+  circleMarker(latlng, opts) {
+    const marker = {
+      latlng,
+      options: opts || {},
+      addTo(m) {
+        m.addLayer(this);
+        return this;
+      },
+    };
+    circleMarkers.push(marker);
+    return marker;
+  },
+};
+// panel.js reads the namespace as both the bare `L` (basemap switching) and
+// `window.L` (the click ring), exactly as in a browser where both are the same.
+global.L = leafletStub;
+
 // Global scope so the free `window` / `document` / `<mapVar>` lookups resolve.
 const windowObj = { innerWidth: 1024, innerHeight: 768 };
 windowObj[config.__registryKey] = { base_layers: {}, overlays }; // findOverlays() scans this
 global.window = windowObj;
+windowObj.L = leafletStub;
 global.document = documentObj;
 global[mapVar] = map; // the exclusive script's `var map = <name>;`
 
@@ -325,6 +411,15 @@ if (config.hasHomeMarker) {
   map.addLayer(homeMarker);
 }
 
+// The click-tooltip index rides in an inert <script> block in the page, and the
+// control panel only installs click handling when that block is present, so it
+// has to exist before init runs.
+if (config.__activityData !== undefined) {
+  const activityEl = makeEl("script", "hcp-activity-data");
+  activityEl.textContent = config.__activityData;
+  byId.set("hcp-activity-data", activityEl);
+}
+
 // ---- Run the REAL production scripts ------------------------------------
 eval(fs.readFileSync(path.join(DIR, "exclusive.js"), "utf8"));
 eval(fs.readFileSync(path.join(DIR, "panel.js"), "utf8"));
@@ -335,6 +430,9 @@ delete cfg.__panelIds; delete cfg.__mapVar; delete cfg.__registryKey;
 delete cfg.__defaultDensityLayer; delete cfg.__geojsonData;
 delete cfg.__geojsonText;
 delete cfg.__gpxData; delete cfg.__gpxText;
+delete cfg.__activityData; delete cfg.__activityUrl; delete cfg.__activityHit;
+delete cfg.__activityNear; delete cfg.__activityNearName;
+delete cfg.__activityEmpty; delete cfg.__activityOutside;
 cfg.map = map;
 windowObj.initHeatmapControlPanel(cfg);
 
@@ -350,6 +448,20 @@ async function waitFor(pred, ms) {
     await delay(20);
   }
   return false;
+}
+
+// Every descendant whose className contains `cls`, in document order (the fake
+// DOM's querySelector only returns the first match, and the activity popup has
+// one row per route).
+function collectByClass(node, cls, out) {
+  out = out || [];
+  if (!node) return out;
+  if (typeof node.className === "string" &&
+      node.className.split(/\s+/).indexOf(cls) !== -1) {
+    out.push(node);
+  }
+  (node.children || []).forEach((c) => collectByClass(c, cls, out));
+  return out;
 }
 
 function rowVisible(layerName) {
@@ -818,6 +930,112 @@ function toggle(layerName, checked) {
   ok(gpxBlobs[0].parts.join("") === config.__gpxText,
      "the inflated download is the embedded GPX document, byte for byte");
 
+  // Scenario S - clicking the map opens a popup listing the activities whose
+  // route passes near the click: date, name, average pace, average heart rate,
+  // the Strava link, and how far the route is. Two routes sit a few cells apart
+  // here, so one click catches both and the ordering and distances can be
+  // checked. The index is embedded compressed and inflated lazily on the first
+  // click, so this also exercises the payload through the browser's own
+  // decompressor.
+  assert.ok(byId.get("hcp-activity-data"), "the activity index block exists in the page");
+  ok(map.popups.length === 0, "no popup is open before any click");
+
+  map.fire("click", { latlng: config.__activityHit });
+  const popupOpened = await waitFor(() => map.popups.length === 1, 5000);
+  ok(popupOpened, "clicking the map opens an activity popup");
+
+  const popupContent = map.popups[0] && map.popups[0].content;
+  const hitNames = collectByClass(popupContent, "hcp-activity-name").map((n) => n.textContent);
+  const hitDistances =
+    collectByClass(popupContent, "hcp-activity-distance").map((n) => n.textContent);
+  ok(hitNames.length === 2, "every route within the click tolerance is listed");
+  ok(hitNames[0] === "Morning Run", "the nearest route heads the list");
+  ok(hitDistances[0] === "0 m", "the route under the click reads as 0 m");
+  ok(hitNames[1] === "Evening Ride" && /^\d+ m$/.test(hitDistances[1]),
+     "the further route carries its own distance figure");
+
+  // The fake DOM's querySelector only ever returns one node (and in reverse
+  // document order), so the row's own fields are collected the same way as the
+  // names and distances: the first row is the nearest route.
+  const metaRow = collectByClass(popupContent, "hcp-activity-meta")[0];
+  ok(Boolean(metaRow) && metaRow.textContent.indexOf("2024-01-01") !== -1 &&
+     metaRow.textContent.indexOf("3:20/km") !== -1 &&
+     metaRow.textContent.indexOf("150 bpm") !== -1,
+     "a row shows the date, pace and heart rate");
+  const linkRow = collectByClass(popupContent, "hcp-activity-link")[0];
+  ok(Boolean(linkRow) && linkRow.href === config.__activityUrl,
+     "a row links the activity back to Strava");
+  ok(map.popups[0].opts.className === "hcp-activity-popup",
+     "the popup is tagged for its stylesheet");
+
+  // Scenario S4 - the list can be narrowed in place: by activity type with the
+  // chips, and by date with the from/to bounds. The heading reports how many of
+  // the nearby activities are left.
+  const chips = collectByClass(popupContent, "hcp-filter-chip");
+  ok(chips.map((c) => c.textContent).join(",") === "All,Run,Ride",
+     "one chip per activity type, plus All");
+
+  chips[2].dispatch("click"); // Ride
+  const rideNames = collectByClass(popupContent, "hcp-activity-name").map((n) => n.textContent);
+  ok(rideNames.length === 1 && rideNames[0] === "Evening Ride",
+     "selecting a type narrows the list to that type");
+  ok(chips[2].classList.contains("hcp-filter-chip-active") &&
+     !chips[0].classList.contains("hcp-filter-chip-active"),
+     "the selected chip is marked active");
+  const titleEl = collectByClass(popupContent, "hcp-activities-title")[0];
+  ok(Boolean(titleEl) && titleEl.textContent === "1 of 2 activities shown",
+     "the heading reports how many of the nearby activities are shown");
+
+  chips[0].dispatch("click"); // All
+  ok(collectByClass(popupContent, "hcp-activity-name").length === 2,
+     "selecting All restores the full list");
+
+  const dateInputs = collectByClass(popupContent, "hcp-filter-date-input");
+  ok(dateInputs.length === 2, "a from/to date bound pair is offered");
+  dateInputs[0].value = "2024-01-02";
+  dateInputs[0].dispatch("change");
+  const rangedNames = collectByClass(popupContent, "hcp-activity-name").map((n) => n.textContent);
+  ok(rangedNames.length === 1 && rangedNames[0] === "Evening Ride",
+     "a date bound narrows the list to activities in range");
+
+  // Scenario S2 - the click tolerance. A route is a thin line, so a click a
+  // little off it (a neighbouring cell) must still list both routes, reordered
+  // nearest-first for the new click position, each with a fresh distance.
+  map.fire("click", { latlng: config.__activityNear });
+  const nearOpened = await waitFor(() => map.popups.length === 2, 5000);
+  ok(nearOpened, "clicking beside the routes still answers");
+  const nearContent = map.popups[1] && map.popups[1].content;
+  const nearNames = collectByClass(nearContent, "hcp-activity-name").map((n) => n.textContent);
+  const nearDistances =
+    collectByClass(nearContent, "hcp-activity-distance").map((n) => n.textContent);
+  ok(nearNames.length === 2, "a click beside the routes still finds both");
+  ok(nearNames[0] === config.__activityNearName,
+     "a click beside a route reorders the list nearest-first");
+  ok(nearDistances.every((d) => /^\d+ m$/.test(d)),
+     "every row shows a distance figure");
+
+  // The click is ringed at exactly the search tolerance, so it is visible why
+  // those activities count as nearby.
+  ok(circleMarkers.length >= 2, "each answered click rings the search area");
+  const lastRing = circleMarkers[circleMarkers.length - 1];
+  ok(lastRing.options.radius === config.__activityRadiusPx,
+     "the ring radius matches the click tolerance");
+
+  // A click inside the grid but away from every route still answers, so the map
+  // never feels unresponsive, but lists nothing.
+  map.fire("click", { latlng: config.__activityEmpty });
+  const emptyOpened = await waitFor(() => map.popups.length === 3, 5000);
+  ok(emptyOpened, "clicking away from every route still responds");
+  const emptyContent = map.popups[2] && map.popups[2].content;
+  ok(Boolean(emptyContent) &&
+     emptyContent.className.indexOf("hcp-activities-empty") !== -1,
+     "an empty area reports that no activities were recorded nearby");
+
+  // A click outside the raster grid has nothing to look up, so nothing opens.
+  map.fire("click", { latlng: config.__activityOutside });
+  await delay(80);
+  ok(map.popups.length === 3, "a click outside the grid opens no popup");
+
   console.log("ALL_PASS");
   process.exit(0);
 })().catch((err) => {
@@ -881,6 +1099,14 @@ def _write_harness(tmp: Path, panel_cfg: dict) -> None:
     config["__geojsonData"] = encode_for_embedding(_GEOJSON_SAMPLE)
     config["__gpxText"] = _GPX_SAMPLE
     config["__gpxData"] = encode_for_embedding(_GPX_SAMPLE)
+    config["__activityData"] = _activity_index_data()
+    config["__activityUrl"] = _ACTIVITY_URL
+    config["__activityHit"] = _ACTIVITY_HIT
+    config["__activityNear"] = _ACTIVITY_NEAR
+    config["__activityNearName"] = _ACTIVITY_NEAR_NAME
+    config["__activityEmpty"] = _ACTIVITY_EMPTY
+    config["__activityOutside"] = _ACTIVITY_OUTSIDE
+    config["__activityRadiusPx"] = 14
     config["__modeLayers"] = [
         {"mode": mode, "layer": layer} for mode, layer in DENSITY_MODE_LAYERS.items()
     ]

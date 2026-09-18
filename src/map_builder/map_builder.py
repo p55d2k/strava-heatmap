@@ -275,6 +275,7 @@ def build_map(
     geojson: str | None = None,
     gpx: str | None = None,
     gpx_filename: str | None = None,
+    tooltips: str | None = None,
     embed: bool = False,
     embed_legend: bool = True,
     embed_attribution: bool = True,
@@ -322,6 +323,11 @@ def build_map(
             out (the button then reports that no track data is available).
         gpx_filename: Filename the GPX download is offered as; defaults to the
             panel's ``DEFAULT_GPX_FILENAME``.
+        tooltips: The per-cell activity index, already run through
+            :func:`src.map_builder.embed.encode_for_embedding`, embedded in the
+            page so clicking a painted pixel lists the activities that passed
+            through it. Omit to build a map without click tooltips. The
+            embeddable widget never carries it, keeping that file small.
         embed: When True, build a minimal widget instead of the full map: no
             control panel, no layer control and no scale bar, but the map stays
             fully interactive (pan / zoom / scroll / pinch), framed once on the
@@ -458,6 +464,7 @@ def build_map(
                 geojson=geojson,
                 gpx=gpx,
                 gpx_filename=gpx_filename,
+                tooltips=tooltips,
             ).add_to(m)
 
     if progress_callback:

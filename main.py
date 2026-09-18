@@ -18,6 +18,7 @@ warnings.filterwarnings("ignore", message=".*pandas.*", category=FutureWarning, 
 warnings.filterwarnings("ignore", message=".*pyproj.*", category=UserWarning, module="pyproj")
 
 # Import pipeline modules
+from src.activity_index import build_activity_index, build_activity_types, build_strava_links
 from src.colormaps import create_colormaps, generate_layer_uris
 from src.config import Config
 from src.data_loader import (
@@ -370,6 +371,11 @@ def run_generate(args: argparse.Namespace) -> None:
 
         grids = create_grids(x_min_wm, x_max_wm, y_min_wm, y_max_wm, meters_per_pixel)
 
+        # Collected alongside the rasterization so the click tooltips can list
+        # the activities behind a painted pixel using exactly the counted
+        # visits, rather than re-walking every track (see src/activity_index.py).
+        cell_activities: dict[tuple[int, int], set[int]] = {}
+
         n_activities = rasterize_tracks(
             tracks,
             to_wm,
@@ -384,6 +390,7 @@ def run_generate(args: argparse.Namespace) -> None:
             grids,
             config.decay_factor,
             raster_mode=config.raster_mode,
+            cell_activities=cell_activities,
         )
 
         # Stage 4: Computing Normalized Grids (6 steps: count, speed, hr, gradient, elevation, alpha)
@@ -436,6 +443,28 @@ def run_generate(args: argparse.Namespace) -> None:
             format_embed_size(len(geojson_embed)),
         )
 
+        # The per-cell activity index behind the map's click tooltips. Built
+        # from the rasterization above plus the export's Activity ID column
+        # (present when Strava supplied one), then embedded compressed like the
+        # export payloads and inflated in the browser on the first click.
+        tooltips_embed = encode_for_embedding(
+            build_activity_index(
+                tracks,
+                cell_activities,
+                x_min_wm=x_min_wm,
+                y_max_wm=y_max_wm,
+                meters_per_pixel=meters_per_pixel,
+                grid_w=grids[0],
+                grid_h=grids[1],
+                links=build_strava_links(runs),
+                types=build_activity_types(runs),
+            )
+        )
+        print_info(
+            "Activity index embedded for click tooltips",
+            format_embed_size(len(tooltips_embed)),
+        )
+
         # Stage 6: Building Interactive Map (4 steps: bounds/centre, legend, build_map (3 sub-steps))
         print_stage("Stage 6: Building Interactive Map")
         with tqdm(total=4, desc="Building map", unit="step", disable=not args.dev) as pbar:
@@ -469,6 +498,7 @@ def run_generate(args: argparse.Namespace) -> None:
                 geojson=geojson_embed,
                 gpx=gpx_embed,
                 gpx_filename=config.output_gpx.name,
+                tooltips=tooltips_embed,
                 progress_callback=pbar.update,
             )
             pbar.update(1)

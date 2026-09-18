@@ -20,6 +20,9 @@ Running the generator writes `outputs/heatmap.html`, a Leaflet map with:
   (absolute)**, and **Gradient (change)**.
 - **Raw GPS tracks**, a zoom-scaled home marker, basemap selection, opacity
   sliders, and controls with short hover/focus explanations.
+- **Click a painted pixel** to list the activities that passed through it:
+  date, name, average pace, average heart rate, and a link back to Strava when
+  the export carries an activity id.
 - Browser-side **Save as PNG**, **Export GeoJSON**, and **Export GPX** actions.
 
 | Layer | Colour | Shows |
@@ -277,6 +280,40 @@ page. It is zlib-compressed and base64-encoded in an inert
 `<script type="application/gpx+xml">` block, then inflated with the browser's
 built-in `DecompressionStream` on click. This requires Chrome 80+, Firefox 113+,
 or Safari 16.4+; `OUTPUT_GPX` is always available on disk.
+
+## Interactive tooltips
+
+Clicking the map opens a popup listing the activities whose route passes near
+the click, each with its date, name, average pace, average heart rate and — when
+the export's `Activity ID` column is present — a link back to the activity on
+Strava.
+
+The click is forgiving on purpose. A route is a thin line that rarely sits under
+the exact pixel clicked, and the painted heatmap is blurred wider than the raw
+data cells, so a pixel-perfect hit would usually return nothing. Instead the
+click gathers every activity within about 14 screen pixels, which also picks up
+a route on the far side of the road (and a junction's other arms). Because the
+tolerance is measured in screen pixels, it feels the same whether the map is
+zoomed in or out. Results are ordered nearest-first and each row shows how far
+its route is from the click (for example `12 m`), so when a click catches
+several routes — a junction, or both sides of a road — it stays clear which is
+which. The clicked spot is ringed at exactly the tolerance so it is visible why
+the listed activities count as nearby, and a click that is off the data entirely
+does nothing.
+
+The list can be narrowed in place, without moving the map. When the nearby
+activities span more than one activity type the popup adds a row of type chips
+(including `All`); when they span more than one date it adds a `From` / `To`
+date pair. Filtering runs entirely in the browser — the type and date travel in
+the embedded index — and the heading reports how many of the nearby activities
+are still shown.
+
+The list is capped at 50 activities (with a `+N more` note); the popup scrolls.
+The data behind it is a per-cell index built from the rasterization stage, so it
+always agrees with the heatmap: the embedded payload is zlib-compressed and
+base64-encoded exactly like the GeoJSON and GPX exports, and is inflated in the
+browser on the first click rather than at page load. The embeddable widget
+leaves the index out, so it stays small.
 
 ## Embeddable widget
 
