@@ -18,7 +18,12 @@ warnings.filterwarnings("ignore", message=".*pandas.*", category=FutureWarning, 
 warnings.filterwarnings("ignore", message=".*pyproj.*", category=UserWarning, module="pyproj")
 
 # Import pipeline modules
-from src.activity_index import build_activity_index, build_activity_types, build_strava_links
+from src.activity_index import (
+    build_activity_index,
+    build_activity_types,
+    build_strava_links,
+    split_activity_label,
+)
 from src.colormaps import create_colormaps, generate_layer_uris
 from src.config import Config
 from src.data_loader import (
@@ -375,6 +380,10 @@ def run_generate(args: argparse.Namespace) -> None:
         # the activities behind a painted pixel using exactly the counted
         # visits, rather than re-walking every track (see src/activity_index.py).
         cell_activities: dict[tuple[int, int], set[int]] = {}
+        # The per-activity per-cell counted-visit breakdown the browser reuses
+        # to re-rasterize a date-filtered subset of the heatmap on the client
+        # (the panel's date-range filter); see src/activity_index.py.
+        activity_cells: dict[int, dict[tuple[int, int], int]] = {}
 
         n_activities = rasterize_tracks(
             tracks,
@@ -391,6 +400,7 @@ def run_generate(args: argparse.Namespace) -> None:
             config.decay_factor,
             raster_mode=config.raster_mode,
             cell_activities=cell_activities,
+            activity_cells=activity_cells,
         )
 
         # Stage 4: Computing Normalized Grids (6 steps: count, speed, hr, gradient, elevation, alpha)
@@ -446,7 +456,17 @@ def run_generate(args: argparse.Namespace) -> None:
         # The per-cell activity index behind the map's click tooltips. Built
         # from the rasterization above plus the export's Activity ID column
         # (present when Strava supplied one), then embedded compressed like the
-        # export payloads and inflated in the browser on the first click.
+        # export payloads and inflated in the browser on the first click. The
+        # per-activity cell counts and the render parameters ride along so the
+        # browser can also re-rasterize a date-filtered subset (the panel's
+        # date-range filter) with colors that stay on the legend's scale.
+        render_index = {
+            "blurSigmaPx": float(config.blur_sigma_px),
+            "decayFactor": float(config.decay_factor),
+            "coverageNormalization": config.coverage_normalization,
+            "maxPassesByStrategy": normalized["max_passes_by_strategy"],
+            "nActivities": int(normalized["n_activities"]),
+        }
         tooltips_embed = encode_for_embedding(
             build_activity_index(
                 tracks,
@@ -458,6 +478,8 @@ def run_generate(args: argparse.Namespace) -> None:
                 grid_h=grids[1],
                 links=build_strava_links(runs),
                 types=build_activity_types(runs),
+                activity_cells=activity_cells,
+                render=render_index,
             )
         )
         print_info(
@@ -483,6 +505,13 @@ def run_generate(args: argparse.Namespace) -> None:
             )
             pbar.update(1)
 
+            # Date bounds for the panel's date-range filter, taken straight from
+            # the track labels so the From/To inputs can be seeded and clamped
+            # before the embedded index is ever inflated.
+            track_dates = [split_activity_label(label)[0] for label, _ in tracks]
+            track_dates = [d for d in track_dates if d]
+            date_bounds = (min(track_dates), max(track_dates)) if track_dates else None
+
             build_map(
                 tracks,
                 layers,
@@ -499,6 +528,7 @@ def run_generate(args: argparse.Namespace) -> None:
                 gpx=gpx_embed,
                 gpx_filename=config.output_gpx.name,
                 tooltips=tooltips_embed,
+                date_bounds=date_bounds,
                 progress_callback=pbar.update,
             )
             pbar.update(1)

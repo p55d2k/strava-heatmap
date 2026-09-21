@@ -44,6 +44,31 @@
     <div class="hcp-section hcp-section-layers">
       <div id="hcp-layers"></div>
     </div>
+    <!-- Date range filter: hides the section unless the build embedded the
+         per-activity cell counts (the tooltips index's `visits` array) and
+         the date bounds (see assets/panel.js). The two-thumb range slider
+         seeds to the full range; narrowing it re-rasterizes the density /
+         coverage layers in the browser, so the map narrows without rebuilding
+         the page. The From/To readouts above the slider show the dates the
+         thumbs currently sit on. Metrics (pace, heart rate, gradient) are
+         computed from per-activity averages and are left untouched by the
+         filter. -->
+    <div class="hcp-section hcp-section-dates" id="hcp-dates-section" hidden>
+      <div class="hcp-label" data-hcp-help="Show only the activities within a date range. The heatmap is redrawn in your browser from the per-activity cell counts the page already carries, so the map narrows instantly — no rebuild needed.">
+        <span>Date range <span class="hcp-info" aria-hidden="true">i</span></span>
+      </div>
+      <div class="hcp-date-range">
+        <span class="hcp-date-bound"><span class="hcp-date-name">From</span><span class="hcp-date-readout" id="hcp-date-from-readout"></span></span>
+        <span class="hcp-date-bound"><span class="hcp-date-name">To</span><span class="hcp-date-readout" id="hcp-date-to-readout"></span></span>
+        <button type="button" id="hcp-date-reset" class="hcp-date-reset">Reset</button>
+      </div>
+      <div class="hcp-date-slider">
+        <div class="hcp-date-slider-fill" id="hcp-date-slider-fill"></div>
+        <input type="range" id="hcp-date-from" aria-label="Earliest date" />
+        <input type="range" id="hcp-date-to" aria-label="Latest date" />
+      </div>
+      <div id="hcp-date-status" class="hcp-date-status" role="status" aria-live="polite"></div>
+    </div>
     <div class="hcp-section hcp-section-opacity">
       <button type="button" id="hcp-opacity-toggle" class="hcp-opacity-toggle"
               aria-expanded="false">

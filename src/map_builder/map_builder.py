@@ -276,6 +276,7 @@ def build_map(
     gpx: str | None = None,
     gpx_filename: str | None = None,
     tooltips: str | None = None,
+    date_bounds: tuple[str, str] | None = None,
     embed: bool = False,
     embed_legend: bool = True,
     embed_attribution: bool = True,
@@ -328,6 +329,10 @@ def build_map(
             page so clicking a painted pixel lists the activities that passed
             through it. Omit to build a map without click tooltips. The
             embeddable widget never carries it, keeping that file small.
+        date_bounds: Optional ``(min_date, max_date)`` (ISO ``YYYY-MM-DD``)
+            seeding the control panel's date-range filter, which re-rasterizes
+            the density/coverage layers in the browser. Omit to leave the filter
+            out (the panel still works without it).
         embed: When True, build a minimal widget instead of the full map: no
             control panel, no layer control and no scale bar, but the map stays
             fully interactive (pan / zoom / scroll / pinch), framed once on the
@@ -465,6 +470,7 @@ def build_map(
                 gpx=gpx,
                 gpx_filename=gpx_filename,
                 tooltips=tooltips,
+                date_bounds=date_bounds,
             ).add_to(m)
 
     if progress_callback:

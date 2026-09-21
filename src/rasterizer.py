@@ -181,6 +181,7 @@ def _rasterize_track_points(
     decay_factor: float = 0.5,
     cell_activities: dict[tuple[int, int], set[int]] | None = None,
     activity_index: int | None = None,
+    activity_cells: dict[int, dict[tuple[int, int], int]] | None = None,
 ) -> int:
     """Rasterize a single track's points onto the strategy count grids.
 
@@ -206,6 +207,14 @@ def _rasterize_track_points(
     :mod:`src.activity_index`); collecting it here keeps it in exact step with
     the heatmap, because it reuses the same counted visits rather than
     re-walking the track.
+
+    When ``activity_cells`` is supplied the per-cell counted-visit totals of this
+    activity are recorded as ``activity_cells[activity_index] = {(row, col): n}``
+    (same ``(row, col)`` convention as ``cell_activities``). That per-activity
+    breakdown is what the browser needs to re-rasterize a date-filtered subset
+    of the heatmap on the client (see :mod:`src.activity_index` and the map
+    panel's date-range filter), so it is collected in the same pass rather than
+    re-walked later.
 
     Returns:
         ``1`` if the activity contributed at least one cell to the coverage
@@ -234,6 +243,10 @@ def _rasterize_track_points(
     if cell_activities is not None and activity_index is not None:
         for xi, yi in cell_visits:
             cell_activities.setdefault((yi, xi), set()).add(activity_index)
+    if activity_cells is not None and activity_index is not None:
+        activity_cells[activity_index] = {
+            (yi, xi): n_visits for (xi, yi), n_visits in cell_visits.items()
+        }
     for (xi, yi), n_visits in cell_visits.items():
         count_raw_grid[yi, xi] += n_visits
         unique_grid[yi, xi] += 1
@@ -292,6 +305,7 @@ def rasterize_tracks(
     decay_factor: float = 0.5,
     raster_mode: str = DEFAULT_RASTER_MODE,
     cell_activities: dict[tuple[int, int], set[int]] | None = None,
+    activity_cells: dict[int, dict[tuple[int, int], int]] | None = None,
 ) -> int:
     """Rasterize all tracks onto the grids.
 
@@ -324,6 +338,11 @@ def rasterize_tracks(
     the set of track indices that were counted in that cell, using the same
     clipped points and bounds as the painting. The map's click tooltips read it
     to list the activities behind a painted pixel.
+
+    When ``activity_cells`` is supplied it is filled with per-activity per-cell
+    counted-visit totals, ``activity_cells[activity_index] = {(row, col): n}``,
+    so the browser can re-rasterize a date-filtered subset of the heatmap
+    without touching the server (see :mod:`src.activity_index`).
 
     Returns:
         The number of activities that contributed at least one counted cell.
@@ -385,6 +404,7 @@ def rasterize_tracks(
             decay_factor,
             cell_activities,
             activity_index,
+            activity_cells,
         )
 
         for i in range(len(track_pts) - 1):

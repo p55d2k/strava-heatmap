@@ -206,6 +206,8 @@ def build_activity_index(
     grid_h: int,
     links: dict[str, str] | None = None,
     types: dict[str, str] | None = None,
+    activity_cells: dict[int, dict[tuple[int, int], int]] | None = None,
+    render: dict | None = None,
 ) -> str:
     """Assemble the click-tooltip index as a minified JSON string.
 
@@ -220,11 +222,25 @@ def build_activity_index(
         grid_h: Grid height in cells (rows).
         links: Optional ``{label: url}`` map from :func:`build_strava_links`.
         types: Optional ``{label: type}`` map from :func:`build_activity_types`.
+        activity_cells: Optional per-activity per-cell counted-visit totals,
+            ``activity_cells[activity_index] = {(row, col): n}`` as collected by
+            ``rasterize_tracks``. When supplied, a ``visits`` array is embedded
+            giving the browser everything it needs to re-rasterize a
+            date-filtered subset of the heatmap on the client (the map panel's
+            date-range filter); without it the payload stays lean and the
+            browser simply does not offer that filter.
+        render: Optional parameters the browser mirrors when re-rendering a
+            subset — the blur sigma, decay factor, coverage normalization basis,
+            the per-strategy full-grid pass maxima (the colour scale reference)
+            and the total activity count. Matching the server's baked images
+            exactly keeps the filtered colors on the legend scale.
 
     Returns:
         A minified JSON payload carrying the grid geometry, the per-activity
         records and the cell memberships. ``cells`` is keyed by
-        ``row * grid_w + col`` so the browser can address it as a flat object.
+        ``row * grid_w + col`` so the browser can address it as a flat object;
+        ``visits`` (when present) is a flat ``[activity_index, cell_key, count]``
+        list ordered by activity, so a re-render never has to re-walk a track.
     """
     activities = build_activities(tracks, links, types)
 
@@ -233,6 +249,14 @@ def build_activity_index(
         if not members:
             continue
         cells[str(int(row) * int(grid_w) + int(col))] = sorted(int(index) for index in members)
+
+    visits: list[list] = []
+    if activity_cells:
+        for activity_index, cell_counts in sorted(activity_cells.items()):
+            for (row, col), n_visits in sorted(cell_counts.items()):
+                visits.append(
+                    [int(activity_index), int(row) * int(grid_w) + int(col), int(n_visits)]
+                )
 
     payload = {
         "cellSize": float(meters_per_pixel),
@@ -243,6 +267,10 @@ def build_activity_index(
         "activities": activities,
         "cells": cells,
     }
+    if visits:
+        payload["visits"] = visits
+    if render:
+        payload["render"] = render
     log.info(
         "Activity tooltip index: %d activities across %d grid cells",
         len(activities),

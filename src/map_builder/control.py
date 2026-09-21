@@ -412,6 +412,7 @@ class ControlPanel(MacroElement):
         gpx: str | None = None,
         gpx_filename: str | None = None,
         tooltips: str | None = None,
+        date_bounds: tuple[str, str] | None = None,
     ):
         """Initialize the ControlPanel.
 
@@ -447,6 +448,12 @@ class ControlPanel(MacroElement):
                 the page for the map's click tooltips to inflate on demand.
                 Omit (or pass an empty string) to leave the block out, which
                 switches the click behaviour off.
+            date_bounds: Optional ``(min_date, max_date)`` (ISO ``YYYY-MM-DD``)
+                seeding the panel's date-range filter. The filter itself needs
+                the embedded tooltips index to carry the per-activity cell
+                counts (see :func:`src.activity_index.build_activity_index`);
+                the bounds only decide whether the control is offered and what
+                range the From/To slider thumbs may follow.
         """
         super().__init__()
         self._name = "ControlPanel"
@@ -470,6 +477,7 @@ class ControlPanel(MacroElement):
             "layerGroups": layer_groups or [],
             "advanced": advanced or {},
             "gpxFilename": gpx_filename or DEFAULT_GPX_FILENAME,
+            "dateBounds": list(date_bounds) if date_bounds else None,
         }
         self.config_json = json.dumps(config)
 

@@ -15,6 +15,11 @@
  *   - Advanced section          (collapsible; rasterization-mode dropdown that
  *                               swaps which pre-baked GPS Density overlay is
  *                               bound to the "GPS Density" row)
+ *   - Date range filter         (From/To range slider that re-rasterizes the
+ *                               density / coverage layers in the browser within
+ *                               the chosen span, using the per-activity cell
+ *                               counts the tooltip index already carries — no
+ *                               rebuild, colours stay on the legend scale)
  *   - Fit-to-heatmap / Reset view
  *   - Legend toggle
  *   - Save as PNG              (static image export of the current view; the
@@ -49,6 +54,7 @@
  *                        layers: [{ name, visible, count?, unit? }, ...] }, ...],
  *     advanced:       { modes: [{ key, label, layer, visible, opacity }...],
  *                       densityLayerNames: [...], active: "decay" },
+ *     dateBounds:     ["2019-01-01", "2024-12-31"]  (seeds the date filter),
  *     gpxFilename:    "tracks.gpx"  (name offered by the Export GPX button),
  *     map:            <the Leaflet map instance>
  *   }
@@ -1449,9 +1455,15 @@
     notice.className = "hcp-activities-more";
 
     // Filter state. No type selected and no date bounds means "everything".
+    // The date bounds seed from the panel's date-range slider, so a click
+    // while a range is active already lists only the activities in range; the
+    // popup's own From/To inputs can then narrow further. The slider pushes
+    // fresh bounds in (datePopupApply) so the open popup follows later moves.
     var selectedType = null;
-    var dateFrom = "";
-    var dateTo = "";
+    var dateFrom = dateFilterBounds.from;
+    var dateTo = dateFilterBounds.to;
+    var dateFromInput = null;
+    var dateToInput = null;
 
     function filtersActive() {
       return selectedType !== null || Boolean(dateFrom) || Boolean(dateTo);
@@ -1631,6 +1643,9 @@
           input.type = "date";
           input.className = "hcp-filter-date-input";
           input.setAttribute("data-bound", bound);
+          // Show the bounds the popup opened with (the slider's current range)
+          // so the narrow-in-narrow-out controls read honestly.
+          input.value = (bound === "from" ? dateFrom : dateTo) || "";
           input.addEventListener("change", function () {
             if (bound === "from") dateFrom = input.value || "";
             else dateTo = input.value || "";
@@ -1638,6 +1653,8 @@
           });
           label.appendChild(input);
           dateBox.appendChild(label);
+          if (bound === "from") dateFromInput = input;
+          else dateToInput = input;
         };
         addDateBound("from", "From ");
         addDateBound("to", "To ");
@@ -1646,6 +1663,18 @@
 
       root.appendChild(filters);
     }
+
+    // The slider's latest range is the master filter: while this popup is open
+    // it is pushed in here (see refresh), widening or narrowing in place. The
+    // From/To inputs follow so what the list shows stays legible.
+    function applyDateBounds(from, to) {
+      dateFrom = from || "";
+      dateTo = to || "";
+      if (dateFromInput) dateFromInput.value = dateFrom;
+      if (dateToInput) dateToInput.value = dateTo;
+      render();
+    }
+    datePopupApply = applyDateBounds;
 
     root.appendChild(list);
     root.appendChild(notice);
@@ -1938,6 +1967,9 @@
     map.on("popupclose", function () {
       clearActivityHighlight(map);
       clearActivityFootprint(map);
+      // The popup's per-popup filter closures are gone; the next click builds
+      // a fresh popup that re-seeds from the slider (see buildActivityPopup).
+      datePopupApply = null;
     });
     map.on("click", function (event) {
       if (!event || !event.latlng) return;
@@ -1960,6 +1992,1011 @@
           // panel; the click simply produces no popup.
         });
     });
+  }
+
+  /* ---- Date range filter (client-side re-rasterization) ------------------ */
+
+  // The panel's From/To range slider (see control_panel.html) re-rasterizes the
+  // density / coverage layers entirely in the browser, so narrowing the range
+  // does not require rebuilding (or even re-downloading) the page. This is
+  // possible because the build already ships everything needed inside the
+  // tooltip index (see src/activity_index.py::build_activity_index):
+  //
+  //   * ``visits`` — a flat ``[activity_index, cell_key, n_visits]`` list, the
+  //     per-activity counted-visit breakdown collected by the rasterizer. The
+  //     three strategy grids the server paints are recomputed from it per
+  //     activity: decay (geometric sum of ``n`` visits), raw-count (sum of
+  //     ``n``) and binary-per-activity (1 per visited cell).
+  //   * ``render`` — the exact render parameters (blur sigma, decay factor,
+  //     coverage normalization basis, the full-grid per-strategy pass maxima
+  //     and the total activity count), so the browser normalizes by the SAME
+  //     maxima the server's baked images use. Filtered colours therefore stay
+  //     on the legend's scale — a quiet year reads dimmer, not brighter.
+  //
+  // The approximation of scipy's gaussian_filter uses a separable gaussian
+  // kernel with the same reflect edge handling and the same default radius
+  // (4 * sigma), which keeps a filtered layer visually aligned with the baked
+  // one. Only the density and coverage layers are re-drawn; the metric layers
+  // (pace, heart rate, gradient) are built from per-activity averages rather
+  // than these cells, so they are left untouched by the filter.
+
+  var DATE_FILTER_COVERAGE = "Coverage (Places Visited)";
+
+  // The date-range slider is the map-wide filter, so the click popup's own
+  // From/To bounds start from the slider's current range and follow its moves
+  // while the popup is open (see datePopupApply / refresh). Empty bounds read
+  // as "everything", which is what an inactive slider reports.
+  var dateFilterBounds = { from: "", to: "" };
+  var datePopupApply = null; // function to push new bounds into the open popup
+
+  // While a ranged render runs, a full-map overlay dims the map and swallows
+  // interaction (see .hcp-date-filtering) so the user cannot pan/zoom/click
+  // into a state that fights the refresh. Created once, attached per filter.
+  var dateFilterBlocker = null;
+
+  function dateShowBlocker(map, show) {
+    if (!map || !map._container || typeof document === "undefined") return;
+    if (show) {
+      if (!dateFilterBlocker) {
+        dateFilterBlocker = document.createElement("div");
+        dateFilterBlocker.className = "hcp-date-filtering";
+        dateFilterBlocker.setAttribute("aria-busy", "true");
+      }
+      if (dateFilterBlocker.parentNode !== map._container) {
+        map._container.appendChild(dateFilterBlocker);
+      }
+    } else if (dateFilterBlocker && dateFilterBlocker.parentNode) {
+      dateFilterBlocker.parentNode.removeChild(dateFilterBlocker);
+    }
+  }
+  // Mirrors the server's "count" colormap (src/colormaps.py::create_colormaps):
+  // (position, [R, G, B, A]) nodes in 0..1 space, baked into a 512-entry LUT
+  // the same way matplotlib's LinearSegmentedColormap does.
+  var DATE_COUNT_CMAP = [
+    { pos: 0.0, rgba: [0.0, 0.0, 0.0, 0.0] },
+    { pos: 0.01, rgba: [0.4, 0.1, 0.0, 0.55] },
+    { pos: 0.2, rgba: [0.99, 0.3, 0.01, 0.8] },
+    { pos: 0.5, rgba: [1.0, 0.65, 0.0, 0.92] },
+    { pos: 0.8, rgba: [1.0, 0.92, 0.2, 0.97] },
+    { pos: 1.0, rgba: [1.0, 1.0, 0.8, 1.0] },
+  ];
+  var DATE_COUNT_LUT_SIZE = 512;
+
+  // Piecewise-linear lookup for one channel (matplotlib's per-channel segment
+  // interpolation), given nodes as ``{ pos, v }`` sorted by ``pos``.
+  function dateChannelAt(nodes, t) {
+    if (t <= nodes[0].pos) return nodes[0].v;
+    for (var i = 1; i < nodes.length; i++) {
+      if (t <= nodes[i].pos) {
+        var span = nodes[i].pos - nodes[i - 1].pos;
+        var f = span > 0 ? (t - nodes[i - 1].pos) / span : 0;
+        return nodes[i - 1].v + f * (nodes[i].v - nodes[i - 1].v);
+      }
+    }
+    return nodes[nodes.length - 1].v;
+  }
+
+  var dateColormapLut = null;
+
+  function dateEnsureLut() {
+    if (dateColormapLut) return dateColormapLut;
+    var lut = new Uint8Array(DATE_COUNT_LUT_SIZE * 4);
+    var channels = [[], [], [], []];
+    for (var c = 0; c < 4; c++) {
+      channels[c] = DATE_COUNT_CMAP.map(function (node) {
+        return { pos: node.pos, v: node.rgba[c] };
+      });
+    }
+    for (var i = 0; i < DATE_COUNT_LUT_SIZE; i++) {
+      var t = i / (DATE_COUNT_LUT_SIZE - 1);
+      for (var ch = 0; ch < 4; ch++) {
+        lut[i * 4 + ch] = Math.round(255 * dateChannelAt(channels[ch], t));
+      }
+    }
+    dateColormapLut = lut;
+    return lut;
+  }
+
+  // The geometric sum 1 + d + d^2 + ... + d^(n-1) the "decay" strategy adds
+  // per cell (see rasterizer._geom_sum). Powers of the decay factor get very
+  // small very fast, so the closed-form avoids iterating n times per cell.
+  function dateGeomSum(n, decay) {
+    if (n <= 1) return 1;
+    if (decay <= 0) return 1;
+    if (decay >= 1) return n;
+    return (1 - Math.pow(decay, n)) / (1 - decay);
+  }
+
+  // Separable gaussian blur approximating scipy.ndimage.gaussian_filter: same
+  // kernel (exp(-x^2 / 2 sigma^2), normalised), same edge mode ("reflect") and
+  // the same radius (int(truncate * sigma + 0.5) with the default truncate of 4).
+  // Returns a fresh Float64Array so the caller keeps the raw strategy grid.
+  function dateGaussianBlur(src, rows, cols, sigma) {
+    var size = rows * cols;
+    var out = new Float64Array(size);
+    if (!size) return out;
+    if (!sigma || sigma <= 0 || rows < 1 || cols < 1) {
+      for (var q = 0; q < size; q++) out[q] = src[q];
+      return out;
+    }
+    var radius = Math.max(0, Math.round(4 * sigma + 0.5));
+    if (radius === 0) {
+      for (var z = 0; z < size; z++) out[z] = src[z];
+      return out;
+    }
+    var inv = 1 / (2 * sigma * sigma);
+    var kLen = 2 * radius + 1;
+    var kernel = [];
+    var wsum = 0;
+    for (var k = -radius; k <= radius; k++) {
+      var w = Math.exp(-(k * k) * inv);
+      kernel.push(w);
+      wsum += w;
+    }
+    var row = new Float64Array(size);
+    var y, x, i, acc, gx, gy, base;
+    // Horizontal pass.
+    for (y = 0; y < rows; y++) {
+      base = y * cols;
+      for (x = 0; x < cols; x++) {
+        acc = 0;
+        for (i = 0; i < kLen; i++) {
+          gx = x - radius + i;
+          if (gx < 0) gx = -gx;
+          else if (gx >= cols) gx = 2 * cols - gx - 2;
+          if (gx < 0) gx = 0;
+          else if (gx >= cols) gx = cols - 1;
+          acc += src[base + gx] * kernel[i];
+        }
+        row[base + x] = acc / wsum;
+      }
+    }
+    // Vertical pass.
+    for (x = 0; x < cols; x++) {
+      for (y = 0; y < rows; y++) {
+        acc = 0;
+        for (i = 0; i < kLen; i++) {
+          gy = y - radius + i;
+          if (gy < 0) gy = -gy;
+          else if (gy >= rows) gy = 2 * rows - gy - 2;
+          if (gy < 0) gy = 0;
+          else if (gy >= rows) gy = rows - 1;
+          acc += row[gy * cols + x] * kernel[i];
+        }
+        out[y * cols + x] = acc / wsum;
+      }
+    }
+    return out;
+  }
+
+  // Normalize a blurred strategy grid against the FULL-grid pass maximum (from
+  // index.render.maxPassesByStrategy), so filtered colours stay on the baked
+  // legend scale instead of re-maxing to the filtered subset. Mirrors
+  // rasterizer._compute_count_grid's log1p normalization with max_count == 0
+  // guarded to an all-zero grid.
+  function dateLogNorm(blurred, rows, cols, fullMax) {
+    var size = rows * cols;
+    var norm = new Float64Array(size);
+    if (!fullMax || fullMax <= 0) return norm;
+    var denom = Math.log(1 + fullMax);
+    for (var i = 0; i < size; i++) {
+      norm[i] = Math.log(1 + blurred[i]) / denom;
+    }
+    return norm;
+  }
+
+  // Coverage normalization basis: "pct" divides the blurred per-activity counts
+  // by the TOTAL activity count (a cell 1.0 = every activity visited it),
+  // "max" scales relative to the most-visited cell (legacy). Mirrors
+  // rasterizer.compute_normalized_grids' unique_pct_norm / unique_norm.
+  function dateCoverageNorm(blurredBinary, rows, cols, render, maxByStrategy) {
+    var size = rows * cols;
+    var norm = new Float64Array(size);
+    var total, i, q;
+    if (render.coverageNormalization === "pct") {
+      total = render.nActivities || 0;
+      if (total <= 0) return norm;
+      for (i = 0; i < size; i++) {
+        q = blurredBinary[i] / total;
+        norm[i] = q > 1 ? 1 : q;
+      }
+    } else {
+      total = maxByStrategy["binary-per-activity"];
+      if (!total || total <= 0) return norm;
+      for (i = 0; i < size; i++) {
+        q = blurredBinary[i] / total;
+        norm[i] = q > 1 ? 1 : q;
+      }
+    }
+    return norm;
+  }
+
+  // Apply the count colormap to a normalized grid and hand back a PNG data URI.
+  // A normalized value of 0 maps to cmap(0) = fully transparent black, so cells
+  // with no filtered data vanish rather than painting a dark splotch. The PNG
+  // is produced on a canvas (the same trick the baked overlays use); when a
+  // binned frame is being returned, datePngUri scales it back up smoothly (see
+  // there) so the overlay is as smooth as the baked full-resolution image.
+  function dateColorizeAndUri(norm, rows, cols, outRows, outCols) {
+    var lut = dateEnsureLut();
+    var size = norm.length;
+    var rgba = new Uint8ClampedArray(size * 4);
+    for (var i = 0; i < size; i++) {
+      var v = norm[i];
+      if (!(v > 0)) continue;
+      var idx = v >= 1 ? DATE_COUNT_LUT_SIZE - 1 : Math.round(v * (DATE_COUNT_LUT_SIZE - 1));
+      var src = idx * 4;
+      var dst = i * 4;
+      rgba[dst] = lut[src];
+      rgba[dst + 1] = lut[src + 1];
+      rgba[dst + 2] = lut[src + 2];
+      rgba[dst + 3] = lut[src + 3];
+    }
+    return datePngUri(rgba, rows, cols, outRows, outCols);
+  }
+
+  var dateFilterCanvas = null;
+
+  // Encode a grid as a PNG data URI. When ``outRows/outCols`` differ from the
+  // grid's own size, the frame is painted back up to the baked image's
+  // resolution with the canvas's memory/GPU-accelerated smoothed scaling
+  // (imageSmoothingEnabled, the default), so a binned-down filtered frame still
+  // looks as smooth and high-res as the original overlay. Premultiplied-alpha
+  // smoothing is handled by the canvas for us, so transparent edges blend in
+  // without dark halos.
+  function datePngUri(rgba, rows, cols, outRows, outCols) {
+    if (!rgba || !cols || !rows) return null;
+    if (typeof document === "undefined" || typeof document.createElement !== "function") {
+      return null;
+    }
+    var up = outRows && outCols && (outRows !== rows || outCols !== cols);
+    if (!up) {
+      if (!dateFilterCanvas) dateFilterCanvas = document.createElement("canvas");
+      dateFilterCanvas.width = cols;
+      dateFilterCanvas.height = rows;
+      var context = dateFilterCanvas.getContext && dateFilterCanvas.getContext("2d");
+      if (!context) return null;
+      var image = context.createImageData(cols, rows);
+      image.data.set(rgba);
+      context.putImageData(image, 0, 0);
+      return dateFilterCanvas.toDataURL("image/png");
+    }
+    // Binned frame -> full-resolution overlay, scaled with smoothing.
+    if (!dateFilterCanvas) dateFilterCanvas = document.createElement("canvas");
+    var small = dateFilterCanvas;
+    small.width = cols;
+    small.height = rows;
+    var smallCtx = small.getContext && small.getContext("2d");
+    if (!smallCtx) return null;
+    var smallImage = smallCtx.createImageData(cols, rows);
+    smallImage.data.set(rgba);
+    smallCtx.putImageData(smallImage, 0, 0);
+    var big = document.createElement("canvas");
+    big.width = outCols;
+    big.height = outRows;
+    var bigCtx = big.getContext && big.getContext("2d");
+    if (!bigCtx) return null;
+    bigCtx.imageSmoothingEnabled = true;
+    bigCtx.clearRect(0, 0, outCols, outRows);
+    bigCtx.drawImage(small, 0, 0, cols, rows, 0, 0, outCols, outRows);
+    return big.toDataURL("image/png");
+  }
+
+  /* ---- Date-range rasterization worker ---------------------------------- */
+
+  // Re-rasterizing is pure number-crunching (grid accumulation, gaussian blur,
+  // normalization, colormap). The date filter renders a binned ~2.5M-cell
+  // preview (see dateRenderRange) so the work stays well under a second per
+  // strategy, and it runs in a Web Worker to keep the map and control panel
+  // responsive while the filtered heatmap is computed; the page simply repaints
+  // when the worker returns. The build has no module system, so the worker
+  // script is assembled at runtime by stringifying the shared pure helpers —
+  // dateGaussianBlur / dateLogNorm / dateCoverageNorm are exactly the functions
+  // the synchronous fallback path uses, so a ranged render cannot drift from
+  // the baked math. The worker returns raw RGBA buffers; PNG encoding stays on
+  // the main thread because datePngUri needs a DOM canvas.
+
+  function dateWorkerDispatch(selfScope) {
+    "use strict";
+    selfScope.onmessage = function (event) {
+      var msg = event.data || {};
+      try {
+        var results = [];
+        var blurs = {};
+        msg.bands.forEach(function (band) {
+          var blurred = blurs[band.key];
+          if (!blurred) {
+            blurred = dateGaussianBlur(band.grid, msg.rows, msg.cols, msg.render.blurSigmaPx);
+            // The grid arrived binned down by 1/F^2 the render was re-scaled
+            // into full-cell magnitudes before blurring, so dividing it back
+            // lands the colour exactly on the baked (full-resolution) legend
+            // scale — the blur is linear, so binned blur ~= F^2 . full blur.
+            if (msg.binInvScale && msg.binInvScale !== 1) {
+              for (var q = 0; q < blurred.length; q++) blurred[q] *= msg.binInvScale;
+            }
+            blurs[band.key] = blurred;
+          }
+          var norm = dateLogNorm(blurred, msg.rows, msg.cols, msg.render.maxPassesByStrategy[band.key]);
+          var rgba = dateWorkerColorize(norm, msg.lut, msg.lutSize);
+          results.push({ layer: band.layer, rows: msg.rows, cols: msg.cols, rgba: rgba });
+        });
+        // Coverage shares the blurred binary grid (see dateCoverageNorm).
+        if (blurs["binary-per-activity"] && msg.coverageLayer) {
+          var cov = dateCoverageNorm(
+            blurs["binary-per-activity"],
+            msg.rows,
+            msg.cols,
+            msg.render,
+            msg.render.maxPassesByStrategy
+          );
+          var covRgba = dateWorkerColorize(cov, msg.lut, msg.lutSize);
+          results.push({ layer: msg.coverageLayer, rows: msg.rows, cols: msg.cols, rgba: covRgba });
+        }
+        var buffers = results.map(function (r) {
+          return r.rgba.buffer;
+        });
+        selfScope.postMessage({ ok: true, results: results }, buffers);
+      } catch (err) {
+        selfScope.postMessage({ ok: false });
+      }
+    };
+  }
+
+  function dateWorkerColorize(norm, lut, lutSize) {
+    var size = norm.length;
+    var rgba = new Uint8ClampedArray(size * 4);
+    for (var i = 0; i < size; i++) {
+      var v = norm[i];
+      if (!(v > 0)) continue;
+      var idx = v >= 1 ? lutSize - 1 : Math.round(v * (lutSize - 1));
+      var src = idx * 4;
+      var dst = i * 4;
+      rgba[dst] = lut[src];
+      rgba[dst + 1] = lut[src + 1];
+      rgba[dst + 2] = lut[src + 2];
+      rgba[dst + 3] = lut[src + 3];
+    }
+    return rgba;
+  }
+
+  var dateWorkerSrc = null;
+  var dateWorker = null;
+
+  function dateWorkerSource() {
+    if (dateWorkerSrc) return dateWorkerSrc;
+    dateWorkerSrc = [
+      dateWorkerDispatch.toString(),
+      dateGaussianBlur.toString(),
+      dateLogNorm.toString(),
+      dateCoverageNorm.toString(),
+      dateWorkerColorize.toString(),
+      "dateWorkerDispatch(self);",
+    ].join("\n");
+    return dateWorkerSrc;
+  }
+
+  // A worker is created per render; any worker still crunching the PREVIOUS
+  // range is terminated first, so a fast user at the slider never queues stale
+  // renders behind old ones — the newest range is always the one that matters.
+  function dateEnsureWorker() {
+    if (typeof Worker !== "function" || typeof Blob !== "function") return null;
+    if (typeof URL === "undefined" || typeof URL.createObjectURL !== "function") return null;
+    try {
+      if (!dateWorker) {
+        dateWorker = new Worker(
+          URL.createObjectURL(new Blob([dateWorkerSource()], { type: "application/javascript" }))
+        );
+      }
+      return dateWorker;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  // Post a job, resolving with the worker's result bands (raw RGBA buffers).
+  // Returns null when workers are unavailable so the caller can fall back to
+  // the synchronous math. A render superseded by a newer job is terminated
+  // before it can reply, so its promise never settles; callers guard against
+  // painting anything stale with the render sequence number (see refresh).
+  function dateRunWorker(msg) {
+    if (dateWorker) {
+      try {
+        dateWorker.terminate();
+      } catch (e) {
+        /* already gone */
+      }
+      dateWorker = null;
+    }
+    var worker = dateEnsureWorker();
+    if (!worker) return null;
+    return new Promise(function (resolve, reject) {
+      function cleanup() {
+        worker.removeEventListener("message", onMessage);
+        worker.removeEventListener("error", onError);
+      }
+      function onError() {
+        cleanup();
+        reject(new Error("date-range worker failed"));
+      }
+      function onMessage(event) {
+        cleanup();
+        var data = event.data || {};
+        if (!data.ok) {
+          reject(new Error("date-range worker error"));
+          return;
+        }
+        resolve(data.results || []);
+      }
+      worker.addEventListener("message", onMessage);
+      worker.addEventListener("error", onError);
+      worker.postMessage(msg, msg.transfer || []);
+    });
+  }
+
+  // Turn the three strategy grids into overlay renditions. Prefers the worker
+  // so the blur + colour work run off the main thread; falls back to the
+  // identical synchronous math when a worker cannot be created. When
+  // ``binFactor`` is > 1 the grids are already binned down, so the blur runs at
+  // sigma / binFactor and the result is scaled back by 1/binFactor^2 (see
+  // dateWorkerDispatch) to stay on the full-resolution legend scale. The binned
+  // frames are then painted back up to the baked image's resolution
+  // (``fullRows x fullCols``) with the canvas's own smoothed scaling in
+  // datePngUri, so the filtered overlay keeps the map's smooth, high-res look.
+  // Returns a Promise of ``{layer: PNG data URI}``.
+  function dateEncodeRange(
+    decay,
+    raw,
+    binary,
+    cols,
+    rows,
+    render,
+    maxByStrategy,
+    binFactor,
+    fullRows,
+    fullCols
+  ) {
+    var bands = [];
+    (dateDensityModes || []).forEach(function (mode) {
+      if (!mode || !mode.key || !mode.layer) return;
+      var grid =
+        mode.key === "raw-count"
+          ? raw
+          : mode.key === "binary-per-activity"
+            ? binary
+            : decay;
+      bands.push({ key: mode.key, layer: mode.layer, grid: grid });
+    });
+    if (!bands.length) return Promise.resolve({});
+
+    // Both render paths normalise options the same way the baked pipeline
+    // does, so a missing sigma falls back to the same default here.
+    var binInvScale = binFactor > 1 ? 1 / (binFactor * binFactor) : 1;
+    var workerRender = {
+      decayFactor: render.decayFactor,
+      blurSigmaPx: typeof render.blurSigmaPx === "number" ? render.blurSigmaPx : 2,
+      coverageNormalization: render.coverageNormalization,
+      nActivities: render.nActivities,
+      maxPassesByStrategy: maxByStrategy,
+    };
+    // A binned grid is F cells per sample, so the same physical blur needs a
+    // F-times wider footprint; the counts are then un-scaled after the blur.
+    if (binFactor > 1) workerRender.blurSigmaPx = workerRender.blurSigmaPx / binFactor;
+
+    var workerJob = dateRunWorker({
+      rows: rows,
+      cols: cols,
+      binInvScale: binInvScale,
+      render: workerRender,
+      lut: dateEnsureLut(),
+      lutSize: DATE_COUNT_LUT_SIZE,
+      coverageLayer: DATE_FILTER_COVERAGE,
+      bands: bands,
+      transfer: bands.map(function (b) {
+        return b.grid.buffer;
+      }),
+    });
+    if (workerJob) {
+      return workerJob.then(function (results) {
+        var urisByName = {};
+        for (var i = 0; i < results.length; i++) {
+          var r = results[i];
+          var uri = datePngUri(r.rgba, r.rows, r.cols, fullRows, fullCols);
+          if (uri !== null) urisByName[r.layer] = uri;
+        }
+        return urisByName;
+      });
+    }
+
+    // Synchronous fallback — the same math dateWorkerDispatch runs (mirrors the
+    // strategy selection above, including the shared binary blur for coverage).
+    var sigma = workerRender.blurSigmaPx;
+    var blurs = {};
+    var urisByName = {};
+    for (var i = 0; i < bands.length; i++) {
+      var b = bands[i];
+      var blurred = blurs[b.key];
+      if (!blurred) {
+        blurred = dateGaussianBlur(b.grid, rows, cols, sigma);
+        if (binInvScale !== 1) {
+          for (var q = 0; q < blurred.length; q++) blurred[q] *= binInvScale;
+        }
+        blurs[b.key] = blurred;
+      }
+      var norm = dateLogNorm(blurred, rows, cols, maxByStrategy[b.key]);
+      var uri = dateColorizeAndUri(norm, rows, cols, fullRows, fullCols);
+      if (uri !== null) urisByName[b.layer] = uri;
+    }
+    if (blurs["binary-per-activity"]) {
+      var cov = dateCoverageNorm(blurs["binary-per-activity"], rows, cols, workerRender, maxByStrategy);
+      var covUri = dateColorizeAndUri(cov, rows, cols, fullRows, fullCols);
+      if (covUri !== null) urisByName[DATE_FILTER_COVERAGE] = covUri;
+    }
+    return Promise.resolve(urisByName);
+  }
+
+  // The visits payload is already grouped by activity, so one pass turns it
+  // into per-activity cell lists — [cell_key, n_visits] pairs — and a range
+  // change never has to re-scan the whole document (only accumulate the
+  // in-range activities' lists).
+  var dateVisitLists = null;
+
+  function dateBuildVisitLists(index) {
+    var visits = index.visits || [];
+    var total = (index.activities || []).length;
+    var lists = new Array(total);
+    for (var i = 0; i < total; i++) lists[i] = null;
+    for (var k = 0; k < visits.length; k++) {
+      var rec = visits[k];
+      var id = rec[0];
+      if (id < 0 || id >= total || !rec[1]) continue;
+      if (!lists[id]) lists[id] = [];
+      lists[id].push([rec[1], rec[2]]);
+    }
+    return lists;
+  }
+
+  // ISO dates compare correctly as plain strings ("YYYY-MM-DD"). Activities
+  // with no date (a bespoke track label the loader could not parse) are only
+  // shown when no bound is set, mirroring the click popup's date filter.
+  function dateMatchesRange(date, from, to) {
+    if (!from && !to) return true;
+    if (!date) return false;
+    if (from && date < from) return false;
+    if (to && date > to) return false;
+    return true;
+  }
+
+  // Which overlay holds the pre-baked layer for each raster mode; resolving it
+  // from the panel's advanced config keeps this in step with the Advanced
+  // dropdown (mode key -> layer name, see build_advanced_config).
+  var dateDensityModes = null;
+
+  // The date filter renders onto a grid binned down so the blur + colour work
+  // scale with the VIEW (a couple of million cells) instead of the bake (the
+  // full grids here reach tens of millions of cells, which would take the blur
+  // ~10s per strategy at full resolution). The bins land back on the baked
+  // legend scale because the binned counts are re-scaled by 1/F^2 after the
+  // blur (see dateEncodeRange): the blur operator is linear, so the binned
+  // blurred field is ~F^2 times the full-resolution blurred field, which
+  // divides straight back out against the full maxPassesByStrategy.
+  var DATE_FILTER_TARGET_CELLS = 2500000;
+
+  // Bin factor for a grid: the smallest integer F so a cell count <= the
+  // target; grids already at or below the target render at full resolution.
+  function dateBinFactor(rows, cols) {
+    var cells = rows * cols;
+    if (cells <= DATE_FILTER_TARGET_CELLS) return 1;
+    return Math.ceil(Math.sqrt(cells / DATE_FILTER_TARGET_CELLS));
+  }
+
+  // Recompute the strategy grids from the in-range activities and produce one
+  // overlay image URI per density mode plus the coverage layer. The grids are
+  // accumulated onto a binned-down grid (see dateBinFactor) so the raster work
+  // scales with the viewport-sized preview rather than the full bake. Returns a
+  // Promise of ``{ urisByName, shown, total }`` — the URI painting is handed to
+  // the Web Worker (see dateEncodeRange) so the panel never blocks on it.
+  function dateRenderRange(index, from, to) {
+    var activities = index.activities || [];
+    var cols = index.cols;
+    var rows = index.rows;
+    var render = index.render || {};
+    var maxByStrategy = render.maxPassesByStrategy || {};
+    if (!dateVisitLists || dateVisitLists.length !== activities.length) {
+      dateVisitLists = dateBuildVisitLists(index);
+    }
+
+    var included = [];
+    for (var id = 0; id < activities.length; id++) {
+      var date = (activities[id] && activities[id][0]) || "";
+      if (dateMatchesRange(date, from, to)) included.push(id);
+    }
+
+    // Accumulate straight into the binned grid — the date filter's raster work
+    // then scales with the ~2.5M-cell preview, not the tens-of-millions-cell
+    // bake, and the 1/F^2 scaling in dateEncodeRange keeps the colours on the
+    // full-resolution legend scale.
+    var binFactor = dateBinFactor(rows, cols);
+    var colsB = Math.ceil(cols / binFactor);
+    var rowsB = Math.ceil(rows / binFactor);
+    var sizeB = rowsB * colsB;
+    var decay = new Float64Array(sizeB);
+    var raw = new Float64Array(sizeB);
+    var binary = new Float64Array(sizeB);
+    var df = render.decayFactor;
+    var cell, n, b, row;
+    for (var i = 0; i < included.length; i++) {
+      var list = dateVisitLists[included[i]];
+      if (!list) continue;
+      for (var j = 0; j < list.length; j++) {
+        cell = list[j][0];
+        n = list[j][1];
+        row = (cell / cols) | 0;
+        b = ((row / binFactor) | 0) * colsB + ((cell % cols) / binFactor | 0);
+        decay[b] += dateGeomSum(n, df);
+        raw[b] += n;
+        binary[b] += 1;
+      }
+    }
+
+    return dateEncodeRange(decay, raw, binary, colsB, rowsB, render, maxByStrategy, binFactor, rows, cols).then(
+      function (urisByName) {
+        return { urisByName: urisByName, shown: included.length, total: activities.length };
+      }
+    );
+  }
+
+  // The baked (unfiltered) image each re-rendered layer must be restored to
+  // when the range is reset. Captured from the overlay's own options on the
+  // first override, so no constants have to mirror the build.
+  var dateOriginals = {};
+  var dateFilterCache = {};
+
+  function dateEachSub(layer, fn) {
+    if (!layer) return;
+    if (typeof layer.eachLayer === "function") layer.eachLayer(fn);
+    else if (typeof fn === "function") fn(layer);
+  }
+
+  function dateSetLayerUri(layer, uri) {
+    dateEachSub(layer, function (sub) {
+      if (sub && typeof sub.setUrl === "function") sub.setUrl(uri);
+    });
+  }
+
+  function dateLayerUri(layer) {
+    var found = null;
+    dateEachSub(layer, function (sub) {
+      if (found !== null || !sub) return;
+      // The baked overlays are L.imageOverlay(url, bounds, opts) — folium
+      // passes the image positionally, so Leaflet keeps it as ``_url`` and
+      // ``options.image`` never exists. Read the real source so the reset can
+      // put the original full-resolution PNG back (see dateRestoreOriginals).
+      var src =
+        (sub.options && (sub.options.image || sub.options.url)) ||
+        (typeof sub._url === "string" ? sub._url : null);
+      if (typeof src === "string") found = src;
+    });
+    return found;
+  }
+
+  function dateApplyResult(result, overlays) {
+    var uris = result.urisByName || {};
+    for (var name in uris) {
+      if (!Object.prototype.hasOwnProperty.call(uris, name)) continue;
+      var layer = overlays[name];
+      if (!layer) continue;
+      if (!dateOriginals[name]) dateOriginals[name] = dateLayerUri(layer);
+      dateSetLayerUri(layer, uris[name]);
+    }
+  }
+
+  function dateRestoreOriginals(overlays) {
+    var originals = dateOriginals;
+    for (var name in originals) {
+      if (!Object.prototype.hasOwnProperty.call(originals, name)) continue;
+      var layer = overlays[name];
+      if (layer && originals[name]) dateSetLayerUri(layer, originals[name]);
+    }
+    dateOriginals = {};
+  }
+
+  /* ---- Date range filter: per-activity GPS tracks ----------------------- */
+
+  // The "Raw GPS tracks" polylines are one per activity, so the date range can
+  // fade them instantly — one setStyle per line, no raster work — giving the
+  // slider immediate visual feedback while the heatmap re-rasterizes in the
+  // worker. Each polyline's bound tooltip carries the activity label
+  // "YYYY-MM-DD Name" (see activity_index.split_activity_label), so the date is
+  // read straight off the layer, matching the range the same way the index
+  // rows do. Undated (bespoke) labels are hidden whenever a filter is active,
+  // exactly as the click popup and heatmap treat them.
+
+  var dateTrackMap = null;
+  var dateTrackStyles = {}; // sub-layer -> the style to restore it with
+
+  function dateTracksGroup(overlays) {
+    if (!overlays) return null;
+    for (var name in overlays) {
+      if (Object.prototype.hasOwnProperty.call(overlays, name) && /^Raw GPS tracks$/.test(name)) {
+        return overlays[name];
+      }
+    }
+    return null;
+  }
+
+  function dateTrackDate(sub) {
+    var tooltip = sub && sub._tooltip;
+    var content = tooltip && tooltip._content;
+    if (typeof content === "string") {
+      var m = content.match(/\d{4}-\d{2}-\d{2}/);
+      if (m) return m[0];
+    }
+    return null;
+  }
+
+  // Fade every track outside [from, to] to fully transparent and restore the
+  // ones inside. Styles are captured the first time a line is hidden so reset
+  // puts each Tracks-layer line back exactly as it was (including any opacity
+  // the "Raw GPS tracks" slider had set).
+  function dateTracksFiltered(overlays, from, to) {
+    var group = dateTracksGroup(overlays);
+    if (!group || typeof group.eachLayer !== "function") return;
+    if (!dateTrackMap || !dateTrackMap.hasLayer(group)) return;
+    var changed = false;
+    group.eachLayer(function (sub) {
+      if (!sub || typeof sub.setStyle !== "function") return;
+      var hidden = dateTrackStyles[sub] || null;
+      if (dateMatchesRange(dateTrackDate(sub), from, to)) {
+        if (hidden) {
+          sub.setStyle(hidden);
+          delete dateTrackStyles[sub];
+          changed = true;
+        }
+        return;
+      }
+      if (!hidden) {
+        dateTrackStyles[sub] = {
+          color: sub.options && sub.options.color,
+          weight: sub.options && sub.options.weight,
+          opacity: sub.options && sub.options.opacity,
+        };
+        sub.setStyle({ opacity: 0 });
+        changed = true;
+      }
+    });
+    return changed;
+  }
+
+  function dateRestoreTracks(overlays) {
+    var group = dateTracksGroup(overlays);
+    if (!group || typeof group.eachLayer !== "function") return;
+    group.eachLayer(function (sub) {
+      if (!sub || typeof sub.setStyle !== "function") return;
+      var hidden = dateTrackStyles[sub];
+      if (hidden) sub.setStyle(hidden);
+    });
+    dateTrackStyles = {};
+  }
+
+  // True while the chosen range is narrower than the data's full span. No
+  // bounds set, or bounds that cover everything, count as "not filtering".
+  function dateFeatureActive(from, to, bounds) {
+    return (
+      (from && String(from) > String(bounds[0])) || (to && String(to) < String(bounds[1]))
+    );
+  }
+
+  // Wire the From/To range slider. The section stays hidden unless the build
+  // carried both the date bounds AND the per-activity cell counts (see
+  // src/activity_index.build_activity_index) — a page without them cannot
+  // re-rasterize anything, so the control is simply not offered.
+  function installDateFilter(config) {
+    if (!config || !config.dateBounds || config.dateBounds.length < 2) return;
+    if (typeof document === "undefined" || typeof document.getElementById !== "function") {
+      return;
+    }
+    var panel = document.getElementById(config.panelId);
+    if (!panel || typeof panel.querySelector !== "function") return;
+    dateTrackMap = config.map || null;
+    var section = panel.querySelector("#hcp-dates-section");
+    var fromEl = panel.querySelector("#hcp-date-from");
+    var toEl = panel.querySelector("#hcp-date-to");
+    var fromReadout = panel.querySelector("#hcp-date-from-readout");
+    var toReadout = panel.querySelector("#hcp-date-to-readout");
+    var resetEl = panel.querySelector("#hcp-date-reset");
+    var statusEl = panel.querySelector("#hcp-date-status");
+    var fillEl = panel.querySelector("#hcp-date-slider-fill");
+    if (!section || !fromEl || !toEl || !fromReadout || !toReadout || !resetEl || !statusEl || !fillEl) return;
+
+    dateDensityModes = (config.advanced && config.advanced.modes) || null;
+    if (!dateDensityModes || !dateDensityModes.length) return;
+
+    var bounds = config.dateBounds;
+    var DAY_MS = 24 * 60 * 60 * 1000;
+    var startMs = Date.parse(bounds[0]);
+    var endMs = Date.parse(bounds[1]);
+    // The slider steps one day at a time between the two bounds.
+    var totalDays = Math.max(1, Math.round((endMs - startMs) / DAY_MS));
+
+    // Slider position i maps to bounds[0] + i days.
+    function indexToDate(i) {
+      return new Date(startMs + i * DAY_MS);
+    }
+
+    function toIso(d) {
+      // Parse/build in UTC so the day boundaries match the ISO bounds no
+      // matter the viewer's timezone.
+      var m = d.getUTCMonth() + 1;
+      var day = d.getUTCDate();
+      return (
+        d.getUTCFullYear() +
+        "-" +
+        (m < 10 ? "0" : "") + m +
+        "-" +
+        (day < 10 ? "0" : "") + day
+      );
+    }
+
+    // The ISO strings the filter logic compares (see refresh). A thumb on an
+    // edge of the full range reports an empty bound, so the whole range reads
+    // as "not filtering" exactly like an unset picker did (dateFeatureActive).
+    function fromDate() {
+      var i = parseInt(fromEl.value, 10);
+      return i > 0 ? toIso(indexToDate(i)) : "";
+    }
+
+    function toDate() {
+      var i = parseInt(toEl.value, 10);
+      return i < totalDays ? toIso(indexToDate(i)) : "";
+    }
+
+    // Keep the From/To readouts and the fill bar between the thumbs in step
+    // with the slider positions. Cheap enough to run on every "input" event.
+    function syncReadouts() {
+      fromReadout.textContent = toIso(indexToDate(parseInt(fromEl.value, 10)));
+      toReadout.textContent = toIso(indexToDate(parseInt(toEl.value, 10)));
+      var fromPct = (parseInt(fromEl.value, 10) / totalDays) * 100;
+      var toPct = (parseInt(toEl.value, 10) / totalDays) * 100;
+      fillEl.style.left = fromPct + "%";
+      fillEl.style.width = (toPct - fromPct) + "%";
+    }
+
+    // Dragging one thumb past the other would leave an inverted range; swap
+    // the two positions so the range stays valid and the fill bar keeps sense.
+    function enforceOrder() {
+      var from = parseInt(fromEl.value, 10);
+      var to = parseInt(toEl.value, 10);
+      if (from > to) {
+        fromEl.value = String(to);
+        toEl.value = String(from);
+      }
+      syncReadouts();
+    }
+
+    fromEl.min = "0";
+    fromEl.max = String(totalDays);
+    fromEl.value = "0";
+    toEl.min = "0";
+    toEl.max = String(totalDays);
+    toEl.value = String(totalDays);
+    syncReadouts();
+
+    // Confirm the index can actually re-render before showing the control: a
+    // page with bounds but no per-activity visits (e.g. an index built without
+    // the filter's payload) must not offer a dead toggle.
+    loadActivityIndex()
+      .then(function (index) {
+        section.hidden = !(index && index.visits && index.render);
+      })
+      .catch(function () {
+        section.hidden = true;
+      });
+
+    var timer = null;
+    // Each refresh is stamped; when a render resolves, only the newest stamp
+    // may paint. A superseded render (the slider moved on, or a fresh worker
+    // replaced the job) is dropped instead of flashing a stale heatmap.
+    var renderSeq = 0;
+
+    function schedule() {
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(refresh, 250);
+    }
+
+    function refresh() {
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      var from = fromDate();
+      var to = toDate();
+      // Remember the range so a click popup opened while the range is active
+      // filters to the same dates (buildActivityPopup reads dateFilterBounds)
+      // and push the latest bounds into a popup already on the map.
+      dateFilterBounds.from = from;
+      dateFilterBounds.to = to;
+      if (datePopupApply) datePopupApply(from, to);
+      var overlays = findOverlays();
+      if (!overlays) return;
+      if (!dateFeatureActive(from, to, bounds)) {
+        dateRestoreOriginals(overlays);
+        dateRestoreTracks(overlays);
+        // Drop any stale render still in flight from before the reset: without
+        // this it would resolve and repaint the filtered image, and re-capture
+        // THAT as the new "original" for the next reset.
+        renderSeq++;
+        statusEl.textContent = "";
+        dateShowBlocker(dateTrackMap, false);
+        return;
+      }
+      // Tracks fade instantly (one setStyle per line); the heatmap re-rasterises
+      // in the worker and paints over when it is ready. The map is dimmed and
+      // its interaction disabled while the render runs.
+      dateTracksFiltered(overlays, from, to);
+      statusEl.textContent = "Filtering\u2026";
+      dateShowBlocker(dateTrackMap, true);
+      var seq = ++renderSeq;
+      loadActivityIndex()
+        .then(function (index) {
+          if (!index || !index.visits || !index.render) {
+            section.hidden = true;
+            dateShowBlocker(dateTrackMap, false);
+            return;
+          }
+          var key = from + "|" + to;
+          var pending = dateFilterCache[key];
+          if (!pending) {
+            pending = dateRenderRange(index, from, to);
+            var keys = Object.keys(dateFilterCache);
+            // Each cached frame is a set of full-resolution PNG data URIs (as big as the
+    // baked overlays), so only a handful of ranges are kept; the slider revisit
+    // case that matters most is a few adjacent ranges.
+    if (keys.length >= 8) delete dateFilterCache[keys[0]];
+            dateFilterCache[key] = pending;
+          }
+          return pending.then(function (result) {
+            if (seq !== renderSeq) return;
+            dateApplyResult(result, overlays);
+            statusEl.textContent =
+              result.shown === result.total
+                ? result.total + " activities"
+                : result.shown + " of " + result.total + " activities";
+            dateShowBlocker(dateTrackMap, false);
+          });
+        })
+        .catch(function () {
+          if (seq === renderSeq) {
+            statusEl.textContent = "";
+            dateShowBlocker(dateTrackMap, false);
+          }
+        });
+    }
+
+    fromEl.addEventListener("input", enforceOrder);
+    toEl.addEventListener("input", enforceOrder);
+    fromEl.addEventListener("change", schedule);
+    toEl.addEventListener("change", schedule);
+    resetEl.addEventListener("click", function () {
+      fromEl.value = "0";
+      toEl.value = String(totalDays);
+      syncReadouts();
+      refresh();
+    });
+
+    // Enabling the "Raw GPS tracks" layer while a range is active must respect
+    // it immediately; otherwise only the next slider move would fade the lines.
+    if (dateTrackMap && typeof dateTrackMap.on === "function") {
+      dateTrackMap.on("overlayadd", function (e) {
+        if (!e || !/^Raw GPS tracks$/.test(e.name || "")) return;
+        var overlays = findOverlays();
+        if (!overlays) return;
+        var from = fromDate();
+        var to = toDate();
+        if (dateFeatureActive(from, to, bounds)) {
+          dateTracksFiltered(overlays, from, to);
+        }
+      });
+    }
   }
 
   /* ---- Init ------------------------------------------------------------- */
@@ -2306,6 +3343,12 @@
     // Clicking a painted pixel lists the activities behind it (see
     // installActivityTooltips). A no-op on a page built without the index.
     installActivityTooltips(map);
+
+    /* --- Date range filter ------------------------------------------------ */
+    // From/To range slider that re-rasterizes the density / coverage layers in
+    // the browser (see installDateFilter). A no-op unless the build embedded
+    // the date bounds and the tooltip index carries the per-activity cells.
+    installDateFilter(config);
   }
 
   global.initHeatmapControlPanel = init;
