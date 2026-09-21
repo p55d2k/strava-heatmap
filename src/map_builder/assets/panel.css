@@ -577,6 +577,85 @@
   color: var(--hcp-text-muted);
 }
 
+/* Two-way "Sort" segment at the top of a popup that found more than one
+   activity: newest-first (the default) or nearest-first. Switching re-sorts the
+   open list in place, and the choice is remembered for the next popup. */
+.hcp-sort {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.hcp-sort-label {
+  color: var(--hcp-text-muted);
+  margin-right: 2px;
+}
+
+.hcp-sort-option {
+  background: var(--hcp-control-bg);
+  border: 1px solid var(--hcp-control-border);
+  border-radius: 999px;
+  color: var(--hcp-text);
+  font-family: inherit;
+  font-size: 10.5px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.hcp-sort-option:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.hcp-sort-option-active {
+  background: var(--hcp-accent);
+  border-color: var(--hcp-accent);
+  color: #fff;
+}
+
+/* ------------------------------------------- Click tolerance (on-map) */
+/* A small control docked in the bottom-left of the map rather than the sidebar:
+   the click tolerance is a property of the map gesture, so it sits beside the
+   map it applies to. It swallows its own pointer events (see panel.js) so
+   dragging the slider never pans the map or opens a popup underneath, and the
+   PNG export leaves it out (see EXPORT_EXCLUDED_CLASSES). */
+.hcp-activity-control {
+  position: absolute;
+  left: 10px;
+  bottom: 10px;
+  z-index: 900;
+  min-width: 118px;
+  padding: 6px 8px;
+  background: var(--hcp-bg);
+  border: 1px solid var(--hcp-border);
+  border-radius: var(--hcp-radius);
+  box-shadow: var(--hcp-shadow);
+  color: var(--hcp-text);
+  font-family: var(--hcp-font);
+  font-size: 10.5px;
+  line-height: 1.3;
+}
+
+.hcp-activity-control-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 2px;
+  color: var(--hcp-text-muted);
+}
+
+.hcp-activity-control-value {
+  color: var(--hcp-text);
+  font-variant-numeric: tabular-nums;
+}
+
+.hcp-activity-control input[type="range"] {
+  display: block;
+  width: 100%;
+  margin: 0;
+  accent-color: var(--hcp-accent);
+}
+
 /* ---------------------------------------------------------- Heatmap legend */
 /* The legend card itself is styled in legend.css (shared with the embeddable
    widget); only the panel-specific rules below live here. */

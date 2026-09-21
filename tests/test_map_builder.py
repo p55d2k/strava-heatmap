@@ -1125,9 +1125,19 @@ class TestControlPanel:
         # click stay tellable apart.
         assert "hcp-activity-distance" in script
         assert "formatDistance" in script
+        # Rows are listed newest-first: a recency comparator re-sorts the
+        # nearest-first search results for display.
+        assert "byRecency" in script
         # The list can be narrowed in place, by activity type and date range.
         assert "hcp-filter-chip" in script
         assert "hcp-filter-date-input" in script
+        # The list can be re-ordered newest-first / nearest-first from the popup,
+        # and the click tolerance is adjustable live from an on-map control.
+        assert "hcp-sort-option" in script
+        assert "byNearest" in script
+        assert "buildActivityControl" in script
+        assert "setActivitySearchRadius" in script
+        assert "hcp-activity-control" in script
         # The index travels compressed, so the click has to inflate it with the
         # browser's own decompressor (lazily — see the constant + guard).
         assert "DecompressionStream" in script
@@ -1142,6 +1152,8 @@ class TestControlPanel:
         assert ".hcp-activity-link" in css
         assert ".hcp-filter-chip" in css
         assert ".hcp-filter-date" in css
+        assert ".hcp-sort-option" in css
+        assert ".hcp-activity-control" in css
 
     def test_gpx_download_is_named_after_output_gpx(self):
         """The panel offers the download under the configured OUTPUT_GPX name."""

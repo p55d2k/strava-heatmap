@@ -872,10 +872,12 @@
   // CSS (bottom: 28px / right: 10px) so the PNG matches what was on screen.
   var EXPORT_LEGEND_RIGHT_PX = 10;
   var EXPORT_LEGEND_BOTTOM_PX = 28;
-  // Class ScalableHomeMarker puts on the home marker's SVG path. It is left out
-  // of the export: the marker points at a personal location, and as a lone dot
-  // in a still image it reads as an artefact rather than as information.
-  var EXPORT_EXCLUDED_CLASS = "hcp-home-marker";
+  // Classes left out of the exported picture. ScalableHomeMarker puts the first
+  // on the home marker's SVG path: the marker points at a personal location, and
+  // as a lone dot in a still image it reads as an artefact rather than as
+  // information. The second is the click-tolerance control — map chrome the
+  // visitor interacts with, not part of the heatmap being exported.
+  var EXPORT_EXCLUDED_CLASSES = ["hcp-home-marker", "hcp-activity-control"];
   // Class put on the map container while a PNG is being built. The panel CSS
   // uses it to neutralise the Leaflet zoom buttons (pointer-events only, so the
   // exported picture is unaffected).
@@ -932,9 +934,13 @@
       backgroundColor: null,
       logging: false,
       scale: EXPORT_SCALE,
-      // Drop the home marker from the picture (see EXPORT_EXCLUDED_CLASS).
+      // Drop the map chrome from the picture (see EXPORT_EXCLUDED_CLASSES).
       ignoreElements: function (node) {
-        return Boolean(node && node.classList && node.classList.contains(EXPORT_EXCLUDED_CLASS));
+        if (!node || !node.classList) return false;
+        for (var i = 0; i < EXPORT_EXCLUDED_CLASSES.length; i++) {
+          if (node.classList.contains(EXPORT_EXCLUDED_CLASSES[i])) return true;
+        }
+        return false;
       },
     });
   }
@@ -1192,6 +1198,13 @@
   // Cap how many rows a single popup renders. A well-used junction can be
   // visited by hundreds of activities; the popup then says how many more.
   var ACTIVITY_MAX_LISTED = 50;
+  // The order a popup lists what it found: newest first ("recent", the default)
+  // or closest to the click first ("nearest"). The choice is remembered across
+  // clicks — every click builds a fresh popup — so it sticks while the visitor
+  // explores.
+  var ACTIVITY_SORT_RECENT = "recent";
+  var ACTIVITY_SORT_NEAREST = "nearest";
+  var activitySortOrder = ACTIVITY_SORT_RECENT;
   // Click tolerance, in screen pixels. A route is a thin line that rarely sits
   // under the exact pixel clicked, and the painted heatmap is blurred wider
   // than the raw data cells, so requiring a pixel-perfect hit mostly returns
@@ -1200,6 +1213,12 @@
   // Defining it in screen pixels (rather than cells or metres) keeps the
   // gesture feeling the same at every zoom level.
   var ACTIVITY_SEARCH_RADIUS_PX = 14;
+  // Bounds for the live tolerance slider (see buildActivityControl). Below the
+  // minimum a click would have to be pixel-perfect to find anything; above the
+  // maximum the search stops meaning "near here" and starts scanning a large
+  // square of the grid on every click.
+  var ACTIVITY_RADIUS_MIN_PX = 4;
+  var ACTIVITY_RADIUS_MAX_PX = 40;
   // Used only when the map cannot report its zoom (a minimal shim): a modest
   // fixed number of cells keeps the search useful without a huge scan.
   var ACTIVITY_SEARCH_RADIUS_CELLS_FALLBACK = 6;
@@ -1388,7 +1407,9 @@
   }
 
   // Build the popup body. ``results`` is the output of activitiesNear (nearest
-  // first) and every row carries the distance from the click so several routes
+  // first); the list is re-sorted into the order the visitor picked with the
+  // popup's own Sort segment (newest-first by default — see byRecency /
+  // byNearest). Every row carries the distance from the click so several routes
   // in one popup stay tellable apart. When the result set spans more than one
   // activity type, or more than one date, a compact filter bar is added so the
   // list can be narrowed without moving the map.
@@ -1400,6 +1421,11 @@
     var title = document.createElement("div");
     title.className = "hcp-activities-title";
     root.appendChild(title);
+
+    // The order choice only means anything with more than one activity to order.
+    if (results.length > 1) {
+      root.appendChild(buildSortToggle());
+    }
 
     var list = document.createElement("ul");
     list.className = "hcp-activities-list";
@@ -1426,12 +1452,91 @@
       return true;
     }
 
+    // The two orders the list can be shown in. Both fall back to the activity
+    // id so the sequence is total rather than relying on the sort being stable.
+    //
+    // Nearest first: the route closest to the click heads the list. This is the
+    // order ``activitiesNear`` already returns, so it matches the distance
+    // figures each row carries.
+    function byNearest(a, b) {
+      return a.distance - b.distance || a.id - b.id;
+    }
+
+    // Recency first: the newest activity heads the list. The dates are ISO
+    // strings (yyyy-mm-dd), so a plain string compare is already chronological.
+    // Activities sharing a date keep their nearest-first order, and a row with
+    // no date — a hand-made track label the loader could not parse — sinks below
+    // the dated ones rather than crowding them out.
+    function byRecency(a, b) {
+      var dateA = (activities[a.id] && activities[a.id][0]) || "";
+      var dateB = (activities[b.id] && activities[b.id][0]) || "";
+      if (dateA !== dateB) {
+        if (!dateA) return 1;
+        if (!dateB) return -1;
+        return dateA < dateB ? 1 : -1;
+      }
+      return byNearest(a, b);
+    }
+
+    // The two-way "Sort" segment. Only built for a click that found more than
+    // one activity, so a single-activity popup stays uncluttered. Switching
+    // re-sorts the open popup in place, and the choice is remembered for the
+    // next one (see activitySortOrder).
+    function buildSortToggle() {
+      var box = document.createElement("div");
+      box.className = "hcp-sort";
+
+      var label = document.createElement("span");
+      label.className = "hcp-sort-label";
+      label.textContent = "Sort";
+      box.appendChild(label);
+
+      var buttons = [];
+      [
+        {
+          value: ACTIVITY_SORT_RECENT,
+          label: "Newest",
+          title: "List the most recent activity first.",
+        },
+        {
+          value: ACTIVITY_SORT_NEAREST,
+          label: "Nearest",
+          title: "List the route closest to the click first.",
+        },
+      ].forEach(function (option) {
+        var btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "hcp-sort-option";
+        // Active state is managed through classList (like the basemap segments)
+        // so the buttons stay consistent with the click handler below.
+        if (activitySortOrder === option.value) {
+          btn.classList.add("hcp-sort-option-active");
+        }
+        btn.setAttribute("data-sort", option.value);
+        btn.title = option.title;
+        btn.textContent = option.label;
+        btn.addEventListener("click", function () {
+          activitySortOrder = option.value;
+          buttons.forEach(function (other) {
+            other.classList.toggle("hcp-sort-option-active", other === btn);
+          });
+          render();
+        });
+        buttons.push(btn);
+        box.appendChild(btn);
+      });
+      return box;
+    }
+
     // Rebuild the rows for the current filters. The controls below mutate the
     // state and call this again, so the open popup updates in place.
     function render() {
       var matching = results.filter(function (result) {
         return matches(activities[result.id]);
       });
+      matching.sort(
+        activitySortOrder === ACTIVITY_SORT_NEAREST ? byNearest : byRecency
+      );
 
       title.textContent = filtersActive()
         ? matching.length + " of " + results.length + " activities shown"
@@ -1565,10 +1670,109 @@
     if (typeof activityHighlight.addTo === "function") activityHighlight.addTo(map);
   }
 
+  // The click tolerance is adjustable while the page is open, from a small
+  // control docked on the map itself (see buildActivityControl): the tolerance
+  // is a property of the click gesture, so it belongs beside the map rather than
+  // in the sidebar. Narrowing it pins a click to the exact pixel in a busy
+  // corner; widening it reaches a route beside a road or a junction's other arm.
+  var ACTIVITY_CONTROL_CLASS = "hcp-activity-control";
+
+  // A control living inside the map container has to swallow the pointer events
+  // Leaflet listens for on that container, or dragging its slider would pan the
+  // map and clicking it would open a popup underneath. Leaflet's own DomEvent
+  // helpers do exactly this for built-in controls; a minimal shim falls back to
+  // stopping propagation directly.
+  var ACTIVITY_CONTROL_EVENTS = [
+    "mousedown",
+    "mouseup",
+    "click",
+    "dblclick",
+    "wheel",
+    "touchstart",
+    "touchmove",
+    "touchend",
+    "pointerdown",
+    "pointerup",
+  ];
+
+  function isolateActivityControl(el) {
+    if (global.L && global.L.DomEvent) {
+      global.L.DomEvent.disableClickPropagation(el);
+      global.L.DomEvent.disableScrollPropagation(el);
+      return;
+    }
+    ACTIVITY_CONTROL_EVENTS.forEach(function (name) {
+      el.addEventListener(name, function (event) {
+        if (event && typeof event.stopPropagation === "function") event.stopPropagation();
+      });
+    });
+  }
+
+  // Apply a new tolerance. A ring left on the map by the last click is resized
+  // too, so a drag shows its effect immediately rather than only on the next
+  // click.
+  function setActivitySearchRadius(px) {
+    var rounded = Math.round(px);
+    if (!isFinite(rounded)) return;
+    ACTIVITY_SEARCH_RADIUS_PX = Math.max(
+      ACTIVITY_RADIUS_MIN_PX,
+      Math.min(ACTIVITY_RADIUS_MAX_PX, rounded)
+    );
+    if (activityHighlight && typeof activityHighlight.setRadius === "function") {
+      activityHighlight.setRadius(ACTIVITY_SEARCH_RADIUS_PX);
+    }
+  }
+
+  // Build the floating click-radius control and dock it in the map's bottom-left
+  // corner. Returns null when the map has no container to hold it — the click
+  // handling still works, only the slider is missing.
+  function buildActivityControl(map) {
+    var container =
+      map && typeof map.getContainer === "function" ? map.getContainer() : null;
+    if (!container || typeof container.appendChild !== "function") return null;
+
+    var control = document.createElement("div");
+    control.className = ACTIVITY_CONTROL_CLASS;
+
+    var label = document.createElement("div");
+    label.className = "hcp-activity-control-label";
+
+    var labelText = document.createElement("span");
+    labelText.textContent = "Click radius";
+    label.appendChild(labelText);
+
+    var value = document.createElement("span");
+    value.className = "hcp-activity-control-value";
+    value.textContent = ACTIVITY_SEARCH_RADIUS_PX + " px";
+    label.appendChild(value);
+    control.appendChild(label);
+
+    var slider = document.createElement("input");
+    slider.type = "range";
+    slider.className = "hcp-activity-control-slider";
+    slider.min = String(ACTIVITY_RADIUS_MIN_PX);
+    slider.max = String(ACTIVITY_RADIUS_MAX_PX);
+    slider.step = "1";
+    slider.value = String(ACTIVITY_SEARCH_RADIUS_PX);
+    slider.setAttribute("aria-label", "Click radius in pixels");
+    slider.title = "How far from a click to look for a route.";
+    slider.addEventListener("input", function () {
+      setActivitySearchRadius(parseFloat(slider.value));
+      value.textContent = ACTIVITY_SEARCH_RADIUS_PX + " px";
+    });
+    control.appendChild(slider);
+
+    isolateActivityControl(control);
+    container.appendChild(control);
+    return control;
+  }
+
   function installActivityTooltips(map) {
     if (!map || typeof map.on !== "function") return;
     // No embedded index means nothing to show; leave clicks alone entirely.
     if (!document.getElementById(ACTIVITY_DATA_ID)) return;
+    // The tolerance slider rides along with the click handling it governs.
+    buildActivityControl(map);
     map.on("click", function (event) {
       if (!event || !event.latlng) return;
       loadActivityIndex()

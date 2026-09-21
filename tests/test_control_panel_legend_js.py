@@ -86,8 +86,9 @@ _GPX_SAMPLE = (
 # cell and an out-of-grid click exercise the other two branches.
 _ACTIVITY_URL = "https://www.strava.com/activities/42"
 _ACTIVITY_URL_2 = "https://www.strava.com/activities/43"
-# Two routes a few cells apart, so one click catches both and the popup can be
-# checked for nearest-first ordering and its per-row distance figures.
+# Two routes a few cells apart, with the newer one further from the anchor, so
+# one click catches both and the popup can be checked for recency ordering (the
+# newer route heads the list) and its per-row distance figures.
 _ACTIVITY_TRACKS = [
     ("2024-01-01 Morning Run", [[45.0, -122.0, 5.0, 150, 100.0]]),
     ("2024-01-02 Evening Ride", [[45.0, -122.0, 4.0, 140, 100.0]]),
@@ -102,8 +103,8 @@ _ACTIVITY_EMPTY = {"lat": 45.0, "lng": -0.002}
 _ACTIVITY_OUTSIDE = {"lat": 89.9, "lng": 0.0}
 _ACTIVITY_HIT_CELL = 50 * 100 + 50  # row * cols + col for the anchor above
 _ACTIVITY_SECOND_CELL = 50 * 100 + 45  # the second route's cell
-# For the click at _ACTIVITY_NEAR the second route is the closer one, so it
-# must head the list.
+# For the click at _ACTIVITY_NEAR the second route is both the closer one and
+# the more recent one, so recency keeps it at the head of the list.
 _ACTIVITY_NEAR_NAME = "Evening Ride"
 
 
@@ -430,9 +431,12 @@ delete cfg.__panelIds; delete cfg.__mapVar; delete cfg.__registryKey;
 delete cfg.__defaultDensityLayer; delete cfg.__geojsonData;
 delete cfg.__geojsonText;
 delete cfg.__gpxData; delete cfg.__gpxText;
-delete cfg.__activityData; delete cfg.__activityUrl; delete cfg.__activityHit;
+delete cfg.__activityData; delete cfg.__activityUrl; delete cfg.__activityUrl2;
+delete cfg.__activityHit;
 delete cfg.__activityNear; delete cfg.__activityNearName;
 delete cfg.__activityEmpty; delete cfg.__activityOutside;
+delete cfg.__activityRadiusPx; delete cfg.__activityRadiusMin;
+delete cfg.__activityRadiusMax; delete cfg.__activityRadiusWide;
 cfg.map = map;
 windowObj.initHeatmapControlPanel(cfg);
 
@@ -933,9 +937,9 @@ function toggle(layerName, checked) {
   // Scenario S - clicking the map opens a popup listing the activities whose
   // route passes near the click: date, name, average pace, average heart rate,
   // the Strava link, and how far the route is. Two routes sit a few cells apart
-  // here, so one click catches both and the ordering and distances can be
-  // checked. The index is embedded compressed and inflated lazily on the first
-  // click, so this also exercises the payload through the browser's own
+  // here, so one click catches both and the recency ordering and distances can
+  // be checked. The index is embedded compressed and inflated lazily on the
+  // first click, so this also exercises the payload through the browser's own
   // decompressor.
   assert.ok(byId.get("hcp-activity-data"), "the activity index block exists in the page");
   ok(map.popups.length === 0, "no popup is open before any click");
@@ -949,22 +953,25 @@ function toggle(layerName, checked) {
   const hitDistances =
     collectByClass(popupContent, "hcp-activity-distance").map((n) => n.textContent);
   ok(hitNames.length === 2, "every route within the click tolerance is listed");
-  ok(hitNames[0] === "Morning Run", "the nearest route heads the list");
-  ok(hitDistances[0] === "0 m", "the route under the click reads as 0 m");
-  ok(hitNames[1] === "Evening Ride" && /^\d+ m$/.test(hitDistances[1]),
-     "the further route carries its own distance figure");
+  // The most recent route (Jan 2) heads the list even though the route under the
+  // click (Jan 1) is the nearest, so this pins recency ordering rather than the
+  // search's own nearest-first one.
+  ok(hitNames[0] === "Evening Ride", "the most recent route heads the list");
+  ok(hitDistances[1] === "0 m", "the route under the click reads as 0 m");
+  ok(hitNames[1] === "Morning Run" && /^\d+ m$/.test(hitDistances[0]),
+     "the other route carries its own distance figure");
 
   // The fake DOM's querySelector only ever returns one node (and in reverse
   // document order), so the row's own fields are collected the same way as the
-  // names and distances: the first row is the nearest route.
+  // names and distances: the first row is the most recent route.
   const metaRow = collectByClass(popupContent, "hcp-activity-meta")[0];
-  ok(Boolean(metaRow) && metaRow.textContent.indexOf("2024-01-01") !== -1 &&
-     metaRow.textContent.indexOf("3:20/km") !== -1 &&
-     metaRow.textContent.indexOf("150 bpm") !== -1,
+  ok(Boolean(metaRow) && metaRow.textContent.indexOf("2024-01-02") !== -1 &&
+     metaRow.textContent.indexOf("4:10/km") !== -1 &&
+     metaRow.textContent.indexOf("140 bpm") !== -1,
      "a row shows the date, pace and heart rate");
   const linkRow = collectByClass(popupContent, "hcp-activity-link")[0];
-  ok(Boolean(linkRow) && linkRow.href === config.__activityUrl,
-     "a row links the activity back to Strava");
+  ok(Boolean(linkRow) && linkRow.href === config.__activityUrl2,
+     "the head row links its activity back to Strava");
   ok(map.popups[0].opts.className === "hcp-activity-popup",
      "the popup is tagged for its stylesheet");
 
@@ -999,8 +1006,8 @@ function toggle(layerName, checked) {
      "a date bound narrows the list to activities in range");
 
   // Scenario S2 - the click tolerance. A route is a thin line, so a click a
-  // little off it (a neighbouring cell) must still list both routes, reordered
-  // nearest-first for the new click position, each with a fresh distance.
+  // little off it (a neighbouring cell) must still list both routes, each with
+  // a fresh distance and the most recent one at the head of the list.
   map.fire("click", { latlng: config.__activityNear });
   const nearOpened = await waitFor(() => map.popups.length === 2, 5000);
   ok(nearOpened, "clicking beside the routes still answers");
@@ -1010,7 +1017,7 @@ function toggle(layerName, checked) {
     collectByClass(nearContent, "hcp-activity-distance").map((n) => n.textContent);
   ok(nearNames.length === 2, "a click beside the routes still finds both");
   ok(nearNames[0] === config.__activityNearName,
-     "a click beside a route reorders the list nearest-first");
+     "a click beside the routes still heads the list with the most recent");
   ok(nearDistances.every((d) => /^\d+ m$/.test(d)),
      "every row shows a distance figure");
 
@@ -1035,6 +1042,71 @@ function toggle(layerName, checked) {
   map.fire("click", { latlng: config.__activityOutside });
   await delay(80);
   ok(map.popups.length === 3, "a click outside the grid opens no popup");
+
+  // Scenario T - the click-tolerance slider. A small control is docked on the
+  // map itself, and moving it changes how far a click looks without a rebuild:
+  // the default tolerance misses the routes from the "empty" spot above, while
+  // the widest setting reaches both.
+  const radiusControl = collectByClass(map.getContainer(), "hcp-activity-control")[0];
+  ok(Boolean(radiusControl), "a click-radius control is docked on the map");
+  const radiusSlider = collectByClass(radiusControl, "hcp-activity-control-slider")[0];
+  ok(Boolean(radiusSlider), "the control carries a radius slider");
+  ok(radiusSlider.value === String(config.__activityRadiusPx),
+     "the slider starts at the configured click tolerance");
+  ok(radiusSlider.min === String(config.__activityRadiusMin) &&
+     radiusSlider.max === String(config.__activityRadiusMax),
+     "the slider spans the supported tolerance range");
+
+  radiusSlider.value = String(config.__activityRadiusWide);
+  radiusSlider.dispatch("input");
+  const radiusValue = collectByClass(radiusControl, "hcp-activity-control-value")[0];
+  ok(Boolean(radiusValue) &&
+     radiusValue.textContent === config.__activityRadiusWide + " px",
+     "the control reports the new tolerance");
+
+  map.fire("click", { latlng: config.__activityEmpty });
+  const widened = await waitFor(() => map.popups.length === 4, 5000);
+  ok(widened, "a click is answered after the tolerance is widened");
+  const widenedContent = map.popups[3] && map.popups[3].content;
+  ok(collectByClass(widenedContent, "hcp-activity-name").length === 2,
+     "the wider tolerance reaches the routes the default missed");
+  const widenedRing = circleMarkers[circleMarkers.length - 1];
+  ok(widenedRing.options.radius === config.__activityRadiusWide,
+     "the ring around the click matches the new tolerance");
+
+  // Scenario U - the popup's Sort segment. Newest-first is the default, and
+  // choosing Nearest re-sorts the open list so the route under the click heads
+  // it. The choice is remembered, so the next popup opens the same way.
+  map.fire("click", { latlng: config.__activityHit });
+  const sorted = await waitFor(() => map.popups.length === 5, 5000);
+  ok(sorted, "clicking the map opens another activity popup");
+  const sortContent = map.popups[4] && map.popups[4].content;
+  const sortOptions = collectByClass(sortContent, "hcp-sort-option");
+  ok(sortOptions.map((o) => o.textContent).join(",") === "Newest,Nearest",
+     "a popup offers a Newest / Nearest sort choice");
+  ok(sortOptions[0].classList.contains("hcp-sort-option-active") &&
+     !sortOptions[1].classList.contains("hcp-sort-option-active"),
+     "newest-first is the default sort");
+
+  sortOptions[1].dispatch("click");
+  const nearestNames =
+    collectByClass(sortContent, "hcp-activity-name").map((n) => n.textContent);
+  ok(nearestNames.length === 2 && nearestNames[0] === "Morning Run",
+     "choosing Nearest puts the route under the click on top");
+  ok(sortOptions[1].classList.contains("hcp-sort-option-active") &&
+     !sortOptions[0].classList.contains("hcp-sort-option-active"),
+     "the chosen sort is marked active");
+
+  map.fire("click", { latlng: config.__activityHit });
+  const remembered = await waitFor(() => map.popups.length === 6, 5000);
+  ok(remembered, "a further click still opens a popup");
+  const rememberedContent = map.popups[5] && map.popups[5].content;
+  const rememberedOptions = collectByClass(rememberedContent, "hcp-sort-option");
+  ok(rememberedOptions[1].classList.contains("hcp-sort-option-active"),
+     "the remembered sort is reflected in the next popup");
+  ok(collectByClass(rememberedContent, "hcp-activity-name")[0].textContent ===
+     "Morning Run",
+     "the next popup keeps the chosen nearest-first order");
 
   console.log("ALL_PASS");
   process.exit(0);
@@ -1101,12 +1173,16 @@ def _write_harness(tmp: Path, panel_cfg: dict) -> None:
     config["__gpxData"] = encode_for_embedding(_GPX_SAMPLE)
     config["__activityData"] = _activity_index_data()
     config["__activityUrl"] = _ACTIVITY_URL
+    config["__activityUrl2"] = _ACTIVITY_URL_2
     config["__activityHit"] = _ACTIVITY_HIT
     config["__activityNear"] = _ACTIVITY_NEAR
     config["__activityNearName"] = _ACTIVITY_NEAR_NAME
     config["__activityEmpty"] = _ACTIVITY_EMPTY
     config["__activityOutside"] = _ACTIVITY_OUTSIDE
     config["__activityRadiusPx"] = 14
+    config["__activityRadiusMin"] = 4
+    config["__activityRadiusMax"] = 40
+    config["__activityRadiusWide"] = 40
     config["__modeLayers"] = [
         {"mode": mode, "layer": layer} for mode, layer in DENSITY_MODE_LAYERS.items()
     ]
