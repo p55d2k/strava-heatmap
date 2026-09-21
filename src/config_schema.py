@@ -343,11 +343,23 @@ class ConfigModel(BaseModel):
         description="Opacity of the heatmap overlay (0.0 to 1.0).",
         examples=[0.85, 0.7],
     )
-    carto_style: Literal["voyager", "light_all", "dark_all"] = Field(
+    carto_style: Literal[
+        "voyager",
+        "voyager_nolabels",
+        "light_all",
+        "light_nolabels",
+        "dark_all",
+        "dark_nolabels",
+    ] = Field(
         default="dark_all",
         alias="CARTO_STYLE",
-        description="CARTO basemap tile style. One of: 'voyager', 'light_all', 'dark_all'.",
-        examples=["dark_all", "light_all", "voyager"],
+        description=(
+            "CARTO basemap tile style. One of: 'voyager', 'light_all', 'dark_all' "
+            "with their '_nolabels' variants (e.g. 'dark_nolabels'). The control "
+            "panel offers the three families with a Labels checkbox, so this only "
+            "picks the map's starting style."
+        ),
+        examples=["dark_all", "light_all", "voyager", "dark_nolabels"],
     )
 
     # Optional filters

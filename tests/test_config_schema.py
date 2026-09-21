@@ -169,7 +169,14 @@ class TestConfigSchema:
                     CARTO_STYLE=style,
                 ).carto_style
 
-        for style in ("voyager", "light_all", "dark_all"):
+        for style in (
+            "voyager",
+            "voyager_nolabels",
+            "light_all",
+            "light_nolabels",
+            "dark_all",
+            "dark_nolabels",
+        ):
             assert build_config(style) == style
 
     def test_config_model_rejects_invalid_carto_style(self):

@@ -14,6 +14,9 @@ Modules:
 """
 
 from src.map_builder.constants import (
+    CARTO_FAMILIES,
+    CARTO_FAMILY_LABELS,
+    CARTO_FAMILY_STYLES,
     CARTO_STYLE_LABELS,
     CARTO_STYLES,
     COVERAGE_LAYER,
@@ -37,7 +40,9 @@ from src.map_builder.control import (
     build_advanced_config,
     build_control_panel_html,
     build_layer_group_config,
-    carto_basemap_choices,
+    carto_basemap_families,
+    carto_family_styles,
+    carto_style_show_labels,
     compute_layer_counts,
     control_panel_script,
     controls_css,
@@ -84,6 +89,9 @@ __all__ = [
     "DEFAULT_LEGEND_STYLES",
     "CARTO_STYLES",
     "CARTO_STYLE_LABELS",
+    "CARTO_FAMILIES",
+    "CARTO_FAMILY_LABELS",
+    "CARTO_FAMILY_STYLES",
     "DEFAULT_CARTO_STYLE",
     "RASTER_MODES",
     "RASTER_MODE_LABELS",
@@ -105,7 +113,9 @@ __all__ = [
     "build_advanced_config",
     "compute_layer_counts",
     "control_panel_script",
-    "carto_basemap_choices",
+    "carto_basemap_families",
+    "carto_family_styles",
+    "carto_style_show_labels",
     # Embed
     "encode_for_embedding",
     "decode_embedded",

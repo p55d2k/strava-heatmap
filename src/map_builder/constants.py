@@ -5,15 +5,45 @@ These constants encapsulate styling and configuration that can be customized
 independently of the map building logic.
 """
 
-# CARTO raster tile styles available in the in-HTML control panel.
+# CARTO raster tiles: one style per basemap *family* (voyager / light / dark),
+# each offered in two label variants — with place-name labels, and without them
+# (a cleaner backdrop for the heatmap). The in-HTML control panel presents the
+# families as segment buttons plus a "Labels" checkbox, which swaps between the
+# two variants. All of these are free with the CARTO API key.
 DEFAULT_CARTO_STYLE = "dark_all"
-CARTO_STYLES = ["voyager", "light_all", "dark_all"]
 
-# Human-friendly labels for the CARTO basemap styles shown in the control panel.
+# Basemap families shown as the panel's segment buttons (ordered as displayed).
+CARTO_FAMILIES = ["voyager", "light", "dark"]
+
+# Human-friendly labels for the basemap families.
+CARTO_FAMILY_LABELS = {
+    "voyager": "Voyager",
+    "light": "Light",
+    "dark": "Dark",
+}
+
+# The full CARTO tile style key per family, for the "labels on" and "labels
+# off" (nolabels) states. This is the source of truth for both the build-time
+# tile layer and the panel's client-side style resolver.
+CARTO_FAMILY_STYLES = {
+    "voyager": {"labels": "voyager", "no_labels": "voyager_nolabels"},
+    "light": {"labels": "light_all", "no_labels": "light_nolabels"},
+    "dark": {"labels": "dark_all", "no_labels": "dark_nolabels"},
+}
+
+# Every CARTO raster style key accepted by the build (used to validate the
+# configured CARTO_STYLE and to test tile URLs).
+CARTO_STYLES = [style for variants in CARTO_FAMILY_STYLES.values() for style in variants.values()]
+
+# Backwards-compatible full-style labels (used by carto_basemap_families to
+# label a style's family).
 CARTO_STYLE_LABELS = {
     "voyager": "Voyager",
     "light_all": "Light",
     "dark_all": "Dark",
+    "voyager_nolabels": "Voyager (no labels)",
+    "light_nolabels": "Light (no labels)",
+    "dark_nolabels": "Dark (no labels)",
 }
 
 # Density concept layers. They render alternative views of the same GPS data

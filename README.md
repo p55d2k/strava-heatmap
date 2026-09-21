@@ -153,7 +153,7 @@ with `--config path/to/config.toml` (or a legacy `.json` file). Use
 | `PADDING_M` | Padding around the calculated map bounds. |
 | `BLUR_SIGMA_PX` | Gaussian blur radius in pixels. |
 | `MAP_OPACITY` | Heatmap opacity from `0` to `1`. |
-| `CARTO_STYLE` | `dark_all` (default), `light_all`, or `voyager`. |
+| `CARTO_STYLE` | Starting basemap style: `dark_all` (default), `light_all`, `voyager`, or their `_nolabels` variants. The map's panel switches families (Voyager/Light/Dark) with a Labels checkbox. |
 | `CARTO_API_KEY` | Not a config-file setting: set it in `.env` or the environment. Required — CARTO is the only basemap provider. |
 | `SPEED_MIN_MS` / `SPEED_MAX_MS` | Speed filters in metres per second, or `null`. |
 | `HR_MIN_BPM` / `HR_MAX_BPM` | Heart-rate filters in BPM, or `null`. |

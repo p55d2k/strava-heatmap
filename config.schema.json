@@ -198,16 +198,20 @@
     },
     "CARTO_STYLE": {
       "default": "dark_all",
-      "description": "CARTO basemap tile style. One of: 'voyager', 'light_all', 'dark_all'.",
+      "description": "CARTO basemap tile style. One of: 'voyager', 'light_all', 'dark_all' with their '_nolabels' variants (e.g. 'dark_nolabels'). The control panel offers the three families with a Labels checkbox, so this only picks the map's starting style.",
       "enum": [
         "voyager",
+        "voyager_nolabels",
         "light_all",
-        "dark_all"
+        "light_nolabels",
+        "dark_all",
+        "dark_nolabels"
       ],
       "examples": [
         "dark_all",
         "light_all",
-        "voyager"
+        "voyager",
+        "dark_nolabels"
       ],
       "title": "Carto Style",
       "type": "string"

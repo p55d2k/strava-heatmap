@@ -12,6 +12,7 @@ import folium
 import pytest
 
 from src.map_builder import (
+    CARTO_FAMILIES,
     CARTO_STYLES,
     DEFAULT_CARTO_STYLE,
     DENSITY_MODE_LAYERS,
@@ -30,7 +31,9 @@ from src.map_builder import (
     build_legend_html,
     build_map,
     build_tile_url,
-    carto_basemap_choices,
+    carto_basemap_families,
+    carto_family_styles,
+    carto_style_show_labels,
     cmap_to_css,
     compute_layer_counts,
     control_panel_script,
@@ -45,6 +48,7 @@ from src.map_builder import (
     require_carto_api_key,
 )
 from src.map_builder.constants import (
+    CARTO_FAMILY_LABELS,
     COVERAGE_LAYER,
     DEFAULT_RASTER_MODE,
     DENSITY_LAYER_NAMES,
@@ -925,7 +929,11 @@ class TestControlPanel:
         panel = ControlPanel()
         assert panel is not None
         assert panel._name == "ControlPanel"
-        assert f'"activeBasemap": "{DEFAULT_CARTO_STYLE}"' in panel.config_json
+        cfg = json.loads(panel.config_json)
+        assert cfg["activeBasemap"] == DEFAULT_CARTO_STYLE
+        assert [f["key"] for f in cfg["basemapFamilies"]] == CARTO_FAMILIES
+        assert cfg["showLabels"] is True
+        assert cfg["familyStyles"]["dark"]["noLabels"] == "dark_nolabels"
 
     def test_home_forwards_to_config(self):
         """ControlPanel should expose ``home`` for the Reset button."""
@@ -955,6 +963,7 @@ class TestControlPanel:
         html = build_control_panel_html()
         assert "heatmap-control-panel" in html
         assert "hcp-basemap" in html
+        assert "hcp-basemap-labels" in html
         assert "hcp-layers" in html
         assert "hcp-opacity-toggle" in html
         assert "hcp-fit" in html
@@ -1342,8 +1351,8 @@ class TestControlPanel:
         assert "OPACITY_HELP" in script
         assert "HEATMAP_OPACITY_HELP" in script
         assert "BASEMAP_HELP" in script
-        for style in CARTO_STYLES:
-            assert f"{style}:" in script, f"no help text for basemap style {style!r}"
+        for family in CARTO_FAMILIES:
+            assert f"{family}:" in script, f"no help text for basemap family {family!r}"
 
     def test_control_panel_carries_advanced_config(self):
         """ControlPanel should embed the advanced raster-mode config for panel.js."""
@@ -1359,15 +1368,29 @@ class TestControlPanel:
         # Without an advanced section the config key stays present but empty.
         assert json.loads(ControlPanel(centre=[1.0, 2.0]).config_json)["advanced"] == {}
 
-    def test_carto_basemap_choices_default(self):
-        """carto_basemap_choices should return default styles with labels."""
-        choices = carto_basemap_choices()
-        assert [c["key"] for c in choices] == CARTO_STYLES
-        assert all("label" in c for c in choices)
+    def test_carto_basemap_families_default(self):
+        """carto_basemap_families should return the default families with labels."""
+        choices = carto_basemap_families()
+        assert [c["key"] for c in choices] == CARTO_FAMILIES
+        assert [c["label"] for c in choices] == [CARTO_FAMILY_LABELS[f] for f in CARTO_FAMILIES]
 
-    def test_carto_basemap_choices_custom(self):
-        """carto_basemap_choices should honour an explicit style list."""
-        assert carto_basemap_choices(["voyager"]) == [{"key": "voyager", "label": "Voyager"}]
+    def test_carto_basemap_families_custom(self):
+        """carto_basemap_families should honour an explicit family list."""
+        assert carto_basemap_families(["voyager"]) == [{"key": "voyager", "label": "Voyager"}]
+
+    def test_carto_family_styles_covers_all_styles(self):
+        """Every CARTO_STYLES key belongs to a family's labels/noLabels pair."""
+        resolved = {
+            variant for variants in carto_family_styles().values() for variant in variants.values()
+        }
+        assert resolved == set(CARTO_STYLES)
+
+    def test_carto_style_show_labels(self):
+        """carto_style_show_labels flags the nolabels variants."""
+        assert carto_style_show_labels("dark_all") is True
+        assert carto_style_show_labels("dark_nolabels") is False
+        assert carto_style_show_labels("voyager") is True
+        assert carto_style_show_labels("unknown") is True
 
     def test_macro_template_has_html_and_script(self):
         """ControlPanel should define both html and script macros for folium."""

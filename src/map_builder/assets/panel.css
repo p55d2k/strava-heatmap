@@ -103,6 +103,12 @@
   gap: 4px;
 }
 
+/* The Labels checkbox sits under the family segments; it reuses the layer-row
+   checkbox styling, so only the spacing is set here. */
+.heatmap-control-panel .hcp-basemap-labels {
+  margin-top: 6px;
+}
+
 /* Density-mode dropdown select styling lives with the Advanced section below. */
 
 .heatmap-control-panel .hcp-segment {

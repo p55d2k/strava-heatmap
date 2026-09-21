@@ -358,6 +358,17 @@ for (const nm of layerNames) {
 const circleMarkers = [];
 const rects = [];
 const leafletStub = {
+  // Basemap style switching: the panel creates real L.tileLayer instances whose
+  // _url carries the CARTO style; the stub records them so the basemap-families
+  // scenario can assert which style is live on the map.
+  tileLayer(url, opts) {
+    const layer = {
+      _url: url,
+      options: opts || {},
+      addTo(m) { m.addLayer(this); return this; },
+    };
+    return layer;
+  },
   circleMarker(latlng, opts) {
     const marker = {
       latlng,
@@ -412,6 +423,15 @@ global.URL = {
 
 // Mirror Folium's first paint: the default mode's density layer is on the map.
 map.addLayer(overlays[config.__defaultDensityLayer]);
+
+// ...and the configured CARTO basemap is already live (build_map adds the
+// TileLayer before the panel initialises), so basemap-family switching starts
+// from the real starting style instead of from an empty map.
+map.addLayer(global.L.tileLayer(
+  "https://basemaps.cartocdn.com/rastertiles/" + config.activeBasemap +
+  "/{z}/{x}/{y}.png?key=" + config.apiKey,
+  {}
+));
 
 // The home marker is rendered server-side by ScalableHomeMarker and added
 // directly to the map (not the overlay registry), tagged with options.homeMarker.
@@ -816,6 +836,37 @@ function toggle(layerName, checked) {
   ok(Boolean(basemapBox) && basemapBox.children.length > 0 &&
      basemapBox.children.every((b) => Boolean(b.getAttribute("data-hcp-help"))),
      "each basemap style button carries an explanation");
+
+  // Scenario L - the basemap family segments plus the Labels checkbox resolve
+  // to the right CARTO tile URLs: a family picks the base style and Labels
+  // swaps between that family's labeled and nolabels variants.
+  const labelsBox = byId.get("hcp-basemap-labels");
+  ok(Boolean(labelsBox), "the Basemap section has a Labels checkbox");
+  const tileUrls = () => {
+    const urls = [];
+    map.eachLayer((l) => { if (l && l._url) urls.push(l._url); });
+    return urls;
+  };
+  const hasTile = (frag) => tileUrls().some((u) => u.indexOf(frag) !== -1);
+  ok(labelsBox.checked === true, "Labels starts checked for the default dark_all");
+  ok(hasTile("rastertiles/dark_all/"), "default basemap is the dark labeled style");
+  labelsBox.checked = false;
+  labelsBox.dispatch("change");
+  ok(hasTile("rastertiles/dark_nolabels/") && !hasTile("rastertiles/dark_all/"),
+     "unchecking Labels swaps to the dark nolabels style");
+  const lightBtn = basemapBox.children.find(
+    (b) => b.getAttribute("data-style") === "light"
+  );
+  assert.ok(lightBtn, "Light basemap family button exists");
+  lightBtn.dispatch("click");
+  ok(hasTile("rastertiles/light_nolabels/") && !hasTile("rastertiles/dark_nolabels/"),
+     "picking Light keeps the labels-off variant");
+  labelsBox.checked = true;
+  labelsBox.dispatch("change");
+  ok(hasTile("rastertiles/light_all/") && !hasTile("rastertiles/light_nolabels/"),
+     "checking Labels shows the labeled light basemap");
+  lightBtn.dispatch("click"); // no-op re-click must not swap the style
+  ok(hasTile("rastertiles/light_all/"), "re-clicking the active family is a no-op");
 
   // Scenario P - "Save as PNG" builds a static image of the current view and
   // downloads it. The markup tests cover that the button advertises what it
@@ -1274,6 +1325,7 @@ def test_control_panel_toggles_update_legend_via_overlay_events(node_available, 
     panel = ControlPanel(
         centre=[37.0, -122.0],
         home=home,
+        api_key="test_api_key",
         gpx_filename="my_runs.gpx",
         layer_groups=build_layer_group_config(
             _overlay_layers(), has_tracks=True, layer_counts=_layer_counts()

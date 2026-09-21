@@ -5,7 +5,9 @@
  * embedded in the generated heatmap HTML. It merges what used to be the
  * stock Leaflet layer control into one central panel:
  *
- *   - Basemap style switching  (Dark / Light / Voyager)
+ *   - Basemap style switching  (Voyager / Light / Dark family buttons plus a
+ *                               "Labels" checkbox that swaps the active family
+ *                               between its labeled and nolabels tile variants)
  *   - Layer toggles            (radio for the density concepts — one virtual
  *                               "GPS Density" row plus Coverage — checkbox
  *                               for independent layers such as raw GPS tracks)
@@ -41,8 +43,10 @@
  *
  *   {
  *     panelId:        "heatmap-control-panel",
- *     basemapStyles:  [{ key: "dark_all", label: "Dark" }, ...],
- *     activeBasemap:  "dark_all",
+ *     basemapFamilies: [{ key: "dark", label: "Dark" }, ...],
+ *     familyStyles:   { dark: { labels: "dark_all", noLabels: "dark_nolabels" }, ... },
+ *     activeBasemap:  "dark_all"  (the starting tile style key),
+ *     showLabels:     true  (initial state of the Labels checkbox),
  *     apiKey:         "<CARTO API key>",
  *     opacity:        0.85,
  *     bounds:         [[lat, lon], [lat, lon]],
@@ -255,11 +259,11 @@
   var HEATMAP_OPACITY_HELP =
     "How bold the heatmap looks. Drag left to make it fainter, right to make it bolder.";
 
-  // One line per basemap style (the group itself is explained by the label).
+  // One line per basemap family (the group itself is explained by the label).
   var BASEMAP_HELP = {
     voyager: "A colourful street map with lots of road and place names — handy for keeping your bearings.",
-    light_all: "A plain light background. Easiest to see against in bright daylight.",
-    dark_all: "A dark background that makes the heatmap colours stand out. Easy on the eyes at night.",
+    light: "A plain light background. Easiest to see against in bright daylight.",
+    dark: "A dark background that makes the heatmap colours stand out. Easy on the eyes at night.",
   };
   var BASEMAP_HELP_FALLBACK = "Changes the background map behind your heatmap.";
 
@@ -3022,41 +3026,92 @@
       opacityHandlers: [],
     };
 
-    /* --- Basemap style segments ------------------------------------------ */
-    var currentKey = currentBasemapStyle(map) || config.activeBasemap;
+    /* --- Basemap family segments + Labels checkbox ----------------------- */
+    // Each family button plus the Labels checkbox resolves to a full CARTO
+    // style key through familyStyles (e.g. dark + labels -> "dark_all",
+    // dark + no labels -> "dark_nolabels").
+    var familyStyles = config.familyStyles || {};
+    var currentStyle = currentBasemapStyle(map) || config.activeBasemap;
     var cached = {};
     var segmentBox = panel.querySelector("#hcp-basemap");
+    var labelsBox = panel.querySelector("#hcp-basemap-labels");
 
-    function selectStyle(key) {
-      if (key === currentKey) return;
-      var layer = cached[key];
+    function familyOfStyle(styleKey) {
+      for (var family in familyStyles) {
+        var variants = familyStyles[family];
+        if (variants.labels === styleKey || variants.noLabels === styleKey) return family;
+      }
+      return null;
+    }
+
+    function styleHasLabels(styleKey) {
+      for (var family in familyStyles) {
+        var variants = familyStyles[family];
+        if (variants.labels === styleKey) return true;
+        if (variants.noLabels === styleKey) return false;
+      }
+      return null;
+    }
+
+    function styleForFamily(family, showLabels) {
+      var variants = familyStyles[family];
+      if (!variants) return null;
+      return showLabels ? variants.labels : variants.noLabels;
+    }
+
+    function applyBasemapStyle(styleKey) {
+      if (!styleKey || styleKey === currentStyle) return;
+      var layer = cached[styleKey];
       if (!layer) {
-        layer = makeTileLayer(key, config.apiKey);
-        cached[key] = layer;
+        layer = makeTileLayer(styleKey, config.apiKey);
+        cached[styleKey] = layer;
       }
       removeBasemapLayers(map, layer);
       layer.addTo(map);
-      currentKey = key;
-      updateSegmentStates(segmentBox, key);
+      currentStyle = styleKey;
+      var family = familyOfStyle(styleKey);
+      if (segmentBox && family) updateSegmentStates(segmentBox, family);
+      if (labelsBox) {
+        var hasLabels = styleHasLabels(styleKey);
+        if (hasLabels !== null) labelsBox.checked = hasLabels;
+      }
     }
 
-    if (segmentBox && config.basemapStyles) {
-      config.basemapStyles.forEach(function (option) {
+    function selectFamily(family) {
+      var showLabels = labelsBox ? labelsBox.checked : config.showLabels !== false;
+      applyBasemapStyle(styleForFamily(family, showLabels));
+    }
+
+    if (segmentBox && config.basemapFamilies) {
+      var activeFamily = familyOfStyle(currentStyle);
+      config.basemapFamilies.forEach(function (option) {
         var btn = document.createElement("button");
         btn.type = "button";
         btn.className = "hcp-segment";
         btn.setAttribute("data-style", option.key);
-        // Each style gets its own explanation; the "Basemap" label carries the
+        // Each family gets its own explanation; the "Basemap" label carries the
         // visible info badge, so the buttons themselves stay uncluttered.
         btn.setAttribute("data-hcp-help", BASEMAP_HELP[option.key] || BASEMAP_HELP_FALLBACK);
         btn.textContent = option.label;
-        if (option.key === currentKey) {
+        if (option.key === activeFamily) {
           btn.classList.add("hcp-segment-active");
         }
         btn.addEventListener("click", function () {
-          selectStyle(option.key);
+          selectFamily(option.key);
         });
         segmentBox.appendChild(btn);
+      });
+    }
+
+    if (labelsBox) {
+      var initialLabels = styleHasLabels(currentStyle);
+      labelsBox.checked = initialLabels === null ? config.showLabels !== false : initialLabels;
+      labelsBox.addEventListener("change", function () {
+        var family = familyOfStyle(currentStyle);
+        if (!family && config.basemapFamilies && config.basemapFamilies.length) {
+          family = config.basemapFamilies[0].key;
+        }
+        applyBasemapStyle(styleForFamily(family, labelsBox.checked));
       });
     }
 

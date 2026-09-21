@@ -136,7 +136,8 @@ def build_tile_url(style: str = DEFAULT_CARTO_STYLE) -> str:
     """Build the CARTO raster tile URL, including the API key.
 
     Args:
-        style: CARTO tile style. One of "voyager", "light_all", "dark_all".
+        style: CARTO tile style. A family's labeled or ``_nolabels`` variant,
+            e.g. "voyager", "light_all", "dark_all", "dark_nolabels".
 
     Returns:
         A tile URL template with {z}/{x}/{y} placeholders and the API key.
@@ -295,7 +296,9 @@ def build_map(
         legend_html: HTML string for the legend (from LegendBuilder.build()).
         output_path: Path to save the output HTML file.
         map_opacity: Opacity value (0-1) for the heatmap image overlays.
-        carto_style: CARTO basemap tile style ("voyager", "light_all", "dark_all").
+        carto_style: CARTO basemap tile style (e.g. "voyager", "light_all",
+            "dark_all", "dark_nolabels"). The panel's Labels checkbox swaps this
+            for the matching labeled / unlabeled variant at runtime.
         exclusive_layer_names: Layer names rendered as mutually exclusive (radio).
             Defaults to empty; the density-concept Heatmap radio group and its
             map-level exclusivity are defined by the panel layer-group config and

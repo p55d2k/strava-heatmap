@@ -24,8 +24,9 @@ from folium import MacroElement
 from jinja2 import Template as JinjaTemplate
 
 from src.map_builder.constants import (
-    CARTO_STYLE_LABELS,
-    CARTO_STYLES,
+    CARTO_FAMILIES,
+    CARTO_FAMILY_LABELS,
+    CARTO_FAMILY_STYLES,
     COVERAGE_LAYER,
     DEFAULT_CARTO_STYLE,
     DEFAULT_RASTER_MODE,
@@ -73,17 +74,49 @@ def controls_css() -> str:
     return f"<style>\n{_read('legend.css')}\n{_read('panel.css')}\n</style>"
 
 
-def carto_basemap_choices(styles: list[str] | None = None) -> list[dict[str, str]]:
-    """Return the basemap style ``{key, label}`` choices for the control panel.
+def carto_basemap_families(families: list[str] | None = None) -> list[dict[str, str]]:
+    """Return the basemap family ``{key, label}`` choices for the control panel.
+
+    Each family renders as one segment button in the panel; the "Labels"
+    checkbox switches between that family's labeled and unlabeled CARTO tile
+    variants (see ``CARTO_FAMILY_STYLES``), so a family is two basemaps behind
+    one button.
 
     Args:
-        styles: CARTO style keys to expose. Defaults to ``CARTO_STYLES``.
+        families: Basemap family keys to expose. Defaults to ``CARTO_FAMILIES``.
 
     Returns:
         A list of ``{"key": ..., "label": ...}`` dicts, in the given order.
     """
-    chosen = styles if styles is not None else list(CARTO_STYLES)
-    return [{"key": style, "label": CARTO_STYLE_LABELS.get(style, style)} for style in chosen]
+    chosen = families if families is not None else list(CARTO_FAMILIES)
+    return [{"key": family, "label": CARTO_FAMILY_LABELS.get(family, family)} for family in chosen]
+
+
+def carto_family_styles() -> dict[str, dict[str, str]]:
+    """Return the family -> ``{labels, noLabels}`` tile-style map for panel.js.
+
+    The panel resolves a clicked family and the Labels checkbox into a concrete
+    CARTO tile style key through this map, so the family/label structure stays
+    defined in one place (``CARTO_FAMILY_STYLES``).
+    """
+    return {
+        family: {"labels": variants["labels"], "noLabels": variants["no_labels"]}
+        for family, variants in CARTO_FAMILY_STYLES.items()
+    }
+
+
+def carto_style_show_labels(style: str) -> bool:
+    """Return whether a full CARTO style key includes place-name labels.
+
+    Unknown styles default to ``True`` (the labeled variant), matching the
+    ``CARTO_STYLE`` default of ``dark_all``.
+    """
+    for variants in CARTO_FAMILY_STYLES.values():
+        if style == variants["labels"]:
+            return True
+        if style == variants["no_labels"]:
+            return False
+    return True
 
 
 def control_panel_script() -> str:
@@ -399,7 +432,7 @@ class ControlPanel(MacroElement):
         map_opacity: float = 0.85,
         carto_style: str = DEFAULT_CARTO_STYLE,
         api_key: str = "",
-        styles: list[str] | None = None,
+        families: list[str] | None = None,
         bounds: list[list[float]] | None = None,
         centre: list[float] | None = None,
         home: list[float] | None = None,
@@ -418,9 +451,9 @@ class ControlPanel(MacroElement):
 
         Args:
             map_opacity: Initial heatmap overlay opacity (0.0-1.0).
-            carto_style: Active CARTO basemap style key.
+            carto_style: Active CARTO basemap style key (e.g. ``"dark_all"``).
             api_key: CARTO API key used by the basemap style switcher.
-            styles: Available basemap style keys. Defaults to ``CARTO_STYLES``.
+            families: Available basemap family keys. Defaults to ``CARTO_FAMILIES``.
             bounds: Heatmap bounds ``[[lat, lon], [lat, lon]]`` for "Fit map".
             centre: ``[lat, lon]`` center point of the data bounding box.
             home: ``[lat, lon]`` home location used by "Reset"; falls back to
@@ -464,8 +497,10 @@ class ControlPanel(MacroElement):
         self.tooltips = tooltips or ""
         config = {
             "panelId": panel_id,
-            "basemapStyles": carto_basemap_choices(styles),
+            "basemapFamilies": carto_basemap_families(families),
+            "familyStyles": carto_family_styles(),
             "activeBasemap": carto_style,
+            "showLabels": carto_style_show_labels(carto_style),
             "apiKey": api_key,
             "opacity": map_opacity,
             "bounds": bounds,
