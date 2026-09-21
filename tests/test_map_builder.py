@@ -1142,6 +1142,12 @@ class TestControlPanel:
         # browser's own decompressor (lazily — see the constant + guard).
         assert "DecompressionStream" in script
         assert "inflateZlib" in script
+        # Hovering a popup row previews that activity's route as the grid cells
+        # it visited (the same cells the heatmap paints), lit without shipping
+        # any track geometry.
+        assert "showActivityFootprint" in script
+        assert "activityCellBounds" in script
+        assert "clearActivityFootprint" in script
 
     def test_css_styles_activity_popup(self):
         """The popup is dark-themed to match the rest of the map chrome."""
@@ -1149,11 +1155,15 @@ class TestControlPanel:
         assert ".hcp-activity-popup" in css
         assert ".hcp-activity-name" in css
         assert ".hcp-activity-distance" in css
-        assert ".hcp-activity-link" in css
+        assert "a.hcp-activity-name" in css
         assert ".hcp-filter-chip" in css
         assert ".hcp-filter-date" in css
         assert ".hcp-sort-option" in css
         assert ".hcp-activity-control" in css
+        # Rows preview their route when hovered, signalled by the pointer cursor
+        # and driven by a dim of the heatmap overlays + bright footprint cells.
+        assert "cursor: pointer" in css
+        assert "cursor: crosshair" not in css
 
     def test_gpx_download_is_named_after_output_gpx(self):
         """The panel offers the download under the configured OUTPUT_GPX name."""

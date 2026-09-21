@@ -21,9 +21,10 @@ Running the generator writes `outputs/heatmap.html`, a Leaflet map with:
 - **Raw GPS tracks**, a zoom-scaled home marker, basemap selection, opacity
   sliders, and controls with short hover/focus explanations.
 - **Click a painted pixel** to list the activities that passed through it:
-  date, name, average pace, average heart rate, and a link back to Strava when
-  the export carries an activity id — sortable newest-first or nearest-first,
-  with the click tolerance adjustable from the Advanced section.
+  date, name, average pace, and average heart rate — sortable newest-first or
+  nearest-first, with the click tolerance adjustable from the Advanced section.
+  The activity name opens it on Strava when the export carries an id, and
+  hovering a row previews the route on the map.
 - Browser-side **Save as PNG**, **Export GeoJSON**, and **Export GPX** actions.
 
 | Layer | Colour | Shows |
@@ -306,8 +307,13 @@ order is remembered for the next click. Each row shows how far its route is from
 the click (for example `12 m`), so when a click catches several routes — a
 junction, or both sides of a road — it stays clear which is which. The clicked
 spot is ringed at exactly the tolerance so it is visible why the listed
-activities count as nearby, and closing the popup clears the ring. A click that
-is off the data entirely does nothing.
+activities count as nearby, and closing the popup clears the ring. Rest the
+pointer on a list row and the heatmap fades beneath while that activity's whole
+route lights up bright — exactly the cells the heatmap paints for it, so the
+preview matches the picture without the page carrying any hidden track geometry
+— fading again when the pointer leaves (the basemap stays at full brightness
+throughout). The activity name itself (marked by the accent colour and pointer
+cursor) opens the activity on Strava. A click that is off the data entirely does nothing.
 
 The list can be narrowed in place, without moving the map. When the nearby
 activities span more than one activity type the popup adds a row of type chips

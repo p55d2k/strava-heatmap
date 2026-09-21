@@ -518,9 +518,13 @@
   overflow-y: auto;
 }
 
+/* A row previews the activity's route on hover but acts on nothing itself, so
+   it keeps the default cursor; only the name-link inside it (which opens the
+   activity on Strava) shows the pointer. */
 .hcp-activity {
   padding: 6px 0;
   border-top: 1px solid rgba(255, 255, 255, 0.07);
+  cursor: default;
 }
 
 .hcp-activity:first-child {
@@ -541,6 +545,19 @@
   font-weight: 600;
 }
 
+/* When the export carries an activity id the name is the row's link back to
+   Strava: it reads like a title but opens in a new tab, and the underline on
+   hover marks it as the link it is. */
+a.hcp-activity-name {
+  color: var(--hcp-accent);
+  text-decoration: none;
+  cursor: pointer;
+}
+
+a.hcp-activity-name:hover {
+  text-decoration: underline;
+}
+
 .hcp-activity-distance {
   flex: none;
   color: var(--hcp-text-muted);
@@ -553,18 +570,6 @@
   color: var(--hcp-text-muted);
   font-size: 10.5px;
   font-variant-numeric: tabular-nums;
-}
-
-.hcp-activity-link {
-  display: inline-block;
-  margin-top: 3px;
-  color: var(--hcp-accent);
-  font-size: 10.5px;
-  text-decoration: none;
-}
-
-.hcp-activity-link:hover {
-  text-decoration: underline;
 }
 
 .hcp-activities-more {

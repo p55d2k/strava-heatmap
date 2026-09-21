@@ -353,8 +353,10 @@ for (const nm of layerNames) {
 
 // A minimal Leaflet namespace: the click tooltip rings the click with a circle
 // whose radius is the search tolerance, and prefers the L factory when the map
-// does not expose openPopup itself. Only circleMarker is needed here.
+// does not expose openPopup itself. The route preview on row hover draws one
+// rectangle per grid cell the activity visited.
 const circleMarkers = [];
+const rects = [];
 const leafletStub = {
   circleMarker(latlng, opts) {
     const marker = {
@@ -367,6 +369,18 @@ const leafletStub = {
     };
     circleMarkers.push(marker);
     return marker;
+  },
+  rectangle(latlngs, opts) {
+    const rect = {
+      latlngs,
+      options: opts || {},
+      addTo(m) {
+        m.addLayer(this);
+        return this;
+      },
+    };
+    rects.push(rect);
+    return rect;
   },
 };
 // panel.js reads the namespace as both the bare `L` (basemap switching) and
@@ -969,9 +983,9 @@ function toggle(layerName, checked) {
      metaRow.textContent.indexOf("4:10/km") !== -1 &&
      metaRow.textContent.indexOf("140 bpm") !== -1,
      "a row shows the date, pace and heart rate");
-  const linkRow = collectByClass(popupContent, "hcp-activity-link")[0];
-  ok(Boolean(linkRow) && linkRow.href === config.__activityUrl2,
-     "the head row links its activity back to Strava");
+  const nameLink = collectByClass(popupContent, "hcp-activity-name")[0];
+  ok(nameLink.tagName === "A" && nameLink.href === config.__activityUrl2,
+     "the head row's name links its activity back to Strava");
   ok(map.popups[0].opts.className === "hcp-activity-popup",
      "the popup is tagged for its stylesheet");
 
@@ -1114,6 +1128,48 @@ function toggle(layerName, checked) {
   ok(collectByClass(rememberedContent, "hcp-activity-name")[0].textContent ===
      "Morning Run",
      "the next popup keeps the chosen nearest-first order");
+
+  // Scenario V - hovering a popup row previews that activity's route on the
+  // map: the heatmap overlays drop to a dim opacity (the basemap is not
+  // touched) while every grid cell the activity visited lights up bright (the
+  // same cells the heatmap paints). Leaving the row, or closing the popup,
+  // restores the heatmap and clears the preview.
+  const previewRows = collectByClass(rememberedContent, "hcp-activity");
+  ok(previewRows.length === 2, "the popup still lists both activities");
+  const onMap = (rect) => map.hasLayer(rect);
+  const visibleFootprints = () => rects.filter((r) => onMap(r) && r.options.weight === 2);
+  const heatmapNames = Object.keys(overlays).filter(
+    (n) => map.hasLayer(overlays[n]) && overlays[n].sub && overlays[n].sub.opts
+  );
+  ok(heatmapNames.length >= 1, "a heatmap overlay is on the map to dim");
+  const dimmedSub = overlays[heatmapNames[0]].sub;
+  const lastOpacity = () => dimmedSub.opts[dimmedSub.opts.length - 1];
+
+  previewRows[0].dispatch("mouseenter");
+  ok(lastOpacity() === 0.15, "hovering dims the heatmap overlay (not the basemap)");
+  let activeRects = visibleFootprints();
+  ok(activeRects.length === 1, "hovering a row lights up its route");
+  const firstBounds = activeRects[0].latlngs;
+  ok(firstBounds[0][0] < 45 && firstBounds[1][0] > 44.9,
+     "the preview rectangle spans the activity's cell in latitude");
+  ok(Math.abs(firstBounds[0][1]) < 1e-6,
+     "the preview rectangle starts at the activity's west cell edge (lon 0)");
+
+  previewRows[0].dispatch("mouseleave");
+  ok(!onMap(activeRects[0]) && lastOpacity() === 1,
+     "leaving the row clears the preview and restores the heatmap");
+
+  previewRows[1].dispatch("mouseenter");
+  activeRects = visibleFootprints();
+  const secondActive = activeRects[0];
+  ok(activeRects.length === 1 && lastOpacity() === 0.15,
+     "hovering the other row dims the heatmap and previews its own route");
+  ok(secondActive.latlngs[0][1] < -1e-6,
+     "the other route preview sits west of the first (its own cell)");
+
+  map.fire("popupclose");
+  ok(!onMap(secondActive) && lastOpacity() === 1,
+     "closing the popup restores the heatmap and clears the preview");
 
   console.log("ALL_PASS");
   process.exit(0);

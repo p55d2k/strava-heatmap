@@ -1245,6 +1245,15 @@
     return (y * EARTH_HALF_CIRCUMFERENCE) / 180;
   }
 
+  function mercatorToLon(x) {
+    return (x * 180) / EARTH_HALF_CIRCUMFERENCE;
+  }
+
+  function mercatorToLat(y) {
+    var rad = 2 * Math.atan(Math.exp((y * Math.PI) / EARTH_HALF_CIRCUMFERENCE)) - Math.PI / 2;
+    return (rad * 180) / Math.PI;
+  }
+
   // How many grid cells make up the click tolerance at the current zoom. The
   // tolerance is defined in screen pixels, so it is converted through the map's
   // own Web Mercator scale (the EPSG:3857 world is 2 * EARTH_HALF_CIRCUMFERENCE
@@ -1358,13 +1367,27 @@
     var item = document.createElement("li");
     item.className = "hcp-activity";
 
+    // The activity name is the row's link back to Strava when the export
+    // carries an activity id: the name doubling as the link removes the need
+    // for a separate "View on Strava" button, while the row as a whole still
+    // previews the route on hover (see wrapActivityHover).
+    var name;
+    if (activity[4]) {
+      name = document.createElement("a");
+      name.className = "hcp-activity-name";
+      name.href = activity[4];
+      name.target = "_blank";
+      name.rel = "noopener noreferrer";
+      name.title = "Open this activity on Strava.";
+    } else {
+      name = document.createElement("div");
+      name.className = "hcp-activity-name";
+    }
+    name.textContent = activity[1] || "Activity";
+
     // Name on the left, how far the route is on the right.
     var head = document.createElement("div");
     head.className = "hcp-activity-head";
-
-    var name = document.createElement("div");
-    name.className = "hcp-activity-name";
-    name.textContent = activity[1] || "Activity";
     head.appendChild(name);
 
     var distance = document.createElement("span");
@@ -1378,15 +1401,6 @@
     meta.textContent = activityMetaLine(activity);
     item.appendChild(meta);
 
-    if (activity[4]) {
-      var link = document.createElement("a");
-      link.className = "hcp-activity-link";
-      link.href = activity[4];
-      link.target = "_blank";
-      link.rel = "noopener noreferrer";
-      link.textContent = "View on Strava";
-      item.appendChild(link);
-    }
     return item;
   }
 
@@ -1546,11 +1560,21 @@
           : results.length + " activities near here";
 
       list.innerHTML = "";
+      clearActivityFootprint(activityMap);
       var shown = Math.min(matching.length, ACTIVITY_MAX_LISTED);
       for (var i = 0; i < shown; i++) {
-        list.appendChild(
-          buildActivityRow(activities[matching[i].id], matching[i].distance)
-        );
+        var row = buildActivityRow(activities[matching[i].id], matching[i].distance);
+        // Hover (and keyboard focus) previews the activity's route on the map;
+        // leaving the row takes the preview off again.
+        row.addEventListener("mouseenter", function (id) {
+          return function () {
+            showActivityFootprint(activityMap, index, id);
+          };
+        }(matching[i].id));
+        row.addEventListener("mouseleave", function () {
+          clearActivityFootprint(activityMap);
+        });
+        list.appendChild(row);
       }
 
       if (matching.length > shown) {
@@ -1682,6 +1706,144 @@
     activityHighlight = null;
   }
 
+  // Hovering a popup row previews that activity's route on the map. The index
+  // carries no track geometry — the whole point of rasterizing is to avoid
+  // shipping every track to the browser — but it does carry which grid cells
+  // every activity visited (the same cells the heatmap paints), so the preview
+  // re-paints exactly that footprint: every cell the activity passed through.
+  // That is the route as the map actually shows it, lit up with no extra page
+  // weight. Rows are re-created whenever the popup re-renders, so each carries
+  // fresh listeners; a re-render also clears any preview left over from the row
+  // it replaced.
+  var activityMap = null;
+  var activityFootprint = null;
+
+  // The opacity the non-hovered heatmap is dropped to while a row is hovered:
+  // only the heatmap overlays are dimmed, so the basemap and home marker stay
+  // at full brightness behind the lit route. The per-layer opacity sliders are
+  // left alone — dimming reads each overlay's current opacity first and puts it
+  // back when the pointer leaves.
+  var ACTIVITY_HEATMAP_DIM_OPACITY = 0.15;
+
+  // The heatmap overlay leaves being dimmed during a hover, each with the
+  // opacity to restore (see setActivityHeatmapDim).
+  var dimmedSubLayers = null;
+
+  function currentSubOpacity(sub) {
+    if (sub && sub.options && typeof sub.options.opacity === "number") {
+      return sub.options.opacity;
+    }
+    if (sub && sub.options && typeof sub.options.fillOpacity === "number") {
+      return sub.options.fillOpacity;
+    }
+    return 1;
+  }
+
+  function setActivityHeatmapDim(map, dim) {
+    var overlays = findOverlays();
+    if (!overlays) return;
+    if (dim) {
+      if (dimmedSubLayers) return;
+      dimmedSubLayers = [];
+      for (var name in overlays) {
+        if (!Object.prototype.hasOwnProperty.call(overlays, name)) continue;
+        var layer = overlays[name];
+        if (!layer || !map.hasLayer(layer)) continue;
+        if (typeof layer.eachLayer === "function") {
+          (function (group) {
+            group.eachLayer(function (sub) {
+              rememberAndDim(sub);
+            });
+          })(layer);
+        } else {
+          rememberAndDim(layer);
+        }
+      }
+    } else if (dimmedSubLayers) {
+      dimmedSubLayers.forEach(function (item) {
+        applyOpacityToLayer(item.sub, item.opacity);
+      });
+      dimmedSubLayers = null;
+    }
+
+    function rememberAndDim(sub) {
+      dimmedSubLayers.push({ sub: sub, opacity: currentSubOpacity(sub) });
+      applyOpacityToLayer(sub, ACTIVITY_HEATMAP_DIM_OPACITY);
+    }
+  }
+
+  // The reverse map activity id -> cell keys, built lazily once from the index
+  // (which stores cells -> members, the direction a click needs).
+  var cellsByActivity = null;
+
+  function activityCellsById(index, id) {
+    if (!index || !index.cells) return [];
+    if (!cellsByActivity) {
+      cellsByActivity = {};
+      for (var key in index.cells) {
+        if (!Object.prototype.hasOwnProperty.call(index.cells, key)) continue;
+        var members = index.cells[key];
+        for (var i = 0; i < members.length; i++) {
+          if (!cellsByActivity[members[i]]) cellsByActivity[members[i]] = [];
+          cellsByActivity[members[i]].push(key);
+        }
+      }
+    }
+    return cellsByActivity[id] || [];
+  }
+
+  // The [[south, west], [north, east]] bounds of one grid cell, converted from
+  // the index's Web Mercator metres back to the lat/lng Leaflet draws in.
+  function activityCellBounds(index, key) {
+    var cell = parseInt(key, 10);
+    var col = cell % index.cols;
+    var row = Math.floor(cell / index.cols);
+    var west = index.xMin + col * index.cellSize;
+    var east = west + index.cellSize;
+    var north = index.yMax - row * index.cellSize;
+    var south = north - index.cellSize;
+    return [
+      [mercatorToLat(south), mercatorToLon(west)],
+      [mercatorToLat(north), mercatorToLon(east)],
+    ];
+  }
+
+  // The bright paint the hovered route is drawn in, standing out against the
+  // dimmed heatmap behind it.
+  var ACTIVITY_FOOTPRINT_COLOR = "#ffe14d";
+
+  function showActivityFootprint(map, index, id) {
+    if (!map || !index || !global.L || typeof global.L.rectangle !== "function") return;
+    clearActivityFootprint(map);
+    setActivityHeatmapDim(map, true);
+    var keys = activityCellsById(index, id);
+    if (!keys.length) return;
+    var rects = [];
+    keys.forEach(function (key) {
+      var rect = global.L.rectangle(activityCellBounds(index, key), {
+        color: ACTIVITY_FOOTPRINT_COLOR,
+        weight: 2,
+        opacity: 1,
+        fillColor: ACTIVITY_FOOTPRINT_COLOR,
+        fillOpacity: 0.9,
+        interactive: false,
+      });
+      if (typeof rect.addTo === "function") rect.addTo(map);
+      rects.push(rect);
+    });
+    activityFootprint = rects;
+  }
+
+  function clearActivityFootprint(map) {
+    if (activityFootprint) {
+      activityFootprint.forEach(function (rect) {
+        if (map && typeof map.removeLayer === "function") map.removeLayer(rect);
+      });
+      activityFootprint = null;
+    }
+    setActivityHeatmapDim(map, false);
+  }
+
   // The click tolerance is adjustable while the page is open, from a control in
   // the panel's Advanced section (see buildActivityControl): the tolerance tunes
   // the click search, so it sits with the other tuning controls rather than
@@ -1766,13 +1928,16 @@
     if (!map || typeof map.on !== "function") return;
     // No embedded index means nothing to show; leave clicks alone entirely.
     if (!document.getElementById(ACTIVITY_DATA_ID)) return;
+    activityMap = map;
     // The tolerance slider rides along with the click handling it governs,
     // living in the panel's Advanced section (see buildActivityControl).
     buildActivityControl(document.getElementById("hcp-advanced-body"));
     // Closing the popup (its x button, an Escape, a click elsewhere) leaves the
-    // ring around the old click meaningless, so it is removed with it.
+    // ring around the old click, and any route preview, meaningless — both are
+    // removed with it.
     map.on("popupclose", function () {
       clearActivityHighlight(map);
+      clearActivityFootprint(map);
     });
     map.on("click", function (event) {
       if (!event || !event.latlng) return;
