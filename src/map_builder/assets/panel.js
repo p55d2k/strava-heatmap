@@ -872,12 +872,13 @@
   // CSS (bottom: 28px / right: 10px) so the PNG matches what was on screen.
   var EXPORT_LEGEND_RIGHT_PX = 10;
   var EXPORT_LEGEND_BOTTOM_PX = 28;
-  // Classes left out of the exported picture. ScalableHomeMarker puts the first
-  // on the home marker's SVG path: the marker points at a personal location, and
-  // as a lone dot in a still image it reads as an artefact rather than as
-  // information. The second is the click-tolerance control — map chrome the
-  // visitor interacts with, not part of the heatmap being exported.
-  var EXPORT_EXCLUDED_CLASSES = ["hcp-home-marker", "hcp-activity-control"];
+  // Classes left out of the exported picture. ScalableHomeMarker puts the class
+  // it excludes on the home marker's SVG path: the marker points at a personal
+  // location, and as a lone dot in a still image it reads as an artefact rather
+  // than as information. The click-tolerance control no longer rides on the map
+  // (it lives in the panel's Advanced section), so it sits outside the captured
+  // region and needs no exclusion.
+  var EXPORT_EXCLUDED_CLASSES = ["hcp-home-marker"];
   // Class put on the map container while a PNG is being built. The panel CSS
   // uses it to neutralise the Leaflet zoom buttons (pointer-events only, so the
   // exported picture is unaffected).
@@ -934,7 +935,7 @@
       backgroundColor: null,
       logging: false,
       scale: EXPORT_SCALE,
-      // Drop the map chrome from the picture (see EXPORT_EXCLUDED_CLASSES).
+      // Drop the home marker from the picture (see EXPORT_EXCLUDED_CLASSES).
       ignoreElements: function (node) {
         if (!node || !node.classList) return false;
         for (var i = 0; i < EXPORT_EXCLUDED_CLASSES.length; i++) {
@@ -1670,43 +1671,24 @@
     if (typeof activityHighlight.addTo === "function") activityHighlight.addTo(map);
   }
 
-  // The click tolerance is adjustable while the page is open, from a small
-  // control docked on the map itself (see buildActivityControl): the tolerance
-  // is a property of the click gesture, so it belongs beside the map rather than
-  // in the sidebar. Narrowing it pins a click to the exact pixel in a busy
-  // corner; widening it reaches a route beside a road or a junction's other arm.
-  var ACTIVITY_CONTROL_CLASS = "hcp-activity-control";
-
-  // A control living inside the map container has to swallow the pointer events
-  // Leaflet listens for on that container, or dragging its slider would pan the
-  // map and clicking it would open a popup underneath. Leaflet's own DomEvent
-  // helpers do exactly this for built-in controls; a minimal shim falls back to
-  // stopping propagation directly.
-  var ACTIVITY_CONTROL_EVENTS = [
-    "mousedown",
-    "mouseup",
-    "click",
-    "dblclick",
-    "wheel",
-    "touchstart",
-    "touchmove",
-    "touchend",
-    "pointerdown",
-    "pointerup",
-  ];
-
-  function isolateActivityControl(el) {
-    if (global.L && global.L.DomEvent) {
-      global.L.DomEvent.disableClickPropagation(el);
-      global.L.DomEvent.disableScrollPropagation(el);
-      return;
+  // The ring marks the popup's search area, so once the popup is closed (its x
+  // button, a dismissal click elsewhere on the map, Escape) the ring has no
+  // meaning left and is taken off the map.
+  function clearActivityHighlight(map) {
+    if (!activityHighlight) return;
+    if (map && typeof map.removeLayer === "function") {
+      map.removeLayer(activityHighlight);
     }
-    ACTIVITY_CONTROL_EVENTS.forEach(function (name) {
-      el.addEventListener(name, function (event) {
-        if (event && typeof event.stopPropagation === "function") event.stopPropagation();
-      });
-    });
+    activityHighlight = null;
   }
+
+  // The click tolerance is adjustable while the page is open, from a control in
+  // the panel's Advanced section (see buildActivityControl): the tolerance tunes
+  // the click search, so it sits with the other tuning controls rather than
+  // floating over the map. Narrowing it pins a click to the exact pixel in a
+  // busy corner; widening it reaches a route beside a road or a junction's other
+  // arm.
+  var ACTIVITY_CONTROL_CLASS = "hcp-activity-control";
 
   // Apply a new tolerance. A ring left on the map by the last click is resized
   // too, so a drag shows its effect immediately rather than only on the next
@@ -1723,29 +1705,25 @@
     }
   }
 
-  // Build the floating click-radius control and dock it in the map's bottom-left
-  // corner. Returns null when the map has no container to hold it — the click
-  // handling still works, only the slider is missing.
-  function buildActivityControl(map) {
-    var container =
-      map && typeof map.getContainer === "function" ? map.getContainer() : null;
+  // Build the click-radius row and slot it into the Advanced section's body,
+  // before the Home marker subsection. Returns null when the panel has no
+  // Advanced body — the click handling still works, only the slider is missing.
+  function buildActivityControl(container) {
     if (!container || typeof container.appendChild !== "function") return null;
 
-    var control = document.createElement("div");
-    control.className = ACTIVITY_CONTROL_CLASS;
+    var row = document.createElement("div");
+    row.className = ACTIVITY_CONTROL_CLASS;
 
-    var label = document.createElement("div");
+    var label = document.createElement("label");
     label.className = "hcp-activity-control-label";
-
+    label.setAttribute(
+      "data-hcp-help",
+      "How far from your click the map looks for a route. Narrow the radius to pin a click to one road in a busy junction, or widen it to sweep in a route alongside it."
+    );
     var labelText = document.createElement("span");
     labelText.textContent = "Click radius";
     label.appendChild(labelText);
-
-    var value = document.createElement("span");
-    value.className = "hcp-activity-control-value";
-    value.textContent = ACTIVITY_SEARCH_RADIUS_PX + " px";
-    label.appendChild(value);
-    control.appendChild(label);
+    label.appendChild(makeHelpIcon());
 
     var slider = document.createElement("input");
     slider.type = "range";
@@ -1760,19 +1738,42 @@
       setActivitySearchRadius(parseFloat(slider.value));
       value.textContent = ACTIVITY_SEARCH_RADIUS_PX + " px";
     });
-    control.appendChild(slider);
 
-    isolateActivityControl(control);
-    container.appendChild(control);
-    return control;
+    var value = document.createElement("span");
+    value.className = "hcp-activity-control-value";
+    value.textContent = ACTIVITY_SEARCH_RADIUS_PX + " px";
+
+    var control = document.createElement("div");
+    control.className = "hcp-activity-control-slider-row";
+    control.appendChild(slider);
+    control.appendChild(value);
+
+    row.appendChild(label);
+    row.appendChild(control);
+
+    // Insert before the Home marker subsection when it is present, so the
+    // tuning controls read top-down: raster mode, click radius, home marker.
+    var homeSection = document.getElementById("hcp-home-section");
+    if (homeSection && typeof container.insertBefore === "function") {
+      container.insertBefore(row, homeSection);
+    } else {
+      container.appendChild(row);
+    }
+    return row;
   }
 
   function installActivityTooltips(map) {
     if (!map || typeof map.on !== "function") return;
     // No embedded index means nothing to show; leave clicks alone entirely.
     if (!document.getElementById(ACTIVITY_DATA_ID)) return;
-    // The tolerance slider rides along with the click handling it governs.
-    buildActivityControl(map);
+    // The tolerance slider rides along with the click handling it governs,
+    // living in the panel's Advanced section (see buildActivityControl).
+    buildActivityControl(document.getElementById("hcp-advanced-body"));
+    // Closing the popup (its x button, an Escape, a click elsewhere) leaves the
+    // ring around the old click meaningless, so it is removed with it.
+    map.on("popupclose", function () {
+      clearActivityHighlight(map);
+    });
     map.on("click", function (event) {
       if (!event || !event.latlng) return;
       loadActivityIndex()
@@ -1783,8 +1784,11 @@
           var node = results.length
             ? buildActivityPopup(index, results)
             : buildEmptyActivityPopup();
-          highlightSearchArea(map, event.latlng);
+          // Open the popup first: Leaflet closes any popup already on the map
+          // (firing popupclose, which clears the old ring) before the new one
+          // opens, so the fresh ring must be drawn after it.
           openActivityPopup(map, event.latlng, node);
+          highlightSearchArea(map, event.latlng);
         })
         .catch(function () {
           // A corrupt or undecodable payload must not break the rest of the

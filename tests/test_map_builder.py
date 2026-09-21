@@ -1132,7 +1132,7 @@ class TestControlPanel:
         assert "hcp-filter-chip" in script
         assert "hcp-filter-date-input" in script
         # The list can be re-ordered newest-first / nearest-first from the popup,
-        # and the click tolerance is adjustable live from an on-map control.
+        # and the click tolerance is adjustable live from the Advanced section.
         assert "hcp-sort-option" in script
         assert "byNearest" in script
         assert "buildActivityControl" in script

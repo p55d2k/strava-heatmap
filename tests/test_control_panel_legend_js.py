@@ -1043,12 +1043,14 @@ function toggle(layerName, checked) {
   await delay(80);
   ok(map.popups.length === 3, "a click outside the grid opens no popup");
 
-  // Scenario T - the click-tolerance slider. A small control is docked on the
-  // map itself, and moving it changes how far a click looks without a rebuild:
-  // the default tolerance misses the routes from the "empty" spot above, while
-  // the widest setting reaches both.
-  const radiusControl = collectByClass(map.getContainer(), "hcp-activity-control")[0];
-  ok(Boolean(radiusControl), "a click-radius control is docked on the map");
+  // Scenario T - the click-tolerance slider, now housed in the Advanced section
+  // of the control panel rather than docked on the map. Moving it changes how
+  // far a click looks without a rebuild: the default tolerance misses the
+  // routes from the "empty" spot above, while the widest setting reaches both.
+  ok(!collectByClass(map.getContainer(), "hcp-activity-control").length,
+     "the click-radius control no longer docks on the map");
+  const radiusControl = collectByClass(byId.get("hcp-advanced-body"), "hcp-activity-control")[0];
+  ok(Boolean(radiusControl), "a click-radius control sits in the Advanced section");
   const radiusSlider = collectByClass(radiusControl, "hcp-activity-control-slider")[0];
   ok(Boolean(radiusSlider), "the control carries a radius slider");
   ok(radiusSlider.value === String(config.__activityRadiusPx),
@@ -1073,6 +1075,11 @@ function toggle(layerName, checked) {
   const widenedRing = circleMarkers[circleMarkers.length - 1];
   ok(widenedRing.options.radius === config.__activityRadiusWide,
      "the ring around the click matches the new tolerance");
+
+  // Closing the popup (its x button) removes the ring around the click: the
+  // ring only explains which area a popup searched, so it dies with the popup.
+  map.fire("popupclose");
+  ok(!map.hasLayer(widenedRing), "closing the popup removes the search ring");
 
   // Scenario U - the popup's Sort segment. Newest-first is the default, and
   // choosing Nearest re-sorts the open list so the route under the click heads

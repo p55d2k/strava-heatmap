@@ -23,7 +23,7 @@ Running the generator writes `outputs/heatmap.html`, a Leaflet map with:
 - **Click a painted pixel** to list the activities that passed through it:
   date, name, average pace, average heart rate, and a link back to Strava when
   the export carries an activity id — sortable newest-first or nearest-first,
-  with a live **Click radius** slider on the map.
+  with the click tolerance adjustable from the Advanced section.
 - Browser-side **Save as PNG**, **Export GeoJSON**, and **Export GPX** actions.
 
 | Layer | Colour | Shows |
@@ -295,8 +295,8 @@ data cells, so a pixel-perfect hit would usually return nothing. Instead the
 click gathers every activity within about 14 screen pixels, which also picks up
 a route on the far side of the road (and a junction's other arms). Because the
 tolerance is measured in screen pixels, it feels the same whether the map is
-zoomed in or out. A small **Click radius** slider docked in the bottom-left of
-the map changes that tolerance live — narrowing it for a precise read of a busy
+zoomed in or out. The **Click radius** slider in the panel's Advanced section
+changes that tolerance live — narrowing it for a precise read of a busy
 junction, or widening it to sweep in a route beside the road — and the ring
 drawn around the click resizes with it.
 
@@ -306,8 +306,8 @@ order is remembered for the next click. Each row shows how far its route is from
 the click (for example `12 m`), so when a click catches several routes — a
 junction, or both sides of a road — it stays clear which is which. The clicked
 spot is ringed at exactly the tolerance so it is visible why the listed
-activities count as nearby, and a click that is off the data entirely does
-nothing.
+activities count as nearby, and closing the popup clears the ring. A click that
+is off the data entirely does nothing.
 
 The list can be narrowed in place, without moving the map. When the nearby
 activities span more than one activity type the popup adds a row of type chips
