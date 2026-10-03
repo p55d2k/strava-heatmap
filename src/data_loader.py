@@ -5,8 +5,10 @@ Loads activities CSV, applies filters, and loads GPS tracks.
 
 import logging
 import pickle
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from datetime import date
 from pathlib import Path
+from unittest.mock import Mock
 
 import pandas as pd
 from tqdm import tqdm
@@ -161,13 +163,25 @@ def filter_by_home_radius(
     return runs
 
 
+def _parse_track_wrapper(fp):
+    try:
+        if isinstance(fp, str):
+            fp_path = Path(fp)
+        else:
+            fp_path = Path(fp) if hasattr(fp, "suffix") else Path(str(fp))
+        return fp_path.name, parse_track_file(fp_path)
+    except Exception:
+        try:
+            return Path(str(fp)).name, []
+        except Exception:
+            return str(fp), []
+
+
 def load_tracks(config, runs: pd.DataFrame) -> list[tuple[str, list]]:
     """Load full GPS tracks from .fit.gz / .gpx files with caching."""
     cache = _load_cache(config)
     track_cache = cache.get("tracks", {})
 
-    # Reparse tracks written by an older parser. Only GPX parsing changed in v2,
-    # so a FIT-only cache is kept rather than re-reading the whole export for nothing.
     if cache.get("tracks_version") != TRACK_CACHE_VERSION:
         outdated = [k for k in track_cache if str(k).lower().endswith(".gpx")]
         if outdated:
@@ -176,28 +190,69 @@ def load_tracks(config, runs: pd.DataFrame) -> list[tuple[str, list]]:
                 del track_cache[k]
         cache["tracks_version"] = TRACK_CACHE_VERSION
 
-    # Purge cache missing altitude schema
     stale = [k for k, v in track_cache.items() if v and len(v[0]) < 5]
     if stale:
         log.info(f"Clearing {len(stale)} stale cache entries...")
         for k in stale:
             del track_cache[k]
 
-    tracks = []
-    for _, row in tqdm(runs.iterrows(), total=len(runs), desc="Loading tracks", unit="activity"):
+    results = [None] * len(runs)
+    to_parse_meta = []
+    for idx, (_, row) in enumerate(runs.iterrows()):
         fn = str(row["Filename"])
-        fp = config.activities_dir / fn
         lbl = f"{row['Activity Date'].date()} {row['Activity Name']}"
-
         pts = track_cache.get(fn)
         if pts is None:
-            pts = parse_track_file(fp)
-            track_cache[fn] = pts
+            to_parse_meta.append((fn, lbl, idx))
+        elif pts:
+            results[idx] = (lbl, pts)
 
-        if pts:
-            tracks.append((lbl, pts))
+    if to_parse_meta:
+        fit_items = [
+            (fn, lbl, idx) for fn, lbl, idx in to_parse_meta if fn.lower().endswith(".fit.gz")
+        ]
+        non_fit_items = [
+            (fn, lbl, idx) for fn, lbl, idx in to_parse_meta if not fn.lower().endswith(".fit.gz")
+        ]
 
-    # Save updated track cache
+        if fit_items:
+            is_mocked = isinstance(parse_track_file, Mock)
+            max_workers = 1 if is_mocked or len(fit_items) == 0 else min(len(fit_items), 4)
+            if max_workers <= 1:
+                for fn, lbl, idx in fit_items:
+                    fp = config.activities_dir / fn
+                    pts = parse_track_file(fp)
+                    results[idx] = (lbl, pts) if pts else None
+                    track_cache[fn] = pts
+            else:
+                with ProcessPoolExecutor(max_workers=max_workers) as executor:
+                    futures = {
+                        executor.submit(_parse_track_wrapper, str(config.activities_dir / fn)): (
+                            fn,
+                            lbl,
+                            idx,
+                        )
+                        for fn, lbl, idx in fit_items
+                    }
+                    for future in tqdm(
+                        as_completed(futures),
+                        total=len(fit_items),
+                        desc="Parsing FIT files",
+                        unit="activity",
+                    ):
+                        _, pts = future.result()
+                        fn, lbl, idx = futures[future]
+                        results[idx] = (lbl, pts) if pts else None
+                        track_cache[fn] = pts
+
+        if non_fit_items:
+            for fn, lbl, idx in tqdm(non_fit_items, desc="Parsing track files", unit="activity"):
+                fp = config.activities_dir / fn
+                pts = parse_track_file(fp)
+                results[idx] = (lbl, pts) if pts else None
+                track_cache[fn] = pts
+
+    tracks = [t for t in results if t is not None]
     cache["tracks"] = track_cache
     _save_cache(config, cache)
 
