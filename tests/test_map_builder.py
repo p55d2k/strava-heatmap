@@ -1203,6 +1203,24 @@ class TestControlPanel:
         assert "ignoreElements" in script
         assert '"hcp-home-marker"' in script
 
+    def test_export_leaves_the_leaflet_chrome_out_of_the_png(self):
+        """The exported picture is the map itself, not the page around it.
+
+        The zoom buttons, the scale bar and the OpenStreetMap/CARTO
+        attribution are Leaflet controls: page furniture for the interactive
+        view. Printing them into a shareable image pins the screenshot to one
+        UI state and stamps a caption across the bottom of the map, so each is
+        excluded from the render.
+        """
+        script = control_panel_script()
+        assert "ignoreElements" in script
+        for cls in (
+            "leaflet-control-zoom",
+            "leaflet-control-scale",
+            "leaflet-control-attribution",
+        ):
+            assert f'"{cls}"' in script, f"{cls} is captured in the exported PNG"
+
     def test_export_disables_map_controls_while_rendering(self):
         """The interaction handlers that could move the map mid-capture are
         switched off for the duration of the export."""

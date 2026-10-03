@@ -226,7 +226,7 @@ strava-heatmap validate --config config.toml --dev
 ### PNG
 
 **Save as PNG** captures the current map view to `heatmap.png`, including the
-basemap, enabled layers, the required basemap credit, and legend. It runs in the
+basemap, enabled layers, and legend. It runs in the
 browser and
 loads `html2canvas` from a CDN on the first click. CARTO tiles use CORS so they
 remain readable in the canvas.
@@ -234,7 +234,11 @@ remain readable in the canvas.
 During capture, in-flight movement is allowed to finish, gliding is cancelled,
 and map input and zoom controls are disabled until rendering completes. The
 home marker is intentionally omitted from the image because it identifies a
-personal location; it remains visible on the interactive map.
+personal location; it remains visible on the interactive map. The Leaflet
+chrome is omitted too — the zoom buttons, the scale bar and the basemap
+attribution line — so the picture is the map rather than a screenshot of the
+page UI. Note that the attribution is a licence requirement of the basemap:
+credit CARTO and OpenStreetMap yourself if you publish the exported image.
 
 ### GeoJSON
 

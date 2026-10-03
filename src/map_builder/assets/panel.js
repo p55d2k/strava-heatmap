@@ -853,7 +853,8 @@
   // unreachable — the button then reports what went wrong instead of failing
   // silently. html2canvas draws the live DOM (basemap tiles, the data-URI
   // heatmap layers and the SVG track lines) to a canvas — everything that is on
-  // screen except the home marker, which is left out on purpose.
+  // screen except the home marker and the Leaflet controls, which are left out
+  // on purpose (see EXPORT_EXCLUDED_CLASSES).
   var HTML2CANVAS_URL =
     "https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js";
 
@@ -888,7 +889,20 @@
   // than as information. The click-tolerance control no longer rides on the map
   // (it lives in the panel's Advanced section), so it sits outside the captured
   // region and needs no exclusion.
-  var EXPORT_EXCLUDED_CLASSES = ["hcp-home-marker"];
+  //
+  // The Leaflet chrome goes too: the zoom buttons, the scale bar and the
+  // attribution line are interaction furniture for the page, and printing them
+  // into a shareable picture only pins the screenshot to one UI state (and adds
+  // a caption over the bottom of the map). Each of them is a single element, so
+  // dropping it takes its whole subtree with it. (The stock layer control is
+  // already display:none, and the control panel and legend are siblings of the
+  // map rather than inside it, so they never reach the capture.)
+  var EXPORT_EXCLUDED_CLASSES = [
+    "hcp-home-marker",
+    "leaflet-control-zoom",
+    "leaflet-control-scale",
+    "leaflet-control-attribution",
+  ];
   // Class put on the map container while a PNG is being built. The panel CSS
   // uses it to neutralise the Leaflet zoom buttons (pointer-events only, so the
   // exported picture is unaffected).
@@ -945,7 +959,8 @@
       backgroundColor: null,
       logging: false,
       scale: EXPORT_SCALE,
-      // Drop the home marker from the picture (see EXPORT_EXCLUDED_CLASSES).
+      // Drop the home marker and the Leaflet chrome from the picture (see
+      // EXPORT_EXCLUDED_CLASSES).
       ignoreElements: function (node) {
         if (!node || !node.classList) return false;
         for (var i = 0; i < EXPORT_EXCLUDED_CLASSES.length; i++) {
