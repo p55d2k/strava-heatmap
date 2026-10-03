@@ -660,7 +660,7 @@ def load_config_env(config_path: Path | None) -> None:
 
     The package already loads `.env` from the working directory and the project
     root (see ``load_env_files``). Loading it next to an explicit ``--config``
-    file as well means ``strava-heatmap generate --config /path/to/config.toml``
+    file as well means ``uv run heatmap generate --config /path/to/config.toml``
     finds ``/path/to/.env``, so the CARTO key travels with the configuration.
     """
     if config_path is not None:

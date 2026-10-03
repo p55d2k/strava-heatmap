@@ -50,9 +50,11 @@ activities that recorded that metric.
 uv tool install .
 ```
 
-This installs the `strava-heatmap` command and its dependencies in an isolated
-tool environment. If the command is not found afterward, run `uv tool update-shell`
-and restart your shell.
+This installs the `heatmap` command and its dependencies in an isolated tool
+environment. If the command is not found afterward, run `uv tool update-shell`
+and restart your shell. You can also run it without installing by prefixing
+commands with `uv run` from the project directory; the examples below use that
+form.
 
 ### CARTO basemap key (required)
 
@@ -73,10 +75,9 @@ Get a free key at <https://carto.com/developers/tiles>.
 The key is read, in order, from the `CARTO_API_KEY` environment variable, from a
 `.env` file in the working directory or any parent of it, and from a `.env` next
 to an explicit `--config` file. An exported variable always wins over a file, so
-`CARTO_API_KEY=... strava-heatmap generate` overrides `.env` for a single run.
-Because the installed `strava-heatmap` command lives outside this project, run it
-from the project directory (or keep the key exported) so the `.env` file is
-found. `strava-heatmap validate` reports the key it resolved, masked.
+`CARTO_API_KEY=... uv run heatmap generate` overrides `.env` for a single run.
+Run from the project directory (or keep the key exported) so the `.env` file is
+found. `uv run heatmap validate` reports the key it resolved, masked.
 
 ### Attribution
 
@@ -98,7 +99,7 @@ same treatment.
 3. Generate the map:
 
 ```bash
-strava-heatmap generate
+uv run heatmap generate
 ```
 
 The map is saved to `outputs/heatmap.html`; the filtered tracks are also
@@ -136,7 +137,7 @@ every option, then remove or change the values you do not need.
 When no `--config` is supplied, `config.toml` is loaded if present. An existing
 `config.json` is still used as a compatibility fallback. Pass a different file
 with `--config path/to/config.toml` (or a legacy `.json` file). Use
-`strava-heatmap validate` to check the export and effective settings.
+`uv run heatmap validate` to check the export and effective settings.
 
 ## Configuration
 
@@ -205,17 +206,17 @@ The CLI defaults to `generate` when no subcommand is supplied. `--config` and
 
 ```bash
 # Generate (default); --dry-run validates and prints the activity count
-strava-heatmap generate --config config.toml --dry-run
+uv run heatmap generate --config config.toml --dry-run
 
 # Validate config.toml, the activities directory, and activities.csv
-strava-heatmap validate --config config.toml
+uv run heatmap validate --config config.toml
 
 # Re-export filtered tracks without rebuilding the map
-strava-heatmap export-gpx --config config.toml --output runs.gpx
+uv run heatmap export-gpx --config config.toml --output runs.gpx
 
 # Equivalent global-option forms
-strava-heatmap --config config.toml --dry-run
-strava-heatmap validate --config config.toml --dev
+uv run heatmap --config config.toml --dry-run
+uv run heatmap validate --config config.toml --dev
 ```
 
 `--no-open` prevents generated maps from opening automatically in a browser.
@@ -270,7 +271,7 @@ self-contained without slowing initial page load.
 command is useful when only filters changed:
 
 ```bash
-strava-heatmap export-gpx --output runs.gpx
+uv run heatmap export-gpx --output runs.gpx
 ```
 
 The export applies the same `ACTIVITY_TYPES`, `DATE_FROM` / `DATE_TO`,
@@ -359,7 +360,7 @@ base64 PNG, so keep the list short. The demo is named from `EMBED_HTML` with a
 `_demo` suffix.
 
 ```bash
-strava-heatmap --embed
+uv run heatmap --embed
 ```
 
 This leaves `outputs/heatmap.html` unchanged and adds

@@ -50,7 +50,7 @@ Repository = "https://github.com/p55d2k/strava-heatmap"
 Issues = "https://github.com/p55d2k/strava-heatmap/issues"
 
 [project.scripts]
-strava-heatmap = "main:main"
+heatmap = "main:main"
 
 [tool.setuptools]
 py-modules = ["main"]
