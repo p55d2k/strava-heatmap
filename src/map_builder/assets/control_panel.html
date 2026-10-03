@@ -92,13 +92,13 @@
             raster mode <span class="hcp-info" aria-hidden="true">i</span></label>
           <select id="hcp-density-mode" class="hcp-select"></select>
         </div>
-        <!-- The Home marker toggle collapses together with the Advanced section. -->
-        <div class="hcp-section hcp-section-home" id="hcp-home-section" hidden>
-          <label class="hcp-layer-row" data-hcp-help="Shows or hides the marker for your home location on the map.">
-            <input type="checkbox" id="hcp-home-marker" checked />
-            <span>Home marker <span class="hcp-info" aria-hidden="true">i</span></span>
-          </label>
-        </div>
+    <!-- Home marker toggle, separate from Advanced to keep unrelated controls distinct. -->
+    <div class="hcp-section hcp-section-home" id="hcp-home-section" hidden>
+      <label class="hcp-layer-row" data-hcp-help="Shows or hides the marker for your home location on the map.">
+        <input type="checkbox" id="hcp-home-marker" checked />
+        <span>Home marker <span class="hcp-info" aria-hidden="true">i</span></span>
+      </label>
+    </div>
       </div>
     </div>
     <div class="hcp-section hcp-actions">

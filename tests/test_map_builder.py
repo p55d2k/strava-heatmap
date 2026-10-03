@@ -1248,21 +1248,23 @@ class TestControlPanel:
 
     def test_advanced_section_layout(self):
         """The Advanced section sits BELOW the Layer opacity section, and the
-        Home marker toggle lives INSIDE the Advanced body so it collapses
-        together with the rasterization-mode dropdown."""
+        Home marker toggle lives in its own section between Advanced and the
+        action buttons."""
         html = build_control_panel_html()
         opacity_pos = html.index('id="hcp-opacity-toggle"')
         advanced_pos = html.index('id="hcp-advanced-toggle"')
         advanced_body_pos = html.index('id="hcp-advanced-body"')
         home_pos = html.index('id="hcp-home-section"')
         actions_pos = html.index("hcp-actions")
-        # Advanced comes after Layer opacity (and before the action buttons).
-        assert opacity_pos < advanced_pos < actions_pos
-        # The Home marker section is nested inside the Advanced body.
-        assert advanced_body_pos < home_pos
-        adv_body = html[advanced_body_pos:actions_pos]
-        assert 'id="hcp-home-section"' in adv_body
+        # Advanced comes after Layer opacity (and before the home section).
+        assert opacity_pos < advanced_pos < home_pos < actions_pos
+        # The density mode dropdown stays inside the Advanced body.
+        adv_body = html[advanced_body_pos:home_pos]
         assert 'id="hcp-density-mode"' in adv_body
+        # The Home marker section is outside the Advanced body now.
+        assert advanced_body_pos < home_pos
+        assert 'id="hcp-home-section"' not in adv_body
+        assert 'id="hcp-home-section"' in html[home_pos:actions_pos]
 
     def test_html_has_no_inline_opacity(self):
         """build_control_panel_html no longer hard-codes an opacity percentage."""
