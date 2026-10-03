@@ -80,6 +80,7 @@ class Config:
         self.decay_factor = model.decay_factor
         self.raster_mode = model.raster_mode
         self.coverage_normalization = model.coverage_normalization
+        self.timeline_period = model.timeline_period
 
         # Paths are already resolved by ConfigModel
         self.cache_dir = Path(model.cache_dir)

@@ -355,6 +355,22 @@
       "title": "Coverage Normalization",
       "type": "string"
     },
+    "TIMELINE_PERIOD": {
+      "default": "month",
+      "description": "Default granularity of the map's timeline control, which animates how coverage grew over time. \"year\", \"month\" (default) or \"week\"; the panel also lets the viewer switch between them.",
+      "enum": [
+        "year",
+        "month",
+        "week"
+      ],
+      "examples": [
+        "month",
+        "year",
+        "week"
+      ],
+      "title": "Timeline Period",
+      "type": "string"
+    },
     "CACHE_DIR": {
       "default": "cache",
       "description": "Directory for cached data (relative to project root).",

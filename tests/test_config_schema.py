@@ -52,6 +52,7 @@ class TestConfigSchema:
             "DECAY_FACTOR",
             "RASTER_MODE",
             "COVERAGE_NORMALIZATION",
+            "TIMELINE_PERIOD",
             "CACHE_DIR",
             "OUTPUT_DIR",
             "ACTIVITIES_CSV",
@@ -221,6 +222,35 @@ class TestConfigSchema:
                 ACTIVITY_TYPES=["Run"],
             )
         assert model.raster_mode == "decay"
+
+    def test_timeline_period_defaults_to_month(self):
+        """ConfigModel should default TIMELINE_PERIOD to 'month'."""
+        from src.config_schema import ConfigModel
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            activities_dir = Path(tmpdir) / "strava_export"
+            activities_dir.mkdir()
+            model = ConfigModel(
+                ACTIVITIES_DIR=str(activities_dir),
+                ACTIVITY_TYPES=["Run"],
+            )
+        assert model.timeline_period == "month"
+
+    def test_config_model_rejects_invalid_timeline_period(self):
+        """TIMELINE_PERIOD must be year / month / week."""
+        from pydantic import ValidationError
+
+        from src.config_schema import ConfigModel
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            activities_dir = Path(tmpdir) / "strava_export"
+            activities_dir.mkdir()
+            with pytest.raises(ValidationError):
+                ConfigModel(
+                    ACTIVITIES_DIR=str(activities_dir),
+                    ACTIVITY_TYPES=["Run"],
+                    TIMELINE_PERIOD="fortnight",
+                )
 
     def test_config_model_accepts_all_raster_modes(self):
         """ConfigModel should accept all three raster modes."""

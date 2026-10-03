@@ -22,6 +22,10 @@
  *                               the chosen span, using the per-activity cell
  *                               counts the tooltip index already carries — no
  *                               rebuild, colours stay on the legend scale)
+ *   - Timeline                  (period selector + slider + Play that animate
+ *                               "coverage so far" year by year, month by month
+ *                               or week by week, re-using the date filter's
+ *                               in-browser re-rasterization)
  *   - Fit-to-heatmap / Reset view
  *   - Legend toggle            (mirrors the legend card's own hamburger, which
  *                               is what collapses it on a phone)
@@ -60,6 +64,8 @@
  *     advanced:       { modes: [{ key, label, layer, visible, opacity }...],
  *                       densityLayerNames: [...], active: "decay" },
  *     dateBounds:     ["2019-01-01", "2024-12-31"]  (seeds the date filter),
+ *     timeline:       { default: "month", periods: { year: [...], month: [...],
+ *                       week: [...] } }  (period buckets; omit to hide it),
  *     gpxFilename:    "tracks.gpx"  (name offered by the Export GPX button),
  *     map:            <the Leaflet map instance>
  *   }
@@ -3080,6 +3086,148 @@
       syncReadouts();
       refresh();
     });
+
+    /* --- Timeline (animated "coverage so far") ---------------------------- */
+    // A period selector (year / month / week), a single slider across the
+    // periods present in the data, and a Play button. Each stop reuses the date
+    // range above: the "To" thumb moves to that period's end while "From" stays
+    // at the earliest date, so the map shows everything up to the selected
+    // point in time and pressing Play reveals the coverage growing. Hidden
+    // unless the build supplied period buckets (see src/timeline.py).
+    function installTimeline() {
+      var timeline = config.timeline;
+      var box = panel.querySelector("#hcp-timeline");
+      var periodEl = panel.querySelector("#hcp-timeline-period");
+      var rangeEl = panel.querySelector("#hcp-timeline-range");
+      var readoutEl = panel.querySelector("#hcp-timeline-readout");
+      var playEl = panel.querySelector("#hcp-timeline-play");
+      if (!box || !periodEl || !rangeEl || !readoutEl || !playEl) return;
+      if (!timeline || !timeline.periods) return;
+
+      var order = ["year", "month", "week"];
+      var activePeriod = order.indexOf(timeline.default) >= 0 ? timeline.default : order[0];
+      var playTimer = null;
+
+      function hasBuckets(key) {
+        return Boolean(timeline.periods[key] && timeline.periods[key].length);
+      }
+
+      // Offer only the granularities that actually have periods, preferring the
+      // configured default.
+      periodEl.innerHTML = "";
+      order.forEach(function (key) {
+        if (!hasBuckets(key)) return;
+        var option = document.createElement("option");
+        option.value = key;
+        option.textContent = key.charAt(0).toUpperCase() + key.slice(1);
+        if (key === activePeriod) option.selected = true;
+        periodEl.appendChild(option);
+      });
+      if (!hasBuckets(activePeriod)) {
+        for (var i = 0; i < order.length; i++) {
+          if (hasBuckets(order[i])) {
+            activePeriod = order[i];
+            periodEl.value = activePeriod;
+            break;
+          }
+        }
+      }
+      if (!hasBuckets(activePeriod)) return;
+
+      function buckets() {
+        return timeline.periods[activePeriod] || [];
+      }
+
+      function updateReadout() {
+        var entry = buckets()[parseInt(rangeEl.value, 10) || 0];
+        readoutEl.textContent = entry ? "Up to " + entry.label : "";
+      }
+
+      // Move the shared date slider to a timeline stop and re-rasterize.
+      function applyTimeline(index, skipRefresh) {
+        var list = buckets();
+        if (!list.length) return;
+        var clamped = Math.max(0, Math.min(list.length - 1, index));
+        rangeEl.value = String(clamped);
+        var toIndex = Math.round((Date.parse(list[clamped].to) - startMs) / DAY_MS);
+        if (!isFinite(toIndex) || toIndex < 0) toIndex = 0;
+        if (toIndex > totalDays) toIndex = totalDays;
+        fromEl.value = "0";
+        toEl.value = String(toIndex);
+        syncReadouts();
+        updateReadout();
+        if (!skipRefresh) schedule();
+      }
+
+      function syncRange() {
+        var maxIndex = Math.max(0, buckets().length - 1);
+        rangeEl.min = "0";
+        rangeEl.max = String(maxIndex);
+        rangeEl.value = String(maxIndex);
+        updateReadout();
+      }
+
+      function stopPlay() {
+        if (playTimer) {
+          clearInterval(playTimer);
+          playTimer = null;
+        }
+        playEl.textContent = "Play";
+        playEl.setAttribute("aria-pressed", "false");
+      }
+
+      function startPlay() {
+        if (buckets().length < 2) return;
+        playEl.textContent = "Pause";
+        playEl.setAttribute("aria-pressed", "true");
+        playTimer = setInterval(function () {
+          var next = (parseInt(rangeEl.value, 10) || 0) + 1;
+          if (next >= buckets().length) {
+            stopPlay();
+            return;
+          }
+          applyTimeline(next);
+        }, 900);
+      }
+
+      periodEl.addEventListener("change", function () {
+        stopPlay();
+        activePeriod = periodEl.value;
+        syncRange();
+        applyTimeline(parseInt(rangeEl.value, 10) || 0);
+      });
+      rangeEl.addEventListener("input", function () {
+        stopPlay();
+        updateReadout();
+      });
+      rangeEl.addEventListener("change", function () {
+        applyTimeline(parseInt(rangeEl.value, 10) || 0);
+      });
+      playEl.addEventListener("click", function () {
+        if (playTimer) {
+          stopPlay();
+          return;
+        }
+        // Playing from the end restarts from the beginning.
+        if ((parseInt(rangeEl.value, 10) || 0) >= buckets().length - 1) applyTimeline(0);
+        startPlay();
+      });
+
+      // Open on the full range (the static heatmap); the slider then narrows it.
+      syncRange();
+      applyTimeline(parseInt(rangeEl.value, 10) || 0, true);
+
+      // Only offer the control once the index can actually re-render.
+      loadActivityIndex()
+        .then(function (index) {
+          box.hidden = !(index && index.visits && index.render);
+        })
+        .catch(function () {
+          box.hidden = true;
+        });
+    }
+
+    installTimeline();
 
     // Enabling the "Raw GPS tracks" layer while a range is active must respect
     // it immediately; otherwise only the next slider move would fade the lines.

@@ -279,6 +279,7 @@ def build_map(
     gpx_filename: str | None = None,
     tooltips: str | None = None,
     date_bounds: tuple[str, str] | None = None,
+    timeline: dict | None = None,
     embed: bool = False,
     embed_legend: bool = True,
     embed_attribution: bool = True,
@@ -332,8 +333,10 @@ def build_map(
             :func:`src.map_builder.embed.encode_for_embedding`, embedded in the
             page so clicking a painted pixel lists the activities that passed
             through it. Omit to build a map without click tooltips. The
-            embeddable widget never carries it, keeping that file small.
-        date_bounds: Optional ``(min_date, max_date)`` (ISO ``YYYY-MM-DD``)
+            embeddable widget never carries it, keeping that file small.            timeline: Optional period buckets for the panel's timeline control
+                (see :func:`src.timeline.build_timeline`). Omit to leave the
+                control out.
+            date_bounds: Optional ``(min_date, max_date)`` (ISO ``YYYY-MM-DD``)
             seeding the control panel's date-range filter, which re-rasterizes
             the density/coverage layers in the browser. Omit to leave the filter
             out (the panel still works without it).
@@ -484,6 +487,7 @@ def build_map(
                 gpx_filename=gpx_filename,
                 tooltips=tooltips,
                 date_bounds=date_bounds,
+                timeline=timeline,
             ).add_to(m)
 
     if progress_callback:

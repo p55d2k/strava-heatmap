@@ -448,6 +448,7 @@ class ControlPanel(MacroElement):
         gpx_filename: str | None = None,
         tooltips: str | None = None,
         date_bounds: tuple[str, str] | None = None,
+        timeline: dict | None = None,
     ):
         """Initialize the ControlPanel.
 
@@ -489,6 +490,10 @@ class ControlPanel(MacroElement):
                 counts (see :func:`src.activity_index.build_activity_index`);
                 the bounds only decide whether the control is offered and what
                 range the From/To slider thumbs may follow.
+            timeline: Optional period buckets for the timeline control (see
+                :func:`src.timeline.build_timeline`). When supplied, the panel
+                offers a period selector, a timeline slider and a Play button
+                that re-rasterize "coverage so far" entirely in the browser.
         """
         super().__init__()
         self._name = "ControlPanel"
@@ -515,6 +520,7 @@ class ControlPanel(MacroElement):
             "advanced": advanced or {},
             "gpxFilename": gpx_filename or DEFAULT_GPX_FILENAME,
             "dateBounds": list(date_bounds) if date_bounds else None,
+            "timeline": timeline or None,
         }
         self.config_json = json.dumps(config)
 

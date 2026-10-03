@@ -24,6 +24,8 @@ CARTO_STYLE = "dark_all"
 DECAY_FACTOR = 0.5
 RASTER_MODE = "decay"
 COVERAGE_NORMALIZATION = "pct"
+# Default granularity of the map's timeline control: "year", "month" or "week".
+TIMELINE_PERIOD = "month"
 MAX_CONSECUTIVE_SAME_CELL = 3
 
 # Optional speed and heart-rate filters

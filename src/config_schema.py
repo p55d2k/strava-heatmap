@@ -446,6 +446,16 @@ class ConfigModel(BaseModel):
         ),
         examples=["pct", "max"],
     )
+    timeline_period: Literal["year", "month", "week"] = Field(
+        default="month",
+        alias="TIMELINE_PERIOD",
+        description=(
+            "Default granularity of the map's timeline control, which animates "
+            'how coverage grew over time. "year", "month" (default) or '
+            '"week"; the panel also lets the viewer switch between them.'
+        ),
+        examples=["month", "year", "week"],
+    )
 
     # Optional path overrides (relative to the config/project directory)
     cache_dir: str = Field(

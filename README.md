@@ -25,6 +25,10 @@ Running the generator writes `outputs/heatmap.html`, a Leaflet map with:
   nearest-first, with the click tolerance adjustable from the Advanced section.
   The activity name opens it on Strava when the export carries an id, and
   hovering a row previews the route on the map.
+- A **Timeline** that animates how coverage grew over time: pick a period size
+  (**year**, **month** or **week**), drag the slider or press **Play**, and the
+  density / coverage layers redraw in the browser — no server, and the static
+  heatmap is what you see at the end of the timeline.
 - Browser-side **Save as PNG**, **Export GeoJSON**, and **Export GPX** actions.
 
 | Layer | Colour | Shows |
@@ -183,6 +187,12 @@ always generated; this setting selects the initially visible one:
 once per activity, while `1` counts every pass. `COVERAGE_NORMALIZATION` is
 `"pct"` (default), where each cell is the percentage of all activities visiting
 it, or `"max"` for the legacy scale relative to the most-visited cell.
+
+`TIMELINE_PERIOD` sets the timeline's default granularity — `"year"`,
+`"month"` (default) or `"week"`; the panel lets the viewer switch between all
+three. The timeline filters by each activity's date, so no per-point timestamps
+are needed. It reuses the same in-browser re-rasterization as the date-range
+filter, which is why it stays responsive on large exports.
 
 ### Files and paths
 

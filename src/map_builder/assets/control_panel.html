@@ -73,6 +73,23 @@
         <input type="range" id="hcp-date-to" aria-label="Latest date" />
       </div>
       <div id="hcp-date-status" class="hcp-date-status" role="status" aria-live="polite"></div>
+      <!-- Timeline: shows how coverage grew over time. A period selector
+           (year / month / week), a single slider across the periods present in
+           the data, and a Play button that steps through them automatically.
+           Everything re-uses the same in-browser re-rasterization as the date
+           range above, so it needs no server. Hidden until the build supplies
+           period buckets (see src/timeline.py). -->
+      <div class="hcp-timeline" id="hcp-timeline" hidden>
+        <div class="hcp-timeline-head">
+          <label class="hcp-timeline-label" for="hcp-timeline-period" data-hcp-help="Step the heatmap through time to watch coverage grow. Pick the period size (year, month or week) and drag or press Play.">
+            <span>Timeline <span class="hcp-info" aria-hidden="true">i</span></span>
+          </label>
+          <select id="hcp-timeline-period" class="hcp-select"></select>
+          <button type="button" id="hcp-timeline-play" class="hcp-timeline-play" aria-pressed="false">Play</button>
+        </div>
+        <input type="range" id="hcp-timeline-range" aria-label="Timeline position" />
+        <div class="hcp-timeline-readout" id="hcp-timeline-readout" role="status" aria-live="polite"></div>
+      </div>
     </div>
     <div class="hcp-section hcp-section-opacity">
       <button type="button" id="hcp-opacity-toggle" class="hcp-opacity-toggle"

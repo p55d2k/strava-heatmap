@@ -54,6 +54,7 @@ from src.rasterizer import (
     rasterize_tracks,
     setup_transformers,
 )
+from src.timeline import build_timeline
 
 
 def setup_logging(dev: bool) -> None:
@@ -548,6 +549,9 @@ def run_generate(args: argparse.Namespace) -> None:
             track_dates = [split_activity_label(label)[0] for label, _ in tracks]
             track_dates = [d for d in track_dates if d]
             date_bounds = (min(track_dates), max(track_dates)) if track_dates else None
+            # Period buckets for the panel's timeline control (year / month /
+            # week), seeded from the configured granularity.
+            timeline = build_timeline(track_dates, config.timeline_period)
 
             build_map(
                 tracks,
@@ -566,6 +570,7 @@ def run_generate(args: argparse.Namespace) -> None:
                 gpx_filename=config.output_gpx.name,
                 tooltips=tooltips_embed,
                 date_bounds=date_bounds,
+                timeline=timeline,
                 progress_callback=pbar.update,
             )
             pbar.update(1)

@@ -1266,6 +1266,27 @@ class TestControlPanel:
         assert 'id="hcp-home-section"' not in adv_body
         assert 'id="hcp-home-section"' in html[home_pos:actions_pos]
 
+    def test_html_contains_timeline_controls(self):
+        """The timeline offers a period selector, a slider and a Play button."""
+        html = build_control_panel_html()
+        assert 'id="hcp-timeline"' in html
+        assert 'id="hcp-timeline-period"' in html
+        assert 'id="hcp-timeline-range"' in html
+        assert 'id="hcp-timeline-play"' in html
+        assert 'id="hcp-timeline-readout"' in html
+        # It lives inside the dates section, which stays hidden without an index.
+        assert html.index('id="hcp-dates-section"') < html.index('id="hcp-timeline"')
+
+    def test_script_contains_timeline_logic(self):
+        """control_panel_script must wire the timeline to the date filter."""
+        script = control_panel_script()
+        assert "installTimeline" in script
+        assert "hcp-timeline-period" in script
+        assert "hcp-timeline-range" in script
+        assert "hcp-timeline-play" in script
+        assert "applyTimeline" in script
+        assert "startPlay" in script
+
     def test_html_has_no_inline_opacity(self):
         """build_control_panel_html no longer hard-codes an opacity percentage."""
         html = build_control_panel_html()
@@ -1390,8 +1411,21 @@ class TestControlPanel:
         assert [m["label"] for m in cfg["advanced"]["modes"]] == [
             RASTER_MODE_LABELS[m] for m in RASTER_MODES
         ]
-        # Without an advanced section the config key stays present but empty.
+        # Without an advanced section the config key stays empty.
         assert json.loads(ControlPanel(centre=[1.0, 2.0]).config_json)["advanced"] == {}
+
+    def test_control_panel_carries_timeline_config(self):
+        """ControlPanel should embed the timeline period buckets for panel.js."""
+        timeline = {
+            "default": "week",
+            "periods": {"week": [{"label": "2024-W01", "to": "2024-01-07"}]},
+        }
+
+        panel = ControlPanel(centre=[1.0, 2.0], timeline=timeline)
+
+        assert json.loads(panel.config_json)["timeline"] == timeline
+        # Omitted timeline stays None so the control is not offered.
+        assert json.loads(ControlPanel(centre=[1.0, 2.0]).config_json)["timeline"] is None
 
     def test_carto_basemap_families_default(self):
         """carto_basemap_families should return the default families with labels."""
@@ -1681,6 +1715,50 @@ class TestBuildMapControlPanel:
 
         mock_panel.assert_called_once()
         assert mock_panel.call_args[1]["geojson"] == payload
+
+    @patch("src.map_builder.map_builder.folium.Map")
+    @patch("src.map_builder.map_builder.folium.TileLayer")
+    @patch("src.map_builder.map_builder.folium.FeatureGroup")
+    @patch("src.map_builder.map_builder.folium.PolyLine")
+    @patch("src.map_builder.map_builder.folium.raster_layers.ImageOverlay")
+    @patch("src.map_builder.map_builder.folium.LayerControl")
+    @patch("src.map_builder.map_builder.ExclusiveLayerControl")
+    @patch("src.map_builder.map_builder.ControlPanel")
+    def test_passes_the_timeline_to_the_panel(
+        self,
+        mock_panel,
+        mock_exclusive_control,
+        mock_layer_control,
+        mock_image_overlay,
+        mock_polyline,
+        mock_feature_group,
+        mock_tile_layer,
+        mock_map,
+    ):
+        """build_map should hand the timeline period buckets to the panel."""
+        mock_map.return_value = MagicMock()
+        mock_tile_layer.return_value = MagicMock()
+        mock_feature_group.return_value = MagicMock()
+        mock_polyline.return_value = MagicMock()
+        mock_image_overlay.return_value = MagicMock()
+        mock_layer_control.return_value = MagicMock()
+        mock_exclusive_control.return_value = MagicMock()
+        mock_panel.return_value = MagicMock()
+        timeline = {"default": "year", "periods": {"year": [{"label": "2024", "to": "2024-12-31"}]}}
+
+        build_map(
+            self.tracks,
+            self.layers,
+            self.bounds,
+            self.centre,
+            self.legend_html,
+            self.output_path,
+            self.map_opacity,
+            timeline=timeline,
+        )
+
+        mock_panel.assert_called_once()
+        assert mock_panel.call_args[1]["timeline"] == timeline
 
     @patch("src.map_builder.map_builder.folium.Map")
     @patch("src.map_builder.map_builder.folium.TileLayer")
