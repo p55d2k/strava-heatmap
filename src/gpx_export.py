@@ -24,6 +24,8 @@ from collections.abc import Iterator
 from pathlib import Path
 from xml.sax.saxutils import escape
 
+from src.helpers import is_point_value
+
 log = logging.getLogger(__name__)
 
 # Provenance written into the <gpx creator> attribute.
@@ -44,24 +46,30 @@ _ELEV_DECIMALS = 1
 _SPEED_DECIMALS = 3
 
 
+def _optional(value):
+    """Return ``value`` unless it is missing (``None`` or ``NaN``), else ``None``."""
+    return value if is_point_value(value) else None
+
+
 def _point_values(point: list) -> tuple:
     """Split one ``[lat, lon, speed, hr, alt]`` point, tolerating short tuples.
 
     Points missing the optional trailing fields (older cache entries, or a point
     built by hand) are treated as having no speed / heart rate / elevation
-    rather than failing the whole export.
+    rather than failing the whole export. Missing values are normalized to
+    ``None`` so the XML writer keeps its original branch structure.
     """
     lat, lon = point[0], point[1]
     speed = point[2] if len(point) > 2 else None
     hr = point[3] if len(point) > 3 else None
     alt = point[4] if len(point) > 4 else None
-    return lat, lon, speed, hr, alt
+    return lat, lon, _optional(speed), _optional(hr), _optional(alt)
 
 
 def _trkpt_xml(point: list) -> str:
     """Render one ``<trkpt>`` element, or an empty string for a point without a fix."""
     lat, lon, speed, hr, alt = _point_values(point)
-    if lat is None or lon is None:
+    if not is_point_value(lat) or not is_point_value(lon):
         return ""
 
     lat_s = f"{float(lat):.{_COORD_DECIMALS}f}"
@@ -107,7 +115,7 @@ def _iter_track(label: str, points: list) -> Iterator[str]:
 
 def _has_fix(point: list) -> bool:
     """Whether a point carries the lat/lon pair that makes it writable."""
-    return point[0] is not None and point[1] is not None
+    return is_point_value(point[0]) and is_point_value(point[1])
 
 
 def iter_gpx(tracks: list[tuple[str, list]], title: str = DEFAULT_TITLE) -> Iterator[str]:

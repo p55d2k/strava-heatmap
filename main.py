@@ -10,6 +10,7 @@ import warnings
 import webbrowser
 from pathlib import Path
 
+import numpy as np
 from tqdm import tqdm
 
 # Suppress specific non-critical third-party warnings (narrow filters)
@@ -34,7 +35,7 @@ from src.data_loader import (
 )
 from src.geojson_export import build_geojson, geojson_feature_count
 from src.gpx_export import write_gpx
-from src.helpers import haversine_km
+from src.helpers import haversine_km, points_to_array
 from src.map_builder import (
     DENSITY_MODE_LAYERS,
     INDEPENDENT_LAYER_NAMES,
@@ -84,13 +85,22 @@ def format_embed_size(n_chars: int) -> str:
 
 def auto_meters_per_pixel(tracks: list[tuple[str, list]]) -> float:
     """Choose a bounded raster size so a full export remains renderable."""
-    points = [point for _, track in tracks for point in track]
-    if not points:
+    lat_arrays = []
+    lon_arrays = []
+    for _, track in tracks:
+        arr = points_to_array(track)
+        if len(arr) == 0:
+            continue
+        lat_arrays.append(arr[:, 0])
+        lon_arrays.append(arr[:, 1])
+    if not lat_arrays:
         return 3.0
-    lats = [point[0] for point in points]
-    lons = [point[1] for point in points]
-    lat_span = haversine_km(min(lats), min(lons), max(lats), min(lons)) * 1000
-    lon_span = haversine_km(min(lats), min(lons), min(lats), max(lons)) * 1000
+    lats = np.concatenate(lat_arrays)
+    lons = np.concatenate(lon_arrays)
+    min_lat, max_lat = float(lats.min()), float(lats.max())
+    min_lon, max_lon = float(lons.min()), float(lons.max())
+    lat_span = haversine_km(min_lat, min_lon, max_lat, min_lon) * 1000
+    lon_span = haversine_km(min_lat, min_lon, min_lat, max_lon) * 1000
     largest_span = max(lat_span, lon_span)
     return max(3.0, min(100.0, largest_span / 1200))
 

@@ -23,6 +23,7 @@ from pathlib import Path
 from folium import MacroElement
 from jinja2 import Template as JinjaTemplate
 
+from src.helpers import is_point_value
 from src.map_builder.constants import (
     CARTO_FAMILIES,
     CARTO_FAMILY_LABELS,
@@ -153,7 +154,8 @@ def compute_layer_counts(tracks: list[tuple[str, list]]) -> dict[str, int]:
     Args:
         tracks: ``(label, points)`` pairs from ``data_loader.load_tracks``.
             Points are ``[lat, lon, speed, hr, alt]``; any optional field may be
-            ``None`` (or missing entirely, in a short legacy point).
+            missing (``None`` or ``NaN``, or absent entirely in a short legacy
+            point).
 
     Returns:
         Mapping from layer name to the number of activities it is built from,
@@ -163,11 +165,11 @@ def compute_layer_counts(tracks: list[tuple[str, list]]) -> dict[str, int]:
     n_activities = len(tracks)
     has_speed = has_hr = has_elevation = 0
     for _, points in tracks:
-        if any(len(p) > 2 and p[2] is not None for p in points):
+        if any(len(p) > 2 and is_point_value(p[2]) for p in points):
             has_speed += 1
-        if any(len(p) > 3 and p[3] is not None for p in points):
+        if any(len(p) > 3 and is_point_value(p[3]) for p in points):
             has_hr += 1
-        if any(len(p) > 4 and p[4] is not None for p in points):
+        if any(len(p) > 4 and is_point_value(p[4]) for p in points):
             has_elevation += 1
 
     return {

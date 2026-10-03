@@ -26,6 +26,7 @@ import logging
 
 import pandas as pd
 
+from src.helpers import is_point_value
 from src.map_builder.legend import pace_str
 
 log = logging.getLogger(__name__)
@@ -153,13 +154,13 @@ def _point_metric_averages(points) -> tuple[str, int | None]:
     """
     speeds: list[float] = []
     heart_rates: list[float] = []
-    for point in points or []:
+    for point in points if points is not None else []:
         speed = _as_float(point[2]) if len(point) > 2 else None
-        if speed is not None and speed > 0:
-            speeds.append(speed)
+        if is_point_value(speed) and speed > 0:
+            speeds.append(float(speed))
         heart_rate = _as_float(point[3]) if len(point) > 3 else None
-        if heart_rate is not None:
-            heart_rates.append(heart_rate)
+        if is_point_value(heart_rate):
+            heart_rates.append(float(heart_rate))
 
     pace = pace_str(sum(speeds) / len(speeds)) if speeds else ""
     heart_rate = int(round(sum(heart_rates) / len(heart_rates))) if heart_rates else None

@@ -11,6 +11,8 @@ from pyproj import Transformer
 from scipy.ndimage import gaussian_filter
 from tqdm import tqdm
 
+from src.helpers import is_point_value, points_to_array
+
 # Available rasterization modes. The mode decides which of the three strategy
 # grids (all painted in a single pass per track) drives the primary "GPS
 # Density (Time Spent)" layer:
@@ -93,8 +95,11 @@ def compute_grid_bounds(
     if clip_m is not None:
         clipped_wm_xs, clipped_wm_ys = [], []
         for _, pts in tracks:
-            lats_a = np.array([p[0] for p in pts])
-            lons_a = np.array([p[1] for p in pts])
+            arr = points_to_array(pts)
+            if len(arr) == 0:
+                continue
+            lats_a = arr[:, 0].astype(np.float64)
+            lons_a = arr[:, 1].astype(np.float64)
             xs_utm, ys_utm = to_utm.transform(lons_a, lats_a)
             mask = ((xs_utm - home_x_utm) ** 2 + (ys_utm - home_y_utm) ** 2) <= clip_m**2
             if mask.any():
@@ -106,8 +111,12 @@ def compute_grid_bounds(
         y_min_wm = min(clipped_wm_ys) - padding_m
         y_max_wm = max(clipped_wm_ys) + padding_m
     else:
-        all_lats = np.array([p[0] for _, pts in tracks for p in pts])
-        all_lons = np.array([p[1] for _, pts in tracks for p in pts])
+        lat_arrays = [points_to_array(pts)[:, 0].astype(np.float64) for _, pts in tracks]
+        lon_arrays = [points_to_array(pts)[:, 1].astype(np.float64) for _, pts in tracks]
+        lat_arrays = [a for a in lat_arrays if len(a) > 0]
+        lon_arrays = [a for a in lon_arrays if len(a) > 0]
+        all_lats = np.concatenate(lat_arrays) if lat_arrays else np.array([], dtype=np.float64)
+        all_lons = np.concatenate(lon_arrays) if lon_arrays else np.array([], dtype=np.float64)
         xs_wm_all, ys_wm_all = to_wm.transform(all_lons, all_lats)
         x_min_wm = xs_wm_all.min() - padding_m
         x_max_wm = xs_wm_all.max() + padding_m
@@ -166,6 +175,19 @@ def _geom_sum(n_visits: int, decay_factor: float) -> float:
     if decay_factor >= 1.0:
         return float(n_visits)
     return (1.0 - decay_factor**n_visits) / (1.0 - decay_factor)
+
+
+def _pair_value(v0, v1):
+    """Average two optional samples, falling back to whichever one is present."""
+    has0 = is_point_value(v0)
+    has1 = is_point_value(v1)
+    if has0 and has1:
+        return (v0 + v1) / 2
+    if has0:
+        return v0
+    if has1:
+        return v1
+    return None
 
 
 def _rasterize_track_points(
@@ -370,11 +392,14 @@ def rasterize_tracks(
 
     rasterized_count = 0
 
-    for activity_index, (_, track_pts) in enumerate(
+    for activity_index, (_, raw_track_pts) in enumerate(
         tqdm(tracks, desc="Rasterizing tracks", unit="track")
     ):
-        lats_a = np.array([p[0] for p in track_pts])
-        lons_a = np.array([p[1] for p in track_pts])
+        track_pts = points_to_array(raw_track_pts)
+        if len(track_pts) == 0:
+            continue
+        lats_a = track_pts[:, 0].astype(np.float64)
+        lons_a = track_pts[:, 1].astype(np.float64)
         xs_utm, ys_utm = to_utm.transform(lons_a, lats_a)
         xs_wm, ys_wm = to_wm.transform(lons_a, lats_a)
 
@@ -382,7 +407,7 @@ def rasterize_tracks(
             _mask = ((xs_utm - home_x_utm) ** 2 + (ys_utm - home_y_utm) ** 2) <= clip_m**2
             if not _mask.any():
                 continue
-            track_pts = [track_pts[i] for i in range(len(track_pts)) if _mask[i]]  # noqa: PLW2901
+            track_pts = track_pts[_mask]
             xs_utm = xs_utm[_mask]
             ys_utm = ys_utm[_mask]
             xs_wm = xs_wm[_mask]
@@ -412,18 +437,10 @@ def rasterize_tracks(
             h0, h1 = track_pts[i][3], track_pts[i + 1][3]
             a0, a1 = track_pts[i][4], track_pts[i + 1][4]
 
-            seg_speed = (
-                (s0 + s1) / 2
-                if s0 is not None and s1 is not None
-                else (s0 if s0 is not None else s1)
-            )
-            seg_hr = (
-                (h0 + h1) / 2
-                if h0 is not None and h1 is not None
-                else (h0 if h0 is not None else h1)
-            )
+            seg_speed = _pair_value(s0, s1)
+            seg_hr = _pair_value(h0, h1)
 
-            if a0 is not None and a1 is not None:
+            if is_point_value(a0) and is_point_value(a1):
                 d_dist = math.sqrt(
                     (xs_utm[i + 1] - xs_utm[i]) ** 2 + (ys_utm[i + 1] - ys_utm[i]) ** 2
                 )

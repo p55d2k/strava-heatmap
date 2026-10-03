@@ -13,6 +13,7 @@ from dotenv import load_dotenv
 from folium import MacroElement
 from jinja2 import Template
 
+from src.helpers import is_point_value, points_to_array
 from src.map_builder.constants import (
     CARTO_STYLES,
     DEFAULT_CARTO_STYLE,
@@ -383,8 +384,17 @@ def build_map(
     if not embed or embed_tracks:
         track_group = folium.FeatureGroup(name="Raw GPS tracks", show=embed)
         for label, pts in tracks:
+            # Folium serializes locations to JSON, so hand it plain Python
+            # floats and drop any point without a real fix (None/NaN).
+            locations = [
+                (float(p[0]), float(p[1]))
+                for p in points_to_array(pts)
+                if is_point_value(p[0]) and is_point_value(p[1])
+            ]
+            if not locations:
+                continue
             folium.PolyLine(
-                locations=[(p[0], p[1]) for p in pts],
+                locations=locations,
                 color="#fc4c02",
                 weight=1,
                 opacity=TRACK_OPACITY,

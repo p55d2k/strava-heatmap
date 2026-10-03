@@ -7,16 +7,49 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pytest
 
 from src.helpers import (
     detect_home,
     get_gps_start,
     haversine_km,
+    is_point_value,
     parse_fit_file,
     parse_gpx_file,
     parse_track_file,
+    points_to_array,
 )
+
+
+class TestPointArrays:
+    """Tests for the compact float32 point representation."""
+
+    def test_pads_short_rows_and_maps_none_to_nan(self):
+        """Short rows are padded and missing fields become NaN."""
+        arr = points_to_array([[1.0, 2.0], [3.0, 4.0, 5.0, None, 7.0]])
+
+        assert arr.shape == (2, 5)
+        assert arr.dtype == np.float32
+        assert (arr[0][0], arr[0][1]) == (1.0, 2.0)
+        assert np.isnan(arr[0][2]) and np.isnan(arr[0][4])
+        assert np.isnan(arr[1][3])
+
+    def test_empty_input_has_the_full_width(self):
+        """An empty export still yields a (0, 5) array, not a bare list."""
+        arr = points_to_array([])
+        assert arr.shape == (0, 5)
+
+    def test_accepts_an_existing_array(self):
+        """An already-normalized float32 array is returned without copying."""
+        src = np.zeros((3, 5), dtype=np.float32)
+        assert points_to_array(src) is src
+
+    def test_is_point_value_rejects_none_and_nan(self):
+        assert is_point_value(1.5)
+        assert not is_point_value(None)
+        assert not is_point_value(float("nan"))
+        assert not is_point_value(np.float32("nan"))
 
 
 class TestHaversineKm:
@@ -58,26 +91,26 @@ class TestParseFitFile:
     """Tests for parse_fit_file function."""
 
     def test_empty_file_returns_empty_list(self):
-        """Empty .fit.gz file should return empty list."""
+        """Empty .fit.gz file should return no points."""
         with tempfile.NamedTemporaryFile(suffix=".fit.gz", delete=False) as f:
             f.write(gzip.compress(b""))
             temp_path = Path(f.name)
 
         try:
             result = parse_fit_file(temp_path)
-            assert result == []
+            assert len(result) == 0
         finally:
             temp_path.unlink()
 
     def test_invalid_file_returns_empty_list(self):
-        """Invalid .fit.gz file should return empty list (not raise)."""
+        """Invalid .fit.gz file should return no points (not raise)."""
         with tempfile.NamedTemporaryFile(suffix=".fit.gz", delete=False) as f:
             f.write(gzip.compress(b"not a fit file"))
             temp_path = Path(f.name)
 
         try:
             result = parse_fit_file(temp_path)
-            assert result == []
+            assert len(result) == 0
         finally:
             temp_path.unlink()
 
@@ -310,7 +343,7 @@ class TestParseGpxFile:
     """Tests for parse_gpx_file function."""
 
     def test_empty_file_returns_empty_list(self):
-        """Empty .gpx file should return empty list (invalid XML)."""
+        """Empty .gpx file should return no points (invalid XML)."""
         import tempfile
 
         with tempfile.NamedTemporaryFile(suffix=".gpx", delete=False) as f:
@@ -319,12 +352,12 @@ class TestParseGpxFile:
 
         try:
             result = parse_gpx_file(temp_path)
-            assert result == []
+            assert len(result) == 0
         finally:
             temp_path.unlink()
 
     def test_invalid_file_returns_empty_list(self):
-        """Invalid .gpx file should return empty list (not raise)."""
+        """Invalid .gpx file should return no points (not raise)."""
         import tempfile
 
         with tempfile.NamedTemporaryFile(suffix=".gpx", delete=False) as f:
@@ -333,7 +366,7 @@ class TestParseGpxFile:
 
         try:
             result = parse_gpx_file(temp_path)
-            assert result == []
+            assert len(result) == 0
         finally:
             temp_path.unlink()
 
@@ -369,8 +402,8 @@ class TestParseGpxFile:
             assert result[0][0] == 1.4006150
             assert result[0][1] == 103.8064370
             assert result[0][4] == 31.4
-            assert result[0][2] is None  # speed
-            assert result[0][3] is None  # hr
+            assert np.isnan(result[0][2])  # speed missing
+            assert np.isnan(result[0][3])  # hr missing
         finally:
             temp_path.unlink()
 
@@ -390,8 +423,12 @@ class TestParseGpxFile:
 
         result = parse_gpx_file(path)
 
-        assert [p[2] for p in result] == [3.25, None, None]  # speed
-        assert [p[3] for p in result] == [142, 143, None]  # hr
+        speeds = [p[2] for p in result]
+        hrs = [p[3] for p in result]
+        assert speeds[0] == 3.25  # speed
+        assert np.isnan(speeds[1]) and np.isnan(speeds[2])
+        assert (hrs[0], hrs[1]) == (142, 143)  # hr
+        assert np.isnan(hrs[2])
         assert [p[4] for p in result] == [31.4, 31.4, 31.4]  # elevation untouched
 
     def test_reads_extensions_in_v1_namespace(self, temp_dir):
@@ -405,7 +442,7 @@ class TestParseGpxFile:
         _, _, speed, hr, _ = parse_gpx_file(path)[0]
 
         assert hr == 98
-        assert speed is None  # v1 has no speed element
+        assert np.isnan(speed)  # v1 has no speed element
 
     def test_reads_bare_extension_elements(self, temp_dir):
         """Some writers skip the TrackPointExtension wrapper entirely."""
@@ -433,8 +470,8 @@ class TestParseGpxFile:
 
         _, _, speed, hr, _ = parse_gpx_file(path)[0]
 
-        assert speed is None
-        assert hr is None
+        assert np.isnan(speed)
+        assert np.isnan(hr)
 
     def test_ignores_non_numeric_extension_values(self, temp_dir):
         """Empty or unparseable extension text should not fail the file."""
@@ -449,8 +486,8 @@ class TestParseGpxFile:
 
         result = parse_gpx_file(path)
 
-        assert result[0][2] is None
-        assert result[0][3] is None
+        assert np.isnan(result[0][2])
+        assert np.isnan(result[0][3])
         assert result[1][3] == 143  # beats are rounded to whole numbers
 
 
@@ -489,8 +526,8 @@ class TestParseTrackFile:
             mock_parse.assert_called_once_with(Path("dummy.fit.gz"))
 
     def test_unknown_format_returns_empty(self):
-        """Should return empty list and warn for unknown formats."""
+        """Should return no points and warn for unknown formats."""
         with patch("src.helpers.log") as mock_log:
             result = parse_track_file(Path("weird.xyz"))
-            assert result == []
+            assert len(result) == 0
             mock_log.warning.assert_called_once()

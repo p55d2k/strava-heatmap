@@ -9,10 +9,55 @@ from pathlib import Path
 
 import fitparse
 import gpxpy
+import numpy as np
 import pandas as pd
 from fitparse.utils import FitParseError
 
 log = logging.getLogger(__name__)
+
+# Track points are held as a compact ``(N, 5)`` float32 array of
+# ``[lat, lon, speed, hr, alt]`` columns instead of one Python list per point.
+# A missing optional field is ``NaN`` (there is no room for ``None`` in a float
+# array), so consumers must test with :func:`is_point_value` rather than
+# ``is not None``.
+POINT_DTYPE = np.float32
+N_POINT_FIELDS = 5
+
+
+def points_to_array(points) -> np.ndarray:
+    """Normalize track points to a float32 ``(N, 5)`` array.
+
+    Accepts an already-normalized array or any sequence of
+    ``[lat, lon, speed, hr, alt]`` rows (short legacy rows are padded). Fields
+    that are ``None`` become ``NaN`` so missing values cost no extra objects.
+    """
+    if isinstance(points, np.ndarray):
+        return points.astype(POINT_DTYPE, copy=False)
+    if len(points) == 0:
+        return np.empty((0, N_POINT_FIELDS), dtype=POINT_DTYPE)
+    try:
+        arr = np.asarray(points, dtype=POINT_DTYPE)
+        if arr.ndim == 2 and arr.shape[1] == N_POINT_FIELDS:
+            return arr
+    except (TypeError, ValueError):
+        pass
+    # Ragged or short rows: pad each row out to the full field count.
+    arr = np.full((len(points), N_POINT_FIELDS), np.nan, dtype=POINT_DTYPE)
+    for i, point in enumerate(points):
+        for j, value in enumerate(point[:N_POINT_FIELDS]):
+            if value is not None:
+                arr[i, j] = value
+    return arr
+
+
+def is_point_value(value) -> bool:
+    """True when a point field holds a real number rather than ``None``/``NaN``."""
+    if value is None:
+        return False
+    try:
+        return not math.isnan(value)
+    except TypeError:
+        return True
 
 
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
@@ -70,7 +115,7 @@ def parse_fit_file(filepath: Path) -> list:
     except Exception as e:
         # Other unexpected errors
         log.warning(f"Failed to parse {filepath.name}: {e}")
-    return points
+    return points_to_array(points)
 
 
 def _local_name(tag) -> str:
@@ -138,7 +183,7 @@ def parse_gpx_file(filepath: Path) -> list:
                     points.append([lat, lon, speed, hr, alt])
     except Exception as e:
         log.warning(f"Failed to parse {filepath.name}: {e}")
-    return points
+    return points_to_array(points)
 
 
 def parse_track_file(filepath: Path) -> list:
@@ -153,7 +198,7 @@ def parse_track_file(filepath: Path) -> list:
         return parse_gpx_file(filepath)
     else:
         log.warning(f"Unknown track file format: {filepath.name}")
-        return []
+        return points_to_array([])
 
 
 def get_gps_start(filepath: Path) -> tuple:
@@ -162,7 +207,7 @@ def get_gps_start(filepath: Path) -> tuple:
     Parses the full track once and derives start/spread from it.
     """
     pts = parse_track_file(filepath)
-    if not pts:
+    if pts is None or len(pts) == 0:
         log.debug(f"No GPS records in {filepath.name}")
         return None, None, None
 

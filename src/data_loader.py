@@ -14,7 +14,7 @@ import pandas as pd
 from tqdm import tqdm
 
 from src.config import normalize_activity_type
-from src.helpers import detect_home, get_gps_start, haversine_km, parse_track_file
+from src.helpers import detect_home, get_gps_start, haversine_km, parse_track_file, points_to_array
 
 log = logging.getLogger(__name__)
 
@@ -189,9 +189,9 @@ def _parse_track_wrapper(fp):
         return fp_path.name, parse_track_file(fp_path)
     except Exception:
         try:
-            return Path(str(fp)).name, []
+            return Path(str(fp)).name, points_to_array([])
         except Exception:
-            return str(fp), []
+            return str(fp), points_to_array([])
 
 
 def load_tracks(config, runs: pd.DataFrame) -> list[tuple[str, list]]:
@@ -215,7 +215,7 @@ def load_tracks(config, runs: pd.DataFrame) -> list[tuple[str, list]]:
                 track_meta.pop(k, None)
         cache["tracks_version"] = TRACK_CACHE_VERSION
 
-    stale = [k for k, v in track_cache.items() if v and len(v[0]) < 5]
+    stale = [k for k, v in track_cache.items() if v is not None and len(v) > 0 and len(v[0]) < 5]
     if stale:
         log.info(f"Clearing {len(stale)} stale cache entries...")
         for k in stale:
@@ -238,12 +238,16 @@ def load_tracks(config, runs: pd.DataFrame) -> list[tuple[str, list]]:
         lbl = f"{row['Activity Date'].date()} {row['Activity Name']}"
         sig = _file_signature(config.activities_dir / fn)
         pts = track_cache.get(fn)
+        if pts is not None:
+            # Upgrade points cached by an older version (plain Python lists).
+            pts = points_to_array(pts)
+            track_cache[fn] = pts
         cached_sig = track_meta.get(fn)
         if pts is None or (cached_sig is not None and sig is not None and cached_sig != sig):
             to_parse_meta.append((fn, lbl, idx, sig))
         else:
             reused += 1
-            if pts:
+            if len(pts) > 0:
                 results[idx] = (lbl, pts)
             # Backfill a signature for entries cached before signatures existed.
             if sig is not None:
@@ -263,7 +267,7 @@ def load_tracks(config, runs: pd.DataFrame) -> list[tuple[str, list]]:
                 for fn, lbl, idx, sig in fit_items:
                     fp = config.activities_dir / fn
                     pts = parse_track_file(fp)
-                    results[idx] = (lbl, pts) if pts else None
+                    results[idx] = (lbl, pts) if len(pts) > 0 else None
                     track_cache[fn] = pts
                     _record_signature(track_meta, fn, sig)
             else:
@@ -285,7 +289,7 @@ def load_tracks(config, runs: pd.DataFrame) -> list[tuple[str, list]]:
                     ):
                         _, pts = future.result()
                         fn, lbl, idx, sig = futures[future]
-                        results[idx] = (lbl, pts) if pts else None
+                        results[idx] = (lbl, pts) if len(pts) > 0 else None
                         track_cache[fn] = pts
                         _record_signature(track_meta, fn, sig)
 
@@ -295,7 +299,7 @@ def load_tracks(config, runs: pd.DataFrame) -> list[tuple[str, list]]:
             ):
                 fp = config.activities_dir / fn
                 pts = parse_track_file(fp)
-                results[idx] = (lbl, pts) if pts else None
+                results[idx] = (lbl, pts) if len(pts) > 0 else None
                 track_cache[fn] = pts
                 _record_signature(track_meta, fn, sig)
 

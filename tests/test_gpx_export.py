@@ -9,6 +9,7 @@ document as an external tool would read it, through gpxpy.
 import xml.etree.ElementTree as ET
 
 import gpxpy
+import numpy as np
 import pytest
 
 from src.gpx_export import DEFAULT_TITLE, GPX_CREATOR, build_gpx, write_gpx
@@ -201,7 +202,13 @@ def test_exported_file_reimports_with_hr_and_speed(tmp_path):
     points = parse_gpx_file(path)
 
     assert len(points) == 4  # both activities, in file order
-    assert [p[3] for p in points] == [150, None, 151, 140]  # hr
-    assert [p[2] for p in points] == [5.0, None, 8.25, 8.0]  # speed
-    assert [p[4] for p in points] == [100.0, 101.0, None, 105.0]  # elevation
+    hrs = [p[3] for p in points]
+    speeds = [p[2] for p in points]
+    alts = [p[4] for p in points]
+    assert (hrs[0], hrs[2], hrs[3]) == (150, 151, 140)  # hr
+    assert np.isnan(hrs[1])
+    assert (speeds[0], speeds[2], speeds[3]) == (5.0, 8.25, 8.0)  # speed
+    assert np.isnan(speeds[1])
+    assert (alts[0], alts[1], alts[3]) == (100.0, 101.0, 105.0)  # elevation
+    assert np.isnan(alts[2])
     assert points[0][0] == pytest.approx(45.0, abs=1e-7)

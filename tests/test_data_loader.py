@@ -8,6 +8,7 @@ import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pandas as pd
 import pytest
 
@@ -418,7 +419,8 @@ class TestLoadTracks:
         assert mock_parse.call_count == 1
         assert mock_parse.call_args[0][0].name == "old.gpx"
         assert tracks[0][1][0][3] == 142  # hr, freshly parsed
-        assert tracks[1][1] == [[45.1, -122.1, 5.0, 150, 100.0]]
+        # float32 storage rounds the cached coordinates, so compare with a tolerance.
+        assert np.allclose(tracks[1][1], [[45.1, -122.1, 5.0, 150, 100.0]])
 
         with open(self.cache_path, "rb") as f:
             assert pickle.load(f)["tracks_version"] == TRACK_CACHE_VERSION
@@ -475,7 +477,7 @@ class TestLoadTracks:
         tracks = load_tracks(self.config, runs)
 
         mock_parse.assert_not_called()
-        assert tracks[0][1] == [[45.0, -122.0, 5.0, 150, 100.0]]
+        assert tracks[0][1].tolist() == [[45.0, -122.0, 5.0, 150, 100.0]]
 
     @patch("src.data_loader.parse_track_file")
     def test_reparses_file_modified_since_cached(self, mock_parse):
@@ -563,7 +565,7 @@ class TestLoadTracks:
         tracks = load_tracks(self.config, runs)
 
         mock_parse.assert_not_called()
-        assert tracks[0][1] == [[45.0, -122.0, 5.0, 150, 100.0]]
+        assert tracks[0][1].tolist() == [[45.0, -122.0, 5.0, 150, 100.0]]
         with open(self.cache_path, "rb") as f:
             cache = pickle.load(f)
         assert cache["tracks_meta"]["legacy.fit.gz"] == (fp.stat().st_mtime_ns, fp.stat().st_size)
