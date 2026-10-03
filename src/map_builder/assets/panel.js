@@ -23,7 +23,8 @@
  *                               counts the tooltip index already carries — no
  *                               rebuild, colours stay on the legend scale)
  *   - Fit-to-heatmap / Reset view
- *   - Legend toggle
+ *   - Legend toggle            (mirrors the legend card's own hamburger, which
+ *                               is what collapses it on a phone)
  *   - Save as PNG              (static image export of the current view; the
  *                               html2canvas library it needs is fetched on the
  *                               first click, never at page load)
@@ -879,8 +880,9 @@
   // Render at 2x so the exported picture stays sharp on high-density screens.
   var EXPORT_SCALE = 2;
   var EXPORT_FILENAME = "heatmap.png";
-  // Where the legend card sits inside the exported image. Mirrors the panel
-  // CSS (bottom: 28px / right: 10px) so the PNG matches what was on screen.
+  // Fallback placement for the legend card in the exported image, used only if
+  // the browser will not measure it. Mirrors the panel CSS (bottom: 28px /
+  // right: 10px) so the PNG matches what was on screen.
   var EXPORT_LEGEND_RIGHT_PX = 10;
   var EXPORT_LEGEND_BOTTOM_PX = 28;
   // Classes left out of the exported picture. ScalableHomeMarker puts the class
@@ -923,6 +925,38 @@
   ];
 
   var html2canvasPromise = null;
+
+  /* ---- Legend (collapsible card) ----------------------------------------- */
+
+  // The legend is a <details> element (see assets/legend_container.html), so the
+  // browser owns the open/closed state and the hamburger summary toggles it with
+  // no script — which is what lets the embeddable widget collapse it too, since
+  // that page ships no JavaScript at all. These helpers exist so panel.js can
+  // still drive the card from the panel's own "Legend" button and so the PNG
+  // export knows whether it is looking at a collapsed card.
+
+  // Below this viewport width the legend is collapsed on first paint: on a phone
+  // the card would otherwise cover the bottom third of the map before the visitor
+  // has done anything. Must match the breakpoint in legend.css.
+  var LEGEND_NARROW_QUERY = "(max-width: 640px)";
+
+  function isNarrowViewport() {
+    var mq = global.matchMedia;
+    return Boolean(mq && mq(LEGEND_NARROW_QUERY) && mq(LEGEND_NARROW_QUERY).matches);
+  }
+
+  function getLegend(legendId) {
+    return legendId ? document.getElementById(legendId) : null;
+  }
+
+  // Collapse the legend on a phone-sized viewport, once, on load. Leaves the
+  // state alone on wider screens and once the visitor has toggled it themselves,
+  // so a resize never yanks the card back.
+  function collapseLegendOnNarrowScreen(legendId) {
+    var legend = getLegend(legendId);
+    if (!legend) return;
+    if (isNarrowViewport() && legend.open !== undefined) legend.open = false;
+  }
 
   function loadHtml2Canvas() {
     if (global.html2canvas) return Promise.resolve(global.html2canvas);
@@ -972,23 +1006,68 @@
   }
 
   // The legend is a fixed-position sibling of the map rather than part of it, so
-  // it is missing from the map's own render; draw it into the bottom-right
-  // corner (its on-screen spot) instead. A legend the user has hidden via the
-  // Legend button is skipped, so the PNG matches the screen.
-  function addLegendToCanvas(canvas, html2canvas, legendId) {
-    var legend = legendId ? document.getElementById(legendId) : null;
+  // it is missing from the map's own render; draw it into its on-screen spot
+  // instead. Its position is measured off the live layout rather than
+  // hard-coded, because the card goes full-width on a phone (see legend.css) —
+  // so the picture matches the screen at every viewport width.
+  //
+  // A collapsed card would export as a bare hamburger bar, which is useless in
+  // a shared image, so it is forced open for the render and put back the way the
+  // visitor left it. A card hidden outright via the panel's Legend button is
+  // skipped, as before, so the PNG still matches the screen.
+  function addLegendToCanvas(canvas, html2canvas, legendId, mapContainer) {
+    var legend = getLegend(legendId);
     if (!legend || legend.style.display === "none") return Promise.resolve();
-    return renderToCanvas(legend, html2canvas).then(function (legendCanvas) {
-      var context = canvas.getContext("2d");
-      if (!context) return;
-      var right = EXPORT_LEGEND_RIGHT_PX * EXPORT_SCALE;
-      var bottom = EXPORT_LEGEND_BOTTOM_PX * EXPORT_SCALE;
-      context.drawImage(
-        legendCanvas,
-        Math.max(right, canvas.width - legendCanvas.width - right),
-        Math.max(bottom, canvas.height - legendCanvas.height - bottom)
-      );
-    });
+    var wasOpen = legend.open;
+    var collapsible = wasOpen !== undefined;
+    if (collapsible && !wasOpen) legend.open = true;
+    return renderToCanvas(legend, html2canvas).then(
+      function (legendCanvas) {
+        if (collapsible) legend.open = wasOpen;
+        var context = canvas.getContext("2d");
+        if (!context) return;
+        var origin = legendOriginInCanvas(canvas, legend, mapContainer);
+        context.drawImage(
+          legendCanvas,
+          Math.max(0, Math.min(canvas.width - legendCanvas.width, origin.left)),
+          Math.max(0, Math.min(canvas.height - legendCanvas.height, origin.top))
+        );
+      },
+      function (error) {
+        // Restore before re-throwing: a failed export must not leave the card
+        // open when the visitor had closed it.
+        if (collapsible) legend.open = wasOpen;
+        throw error;
+      }
+    );
+  }
+
+  // Where the legend card's top-left corner falls inside the exported image, in
+  // scaled canvas pixels. Both the card and the map container are viewport-fixed
+  // / viewport-sized, so their bounding rects give the offset directly; the
+  // scale factor then converts CSS pixels to canvas pixels. Falls back to
+  // bottom-right placement if the browser will not measure the card.
+  function legendOriginInCanvas(canvas, legend, mapContainer) {
+    var fallbackLeft = canvas.width - EXPORT_LEGEND_RIGHT_PX * EXPORT_SCALE;
+    var fallbackTop = canvas.height - EXPORT_LEGEND_BOTTOM_PX * EXPORT_SCALE;
+    if (
+      typeof legend.getBoundingClientRect !== "function" ||
+      !mapContainer ||
+      typeof mapContainer.getBoundingClientRect !== "function"
+    ) {
+      return { left: fallbackLeft, top: fallbackTop };
+    }
+    var legendRect = legend.getBoundingClientRect();
+    var mapRect = mapContainer.getBoundingClientRect();
+    if (!mapRect.width || !mapRect.height) {
+      return { left: fallbackLeft, top: fallbackTop };
+    }
+    // The render is at EXPORT_SCALE times the map's CSS size.
+    var scale = (canvas.width * EXPORT_SCALE) / mapRect.width / EXPORT_SCALE;
+    return {
+      left: (legendRect.left - mapRect.left) * scale,
+      top: (legendRect.top - mapRect.top) * scale,
+    };
   }
 
   // Hand a URL (a blob: URL or a data: URI) to the browser as a file download.
@@ -1193,7 +1272,7 @@
       })
       .then(function (html2canvas) {
         return renderToCanvas(container, html2canvas).then(function (canvas) {
-          return addLegendToCanvas(canvas, html2canvas, legendId).then(function () {
+          return addLegendToCanvas(canvas, html2canvas, legendId, container).then(function () {
             return canvas;
           });
         });
@@ -3282,16 +3361,23 @@
       });
     }
 
+    // The card is a <details>, so the visitor's own hamburger is the primary
+    // control and needs no wiring. The panel's button mirrors it: it opens or
+    // closes the same card and stays in step when the hamburger is used, rather
+    // than hiding it outright the way it used to (display:none on the container
+    // would take the summary — and with it the way back — off the screen).
     var legendBtn = panel.querySelector("#hcp-legend");
-    var legendVisible = true;
     if (legendBtn && config.legendId) {
       legendBtn.addEventListener("click", function () {
-        var legend = document.getElementById(config.legendId);
+        var legend = getLegend(config.legendId);
         if (!legend) return;
-        legendVisible = !legendVisible;
-        legend.style.display = legendVisible ? "block" : "none";
+        legend.open = !(legend.open !== false);
       });
     }
+
+    // A phone-sized viewport starts with the card closed, so the map is not
+    // covered before the visitor has done anything.
+    collapseLegendOnNarrowScreen(config.legendId);
 
     /* --- Save as PNG ----------------------------------------------------- */
     // Renders the current view (map + legend) to a PNG file entirely in the

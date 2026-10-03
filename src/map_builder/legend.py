@@ -5,7 +5,14 @@ This module provides functions and classes to generate the legend HTML,
 including individual legend rows and the complete legend container. The markup
 is rendered from the external ``assets/legend_row.html`` and
 ``assets/legend_container.html`` templates, and styled by the shared
-``assets/panel.css`` so it stays consistent with the control panel.
+``assets/legend.css``.
+
+The container is a ``<details>`` element: the visitor collapses and expands the
+card with its own hamburger summary, so the embeddable widget — which ships no
+JavaScript — gets the same collapsible, touch-friendly legend as the full page.
+It is rendered open, so the legend reads the same as it always has; the control
+panel's "Legend" button and the narrow-screen default in ``assets/panel.js``
+close it.
 
 Rows are fully configurable: build your own ``LegendRow`` definitions (or start
 from ``LegendBuilder.default_rows``) and pass them to ``LegendBuilder``. Each

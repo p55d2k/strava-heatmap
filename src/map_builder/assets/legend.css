@@ -1,6 +1,7 @@
 /* ================================================================
    Shared map-chrome stylesheet — the colour / typography custom
-   properties, the legend card, and the basemap attribution control.
+   properties, the collapsible legend card, and the basemap
+   attribution control.
 
    Everything here is rendered by BOTH the full page and the embeddable
    widget, so it lives in this file rather than panel.css. panel.css is
@@ -28,7 +29,13 @@
 /* Match by id and/or class so the legend can never fall back to an
    unstyled, full-width block at the top of the page on any code path.
    It is always a small card pinned to the bottom-right (separate from the
-   top-right control panel). */
+   top-right control panel).
+
+   The card is a <details>, so the collapsed/expanded state needs no script:
+   the summary is the toggle, and the browser hides the body on its own. The
+   padding lives on the summary and the body rather than on the card, so a
+   collapsed legend is a single tidy bar instead of a bar wrapped in dead
+   space. */
 #heatmap-legend,
 .hcp-legend {
   position: fixed;
@@ -40,7 +47,7 @@
   width: auto;
   max-width: 300px;
   background: var(--hcp-bg);
-  padding: 13px 16px 14px;
+  padding: 0;
   border-radius: var(--hcp-radius);
   border: 1px solid var(--hcp-border);
   box-shadow: var(--hcp-shadow);
@@ -49,6 +56,113 @@
   font-size: 12px;
   min-width: 210px;
   line-height: 1.4;
+}
+
+/* The summary is the whole hit area when collapsed, so it is sized to a
+   comfortable pointer target (the 44px minimum recommended for touch) and
+   grows past it on coarse pointers. */
+.hcp-legend-summary {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 9px 16px;
+  border-radius: var(--hcp-radius);
+  color: var(--hcp-text-strong);
+  font-weight: 600;
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: rgba(255, 255, 255, 0.12);
+}
+
+/* Chrome draws its own disclosure triangle; the hamburger below is the
+   affordance instead. Suppress it on both engines (WebKit/Blink and the
+   Firefox ::marker) or the card gets a second, redundant arrow. */
+.hcp-legend-summary::-webkit-details-marker {
+  display: none;
+}
+
+.hcp-legend-summary {
+  list-style: none;
+}
+
+.hcp-legend-summary::marker {
+  content: "";
+}
+
+/* Once the card is open the top corners belong to the summary and the bottom
+   ones to the body, so the rounding only reads correctly on the open state. */
+.hcp-legend[open] .hcp-legend-summary {
+  border-bottom: 1px solid var(--hcp-border);
+  border-bottom-left-radius: 0;
+  border-bottom-right-radius: 0;
+}
+
+/* The hamburger: three bars, the middle one the element itself and the outer
+   two its pseudo-elements. */
+.hcp-legend-burger,
+.hcp-legend-burger::before,
+.hcp-legend-burger::after {
+  display: block;
+  width: 14px;
+  height: 2px;
+  background: currentColor;
+  border-radius: 1px;
+}
+
+.hcp-legend-burger {
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.hcp-legend-burger::before,
+.hcp-legend-burger::after {
+  content: "";
+  position: absolute;
+  left: 0;
+}
+
+.hcp-legend-burger::before {
+  top: -5px;
+}
+
+.hcp-legend-burger::after {
+  top: 5px;
+}
+
+/* Open, the bars fold into a cross: the middle one fades out and the outer two
+   rotate towards each other. */
+.hcp-legend[open] .hcp-legend-burger {
+  background: transparent;
+}
+
+.hcp-legend[open] .hcp-legend-burger::before,
+.hcp-legend[open] .hcp-legend-burger::after {
+  top: 0;
+  transition: transform 0.15s ease;
+}
+
+.hcp-legend[open] .hcp-legend-burger::before {
+  transform: rotate(45deg);
+}
+
+.hcp-legend[open] .hcp-legend-burger::after {
+  transform: rotate(-45deg);
+}
+
+.hcp-legend-summary-label {
+  flex: 1 1 auto;
+}
+
+/* A tall legend (every layer switched on) scrolls inside the card rather than
+   growing off the top of the screen. `contain` stops the scroll from chaining
+   to a pan of the map behind it. */
+.hcp-legend-body {
+  max-height: 60vh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 12px 16px 14px;
 }
 
 .hcp-legend-row {
@@ -77,6 +191,40 @@
   margin-top: 3px;
   color: var(--hcp-text-muted);
   font-size: 11px;
+}
+
+/* Phones: a 300px card in the corner of a 375px screen is all legend and no
+   map, so the card goes full-width along the bottom edge and shows only its
+   hamburger bar until it is tapped open. `bottom` stays clear of the map's own
+   attribution strip, and the body is capped so an expanded legend cannot take
+   over the viewport. */
+@media (max-width: 640px) {
+  #heatmap-legend,
+  .hcp-legend {
+    left: 10px;
+    right: 10px;
+    bottom: 26px;
+    max-width: none;
+    min-width: 0;
+  }
+
+  .hcp-legend-summary {
+    padding: 11px 14px;
+  }
+
+  .hcp-legend-body {
+    max-height: 45vh;
+    padding: 12px 14px;
+  }
+
+  /* Nothing else is tappable down here, so the type can afford to be bigger. */
+  .hcp-legend-title {
+    font-size: 13px;
+  }
+
+  .hcp-legend-scale {
+    font-size: 12px;
+  }
 }
 
 /* ------------------------------------------------- Basemap attribution */

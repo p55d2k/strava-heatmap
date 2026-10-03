@@ -184,6 +184,11 @@ class TestBuildLegendHtml:
         # Check container uses shared CSS class
         assert 'id="heatmap-legend"' in html
         assert 'class="hcp-legend"' in html
+        assert "<details" in html
+        assert "<summary" in html
+        assert "hcp-legend-summary" in html
+        assert "Legend" in html
+        assert "hcp-legend-body" in html
 
         # Check all legend rows present
         assert "GPS Density" in html
@@ -2081,6 +2086,9 @@ class TestConstants:
         assert "<style>" in css
         assert "#heatmap-legend" in css
         assert ".hcp-legend-row" in css
+        assert ".hcp-legend-summary" in css
+        assert ".hcp-legend-burger" in css
+        assert "hcp-legend-body" in css
         assert ".folium-map" not in css
         assert "leaflet-control-layers" not in css
         assert css.count(":root") == 1
@@ -2096,9 +2104,19 @@ class TestConstants:
         assert ".leaflet-control-attribution" in css
         # Shrunk and muted...
         assert "font-size: 10px" in css
-        # ...but never taken off the map.
-        assert "display: none" not in css
-        assert "visibility: hidden" not in css
+        # ...but never taken off the map. Scoped to the attribution's own rule
+        # blocks: the collapsible legend is a separate, hideable element, so a
+        # blanket check over the whole file would (rightly) fail on its CSS.
+        import re
+
+        blocks = re.findall(r"\.leaflet-control-attribution[^{]*\{[^}]*\}", css)
+        assert blocks, "attribution rule missing from legend.css"
+        attribution_css = " ".join(blocks)
+        assert "display: none" not in attribution_css
+        assert "visibility: hidden" not in attribution_css
+        # Nothing may hide the attribution by proxy either (e.g. a rule on the
+        # map or the control container that strips it).
+        assert not re.search(r"\.leaflet-control-container[^{]*\{[^}]*display:\s*none", css)
 
     def test_attribution_styling_ships_to_both_pages(self):
         """Full page and widget both show attribution, so both get the styling."""

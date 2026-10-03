@@ -1,4 +1,15 @@
 <!-- Legend container template (fields: rows, style_attr). -->
-<div id="heatmap-legend" class="hcp-legend"$style_attr>
-$rows
-</div>
+<!-- A <details> card rather than a plain div: the disclosure (and its
+     hamburger summary) then works with no JavaScript at all, which matters
+     because the embeddable widget ships no script at all. It is rendered open,
+     so the legend reads the same as it always has; the control panel's
+     "Legend" button and the narrow-screen default in panel.js close it. -->
+<details id="heatmap-legend" class="hcp-legend" open$style_attr>
+  <summary class="hcp-legend-summary">
+    <span class="hcp-legend-burger" aria-hidden="true"></span>
+    <span class="hcp-legend-summary-label">Legend</span>
+  </summary>
+  <div class="hcp-legend-body">
+  $rows
+  </div>
+</details>
