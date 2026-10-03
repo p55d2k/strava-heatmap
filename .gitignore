@@ -219,14 +219,22 @@ __marimo__/
 # Streamlit
 .streamlit/secrets.toml
 
+# caches/outputs
 cache/
 outputs/
+
+# test data
 strava_export/
 strava_export_2/
 strava_export_3/
 
+# configs
 config.json
 config.toml
 !example_configs/*.toml
 
+# macos
 .DS_Store
+
+# agents
+tasks/
