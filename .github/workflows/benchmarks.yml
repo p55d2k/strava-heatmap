@@ -1,0 +1,40 @@
+name: Benchmarks
+
+# Run on demand or weekly; kept off pull requests so ordinary CI stays fast.
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1"
+
+jobs:
+  benchmarks:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v7
+        with:
+          version: "latest"
+          enable-cache: true
+          cache-dependency-glob: "uv.lock"
+
+      - name: Install dependencies
+        run: uv sync --locked --python 3.12
+
+      - name: Run benchmark suite
+        env:
+          CARTO_API_KEY: benchmark-key
+        run: |
+          uv run python -m benchmarks \
+            --scenarios small medium \
+            --repeat 3 \
+            --json benchmark-results.json
+
+      - name: Upload benchmark report
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-report
+          path: benchmark-results.json

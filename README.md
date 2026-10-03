@@ -389,6 +389,27 @@ Give the iframe a sensible fixed size. Because it zooms on scroll, consider
 intrusive. Attribution remains visible in the widget because the tile terms
 require it; `EMBED_ATTRIBUTION` is retained only for configuration compatibility.
 
+## Benchmarks
+
+`benchmarks/` is a repeatable benchmark suite covering the pipeline's major
+stages — FIT parsing, activity normalization, rasterization/grid generation, map
+generation and end-to-end generation — with peak-memory reporting. It
+synthesises its own Strava-shaped export (real `.fit.gz` files plus
+`activities.csv`), so it needs no private data and gives comparable numbers
+between runs and releases.
+
+```bash
+# Run every scenario size with the default repetition count
+uv run python -m benchmarks
+
+# Keep a report as a release baseline, then flag later regressions against it
+uv run python -m benchmarks --json bench.json
+uv run python -m benchmarks --baseline bench.json --fail-on-regression
+```
+
+The `Benchmarks` GitHub workflow runs the small and medium scenarios on demand
+and weekly, uploading the JSON report as a build artifact.
+
 ## Schema, caching, and technical notes
 
 `config.schema.json` is generated from the Pydantic model in
