@@ -33,7 +33,7 @@ def _load_cache(config) -> dict:
                 return pickle.load(f)
         except Exception as e:
             log.warning(f"Failed to load cache: {e}")
-    return {"gps": {}, "tracks": {}}
+    return {"gps": {}, "tracks": {}, "tracks_meta": {}}
 
 
 def _save_cache(config, cache: dict) -> None:
@@ -163,6 +163,23 @@ def filter_by_home_radius(
     return runs
 
 
+def _file_signature(path: Path) -> tuple[int, int] | None:
+    """Return a source file's (mtime_ns, size), or None when it is missing."""
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    return st.st_mtime_ns, st.st_size
+
+
+def _record_signature(track_meta: dict, fn: str, sig: tuple[int, int] | None) -> None:
+    """Remember a source file's signature so later runs can detect changes."""
+    if sig is None:
+        track_meta.pop(fn, None)
+    else:
+        track_meta[fn] = sig
+
+
 def _parse_track_wrapper(fp):
     try:
         if isinstance(fp, str):
@@ -178,9 +195,16 @@ def _parse_track_wrapper(fp):
 
 
 def load_tracks(config, runs: pd.DataFrame) -> list[tuple[str, list]]:
-    """Load full GPS tracks from .fit.gz / .gpx files with caching."""
+    """Load full GPS tracks from .fit.gz / .gpx files with incremental caching.
+
+    Each cached entry records the source file's modification time and size. An
+    unchanged file reuses its cached points, a new file is parsed, a file edited
+    since it was cached is re-parsed, and an entry whose source file has been
+    deleted is dropped.
+    """
     cache = _load_cache(config)
     track_cache = cache.get("tracks", {})
+    track_meta = cache.get("tracks_meta", {})
 
     if cache.get("tracks_version") != TRACK_CACHE_VERSION:
         outdated = [k for k in track_cache if str(k).lower().endswith(".gpx")]
@@ -188,6 +212,7 @@ def load_tracks(config, runs: pd.DataFrame) -> list[tuple[str, list]]:
             log.info(f"Reparsing {len(outdated)} cached GPX tracks recorded by an older parser...")
             for k in outdated:
                 del track_cache[k]
+                track_meta.pop(k, None)
         cache["tracks_version"] = TRACK_CACHE_VERSION
 
     stale = [k for k, v in track_cache.items() if v and len(v[0]) < 5]
@@ -195,35 +220,52 @@ def load_tracks(config, runs: pd.DataFrame) -> list[tuple[str, list]]:
         log.info(f"Clearing {len(stale)} stale cache entries...")
         for k in stale:
             del track_cache[k]
+            track_meta.pop(k, None)
+
+    # Drop cached data for source files that have been deleted since caching.
+    deleted = [fn for fn in track_meta if _file_signature(config.activities_dir / fn) is None]
+    if deleted:
+        log.info(f"Removing {len(deleted)} cached tracks for deleted files...")
+        for fn in deleted:
+            track_cache.pop(fn, None)
+            del track_meta[fn]
 
     results = [None] * len(runs)
     to_parse_meta = []
+    reused = 0
     for idx, (_, row) in enumerate(runs.iterrows()):
         fn = str(row["Filename"])
         lbl = f"{row['Activity Date'].date()} {row['Activity Name']}"
+        sig = _file_signature(config.activities_dir / fn)
         pts = track_cache.get(fn)
-        if pts is None:
-            to_parse_meta.append((fn, lbl, idx))
-        elif pts:
-            results[idx] = (lbl, pts)
+        cached_sig = track_meta.get(fn)
+        if pts is None or (cached_sig is not None and sig is not None and cached_sig != sig):
+            to_parse_meta.append((fn, lbl, idx, sig))
+        else:
+            reused += 1
+            if pts:
+                results[idx] = (lbl, pts)
+            # Backfill a signature for entries cached before signatures existed.
+            if sig is not None:
+                track_meta[fn] = sig
+
+    if reused:
+        log.info(f"Reusing {reused} cached tracks; parsing {len(to_parse_meta)}")
 
     if to_parse_meta:
-        fit_items = [
-            (fn, lbl, idx) for fn, lbl, idx in to_parse_meta if fn.lower().endswith(".fit.gz")
-        ]
-        non_fit_items = [
-            (fn, lbl, idx) for fn, lbl, idx in to_parse_meta if not fn.lower().endswith(".fit.gz")
-        ]
+        fit_items = [item for item in to_parse_meta if item[0].lower().endswith(".fit.gz")]
+        non_fit_items = [item for item in to_parse_meta if not item[0].lower().endswith(".fit.gz")]
 
         if fit_items:
             is_mocked = isinstance(parse_track_file, Mock)
             max_workers = 1 if is_mocked or len(fit_items) == 0 else min(len(fit_items), 4)
             if max_workers <= 1:
-                for fn, lbl, idx in fit_items:
+                for fn, lbl, idx, sig in fit_items:
                     fp = config.activities_dir / fn
                     pts = parse_track_file(fp)
                     results[idx] = (lbl, pts) if pts else None
                     track_cache[fn] = pts
+                    _record_signature(track_meta, fn, sig)
             else:
                 with ProcessPoolExecutor(max_workers=max_workers) as executor:
                     futures = {
@@ -231,8 +273,9 @@ def load_tracks(config, runs: pd.DataFrame) -> list[tuple[str, list]]:
                             fn,
                             lbl,
                             idx,
+                            sig,
                         )
-                        for fn, lbl, idx in fit_items
+                        for fn, lbl, idx, sig in fit_items
                     }
                     for future in tqdm(
                         as_completed(futures),
@@ -241,19 +284,24 @@ def load_tracks(config, runs: pd.DataFrame) -> list[tuple[str, list]]:
                         unit="activity",
                     ):
                         _, pts = future.result()
-                        fn, lbl, idx = futures[future]
+                        fn, lbl, idx, sig = futures[future]
                         results[idx] = (lbl, pts) if pts else None
                         track_cache[fn] = pts
+                        _record_signature(track_meta, fn, sig)
 
         if non_fit_items:
-            for fn, lbl, idx in tqdm(non_fit_items, desc="Parsing track files", unit="activity"):
+            for fn, lbl, idx, sig in tqdm(
+                non_fit_items, desc="Parsing track files", unit="activity"
+            ):
                 fp = config.activities_dir / fn
                 pts = parse_track_file(fp)
                 results[idx] = (lbl, pts) if pts else None
                 track_cache[fn] = pts
+                _record_signature(track_meta, fn, sig)
 
     tracks = [t for t in results if t is not None]
     cache["tracks"] = track_cache
+    cache["tracks_meta"] = track_meta
     _save_cache(config, cache)
 
     if not tracks:

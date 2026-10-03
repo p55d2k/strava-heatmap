@@ -2,6 +2,7 @@
 Unit tests for src/data_loader.py - data loading and filtering functions.
 """
 
+import os
 import pickle
 import tempfile
 from pathlib import Path
@@ -445,3 +446,162 @@ class TestLoadTracks:
 
         mock_parse.assert_not_called()
         assert tracks[0][1][0][3] == 142
+
+    @patch("src.data_loader.parse_track_file")
+    def test_reuses_unchanged_cached_file(self, mock_parse):
+        """A file whose signature is unchanged must not be parsed again."""
+        fp = self.activities_dir / "same.fit.gz"
+        fp.write_bytes(b"track-data")
+        st = fp.stat()
+        sig = (st.st_mtime_ns, st.st_size)
+
+        cache_data = {
+            "gps": {},
+            "tracks_version": TRACK_CACHE_VERSION,
+            "tracks": {"same.fit.gz": [[45.0, -122.0, 5.0, 150, 100.0]]},
+            "tracks_meta": {"same.fit.gz": sig},
+        }
+        with open(self.cache_path, "wb") as f:
+            pickle.dump(cache_data, f)
+
+        runs = pd.DataFrame(
+            {
+                "Filename": ["same.fit.gz"],
+                "Activity Date": [pd.Timestamp("2024-01-01")],
+                "Activity Name": ["Morning Run"],
+            }
+        )
+
+        tracks = load_tracks(self.config, runs)
+
+        mock_parse.assert_not_called()
+        assert tracks[0][1] == [[45.0, -122.0, 5.0, 150, 100.0]]
+
+    @patch("src.data_loader.parse_track_file")
+    def test_reparses_file_modified_since_cached(self, mock_parse):
+        """A file edited after it was cached invalidates its cache entry."""
+        fp = self.activities_dir / "changed.fit.gz"
+        fp.write_bytes(b"v1")
+        st = fp.stat()
+        old_sig = (st.st_mtime_ns, st.st_size)
+
+        cache_data = {
+            "gps": {},
+            "tracks_version": TRACK_CACHE_VERSION,
+            "tracks": {"changed.fit.gz": [[45.0, -122.0, 5.0, 150, 100.0]]},
+            "tracks_meta": {"changed.fit.gz": old_sig},
+        }
+        with open(self.cache_path, "wb") as f:
+            pickle.dump(cache_data, f)
+
+        fp.write_bytes(b"v2-longer")
+        os.utime(fp, ns=(old_sig[0] + 1_000_000, old_sig[0] + 1_000_000))
+        new_sig = (fp.stat().st_mtime_ns, fp.stat().st_size)
+        assert new_sig != old_sig
+
+        mock_parse.return_value = [[45.5, -122.5, 6.0, 160, 101.0]]
+
+        runs = pd.DataFrame(
+            {
+                "Filename": ["changed.fit.gz"],
+                "Activity Date": [pd.Timestamp("2024-01-01")],
+                "Activity Name": ["Morning Run"],
+            }
+        )
+
+        tracks = load_tracks(self.config, runs)
+
+        assert mock_parse.call_count == 1
+        assert tracks[0][1] == [[45.5, -122.5, 6.0, 160, 101.0]]
+        with open(self.cache_path, "rb") as f:
+            cache = pickle.load(f)
+        assert cache["tracks_meta"]["changed.fit.gz"] == new_sig
+
+    @patch("src.data_loader.parse_track_file")
+    def test_records_signature_for_new_file(self, mock_parse):
+        """A freshly parsed file stores its signature for the next run."""
+        fp = self.activities_dir / "fresh.fit.gz"
+        fp.write_bytes(b"new-track")
+        mock_parse.return_value = [[45.0, -122.0, 5.0, 150, 100.0]]
+
+        runs = pd.DataFrame(
+            {
+                "Filename": ["fresh.fit.gz"],
+                "Activity Date": [pd.Timestamp("2024-01-01")],
+                "Activity Name": ["Morning Run"],
+            }
+        )
+
+        load_tracks(self.config, runs)
+
+        with open(self.cache_path, "rb") as f:
+            cache = pickle.load(f)
+        assert cache["tracks_meta"]["fresh.fit.gz"] == (fp.stat().st_mtime_ns, fp.stat().st_size)
+
+    @patch("src.data_loader.parse_track_file")
+    def test_backfills_signature_for_legacy_entry(self, mock_parse):
+        """Entries cached before signatures existed are reused and backfilled."""
+        fp = self.activities_dir / "legacy.fit.gz"
+        fp.write_bytes(b"legacy")
+
+        cache_data = {
+            "gps": {},
+            "tracks_version": TRACK_CACHE_VERSION,
+            "tracks": {"legacy.fit.gz": [[45.0, -122.0, 5.0, 150, 100.0]]},
+        }
+        with open(self.cache_path, "wb") as f:
+            pickle.dump(cache_data, f)
+
+        runs = pd.DataFrame(
+            {
+                "Filename": ["legacy.fit.gz"],
+                "Activity Date": [pd.Timestamp("2024-01-01")],
+                "Activity Name": ["Morning Run"],
+            }
+        )
+
+        tracks = load_tracks(self.config, runs)
+
+        mock_parse.assert_not_called()
+        assert tracks[0][1] == [[45.0, -122.0, 5.0, 150, 100.0]]
+        with open(self.cache_path, "rb") as f:
+            cache = pickle.load(f)
+        assert cache["tracks_meta"]["legacy.fit.gz"] == (fp.stat().st_mtime_ns, fp.stat().st_size)
+
+    @patch("src.data_loader.parse_track_file")
+    def test_removes_cache_for_deleted_file(self, mock_parse):
+        """Cached tracks whose source file was deleted are dropped."""
+        keep = self.activities_dir / "keep.fit.gz"
+        keep.write_bytes(b"keep")
+
+        cache_data = {
+            "gps": {},
+            "tracks_version": TRACK_CACHE_VERSION,
+            "tracks": {
+                "gone.fit.gz": [[45.0, -122.0, 5.0, 150, 100.0]],
+                "keep.fit.gz": [[45.1, -122.1, 5.0, 150, 100.0]],
+            },
+            "tracks_meta": {
+                "gone.fit.gz": (123, 45),
+                "keep.fit.gz": (keep.stat().st_mtime_ns, keep.stat().st_size),
+            },
+        }
+        with open(self.cache_path, "wb") as f:
+            pickle.dump(cache_data, f)
+
+        runs = pd.DataFrame(
+            {
+                "Filename": ["keep.fit.gz"],
+                "Activity Date": [pd.Timestamp("2024-01-01")],
+                "Activity Name": ["Morning Run"],
+            }
+        )
+
+        tracks = load_tracks(self.config, runs)
+
+        assert len(tracks) == 1
+        with open(self.cache_path, "rb") as f:
+            cache = pickle.load(f)
+        assert "gone.fit.gz" not in cache["tracks"]
+        assert "gone.fit.gz" not in cache["tracks_meta"]
+        assert "keep.fit.gz" in cache["tracks"]
