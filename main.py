@@ -25,6 +25,7 @@ from src.activity_index import (
     build_strava_links,
     split_activity_label,
 )
+from src.cache_cleaner import clear_caches, find_cache_targets
 from src.colormaps import create_colormaps, generate_layer_uris
 from src.config import Config
 from src.data_loader import (
@@ -81,6 +82,15 @@ def format_embed_size(n_chars: int) -> str:
     if n_chars >= 1_000_000:
         return f"{n_chars / 1e6:.1f} MB"
     return f"{n_chars / 1000:.0f} KB"
+
+
+def format_bytes(n_bytes: int) -> str:
+    """Format a byte count for the cache-clear summary."""
+    if n_bytes >= 1_000_000:
+        return f"{n_bytes / 1e6:.1f} MB"
+    if n_bytes >= 1_000:
+        return f"{n_bytes / 1000:.0f} KB"
+    return f"{n_bytes} B"
 
 
 def auto_meters_per_pixel(tracks: list[tuple[str, list]]) -> float:
@@ -218,6 +228,23 @@ def parse_args() -> argparse.Namespace:
         "validate",
         parents=[parent],
         help="Validate config.toml file (JSON also supported)",
+    )
+
+    # Clear command: drop the app cache and every developer/build cache
+    clear_parser = subparsers.add_parser(
+        "clear",
+        parents=[common],
+        help="Remove all generated caches (activity cache, __pycache__, build artifacts)",
+        description=(
+            "Delete the application cache (parsed tracks / activity starts) and the "
+            "developer caches in the checkout: __pycache__, .ruff_cache, "
+            ".pytest_cache, .mypy_cache, .coverage, build/, dist/ and *.egg-info."
+        ),
+    )
+    clear_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="List what would be removed without deleting anything",
     )
 
     # Export command: re-export the filtered tracks as GPX, without building the map
@@ -665,6 +692,35 @@ def run_export_gpx(args: argparse.Namespace) -> None:
         sys.exit(1)
 
 
+def run_clear(args: argparse.Namespace) -> None:
+    """Remove the application cache and every developer cache in the checkout."""
+    setup_logging(args.dev)
+
+    project_root = Path(__file__).resolve().parent
+    # Honor a custom CACHE_DIR when a config is available; otherwise fall back
+    # to the default cache/ directory. Clearing must not fail on a bad config.
+    app_cache_dir = project_root / "cache"
+    try:
+        app_cache_dir = Config(getattr(args, "config", None)).cache_dir
+    except Exception as e:
+        print_debug(args.dev, f"Using default cache directory ({e})")
+
+    targets = find_cache_targets(project_root, app_cache_dir)
+    if not targets:
+        print_success("Nothing to clear; no caches found")
+        return
+
+    print_stage("Clearing caches")
+    for target in targets:
+        print_info(target.kind, str(target.path))
+
+    removed, freed = clear_caches(targets, dry_run=args.dry_run)
+    if args.dry_run:
+        print_success(f"Would remove {len(targets)} cache(s), freeing {format_bytes(freed)}")
+    else:
+        print_success(f"Removed {removed} cache(s), freeing {format_bytes(freed)}")
+
+
 def load_config_env(config_path: Path | None) -> None:
     """Load `.env` from the config file's directory, when one was given.
 
@@ -686,6 +742,8 @@ def main():
         run_validate(args)
     elif args.command == "export-gpx":
         run_export_gpx(args)
+    elif args.command == "clear":
+        run_clear(args)
     else:
         run_generate(args)
 

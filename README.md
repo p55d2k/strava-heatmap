@@ -214,6 +214,9 @@ uv run heatmap validate --config config.toml
 # Re-export filtered tracks without rebuilding the map
 uv run heatmap export-gpx --config config.toml --output runs.gpx
 
+# Remove the activity cache and every developer/build cache; --dry-run lists only
+uv run heatmap clear
+
 # Equivalent global-option forms
 uv run heatmap --config config.toml --dry-run
 uv run heatmap validate --config config.toml --dev
@@ -221,6 +224,11 @@ uv run heatmap validate --config config.toml --dev
 
 `--no-open` prevents generated maps from opening automatically in a browser.
 `--embed` also builds the iframe widget for that run.
+
+`clear` deletes the application cache (the parsed tracks / activity starts found
+via `CACHE_DIR`) and the developer caches in the checkout: `__pycache__`,
+`.ruff_cache`, `.pytest_cache`, `.mypy_cache`, `.coverage`, `build/`, `dist/` and
+`*.egg-info`. It never touches `.git`, virtualenvs or your generated `outputs/`.
 
 ## Exports
 
