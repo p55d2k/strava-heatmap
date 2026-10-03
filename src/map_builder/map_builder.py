@@ -190,10 +190,10 @@ class ScalableHomeMarker(MacroElement):
                 {
                     radius: {{ this._initial_radius }},
                     color: "#ffffff",
-                    weight: 2.5,
-                    opacity: 1,
-                    fillColor: "#fc4c02",
-                    fillOpacity: 1,
+                    weight: 3,
+                    opacity: 0.98,
+                    fillColor: "#ff3c00",
+                    fillOpacity: 0.95,
                     interactive: true,
                     homeMarker: true,
                     // Names the SVG path so the control panel's "Save as PNG"
